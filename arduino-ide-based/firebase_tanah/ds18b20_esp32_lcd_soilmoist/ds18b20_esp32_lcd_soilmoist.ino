@@ -8,11 +8,13 @@
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);  // set the LCD address to 0x27 for a 16 chars and 2 line display
 
+
+
 // Inisialisasi pin data (DQ)
-
-
 OneWire oneWire(suhuPin);
 DallasTemperature sensors(&oneWire);
+
+float maxAdc = 4095.0;
 
 void setup() {
   Serial.begin(115200);
@@ -32,13 +34,15 @@ void loop() {
   Serial.print(temperatureC);
   Serial.println(" °C");
 
-  int soilAdc = analogRead(soilPin); // read the analog value from sensor
+  int soilAdc = maxAdc - analogRead(soilPin); // read the analog value from sensor
+  float soilVoltage = (float) soilAdc / maxAdc * 3.3;
+  float soilPercent = (float) soilAdc / maxAdc * 100;
 
-  Serial.print("Moisture value: ");
+  Serial.print("Moisture Adc: ");
   Serial.println(soilAdc);
 
   delay(500);
-  lcdPrintAll("Suhu: " +  String(temperatureC), "Kelembaban: " + String(soilAdc), 1000);
+  lcdPrintAll("Suhu: " +  String(temperatureC), "Lembab: " + String(soilPercent) + " %", 1000);
   // delay(1000);  // Tunggu 1 detik sebelum membaca lagi
 
   if(temperatureC < 32){
