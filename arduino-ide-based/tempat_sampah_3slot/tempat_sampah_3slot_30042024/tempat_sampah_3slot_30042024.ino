@@ -1,4 +1,4 @@
- #include <Servo.h>
+#include <Servo.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
@@ -36,6 +36,8 @@ int sampahNonOrganik = 0;
 bool adaSampah = false;
 bool nonMetal = false;
 
+bool sampahPenuh = false;
+
 int metal1Val;
 int metal2Val;
 int infra1Val;
@@ -44,7 +46,7 @@ int lembabVal;
 
 
 void setup() {
-  Serial.begin(115200);  
+  Serial.begin(115200);
 
   // lcd.init();
   lcd.begin();
@@ -70,11 +72,12 @@ void loop() {
   infra1Val = !digitalRead(infra1Pin);
   infra2Val = !digitalRead(infra2Pin);
   lembabVal = analogRead(lembabPin);
-  
+
+
   debugSensor();
 
   adaSampah = infra1Val;
-  if (adaSampah) {  //jika di infra1 ada objek
+  if (adaSampah && sampahPenuh == false) {  //jika di infra1 ada objek
     lcdPrint("Sampah", "Terdeteksi!", 1000);
     debugSensor();
     delay(2000);
@@ -90,27 +93,29 @@ void loop() {
       //objek adalah metal
       lcdPrint("Kategori : ", "Sampah Metal", 2000);
       servo1.write(0);
-      sampahMetal++;      
+      delay(2000);
+      sampahMetal++;
       servo1.write(90);
       lcdStandby();
     }
   }
 
   nonMetal = infra2Val;
-  if (nonMetal) {                         //jika di infra2 ada objek
+  if (nonMetal && sampahPenuh == false) {                      //jika di infra2 ada objek
     if (lembabVal > batasAdcLembab) {  //jika nilai persen lembab berada di atas batas
       //objek adalah organik
       lcdPrint("Kategori : ", "Sampah Organik", 2000);
       servo2.write(0);
-      sampahOrganik++;      
+      sampahOrganik++;
 
     } else {
       //objek adalah non-organik
       lcdPrint("Kategori : ", "Sampah Non-Organik", 2000);
       servo2.write(180);
-      sampahNonOrganik++;      
+      sampahNonOrganik++;
     }
-    
+    delay(2000);
+
     servo2.write(90);
     lcdStandby();
   }
@@ -130,21 +135,29 @@ void debugSensor() {
   Serial.print("\tlembabVal : ");
   Serial.println(lembabVal);
 
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("m1:");
-  lcd.print(metal1Val);
-  lcd.print(" m2:");
-  lcd.print(metal2Val);
+  Serial.print("Metal : ");
+  Serial.print(sampahMetal);
+  Serial.print("\tOrganik : ");
+  Serial.print(sampahOrganik);
+  Serial.print("\tNon Organik : ");
+  Serial.println(sampahNonOrganik);
 
-  lcd.setCursor(0, 1);
-  lcd.print("i1:");
-  lcd.print(infra1Val);
-  lcd.print(" i2:");
-  lcd.print(infra2Val);
-  lcd.print(" L:");
-  lcd.print(lembabVal);
-  
+  if (sampahPenuh == false) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("m1:");
+    lcd.print(metal1Val);
+    lcd.print(" m2:");
+    lcd.print(metal2Val);
+
+    lcd.setCursor(0, 1);
+    lcd.print("i1:");
+    lcd.print(infra1Val);
+    lcd.print(" i2:");
+    lcd.print(infra2Val);
+    lcd.print(" L:");
+    lcd.print(lembabVal);
+  }
 }
 
 
@@ -158,15 +171,24 @@ void lcdPrint(String baris1, String baris2, int jeda) {
 }
 
 
-void lcdStandby(){
+void lcdStandby() {
+
+  if (sampahMetal >= batasMetal) {    
+    Serial.println("SAMPAH METAL PENUH");
+    sampahPenuh = true;
+
+  } else if (sampahOrganik >= batasOrganik) {    
+    Serial.println("SAMPAH ORGANIK PENUH");
+    sampahPenuh = true;
+
+  } else if (sampahNonOrganik >= batasNonOrganik) {    
+    Serial.println("SAMPAH NON-ORGANIK PENUH");    
+    sampahPenuh = true;
+  } 
   
-  if(sampahMetal >= batasMetal){
-    lcdPrint("SAMPAH METAL", "PENUH", 1000);
-  }else if(sampahOrganik >= batasOrganik) {
-    lcdPrint("SAMPAH ORGANIK", "PENUH", 1000);
-  }else if(sampahNonOrganik >= batasNonOrganik){
-    lcdPrint("SAMPAH NON", "ORGANIK,  PENUH", 1000);
-  }else{
+  if(sampahPenuh){
+    lcdPrint(" Tempat Sampah", "     PENUH", 1000);
+  }else {
     lcdPrint("Sistem", "Standby", 1000);
   }
 }
