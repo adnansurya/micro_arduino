@@ -2,9 +2,9 @@
 #include <DallasTemperature.h>
 #include <LiquidCrystal_I2C.h>
 
-#define suhuPin 13
+#define suhuPin 32
 #define relayPin 17
-#define soilPin 34
+#define soilPin 33
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);  // set the LCD address to 0x27 for a 16 chars and 2 line display
 
