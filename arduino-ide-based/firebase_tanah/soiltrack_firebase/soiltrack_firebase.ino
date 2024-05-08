@@ -58,8 +58,23 @@ bool pompaOn = false;
 float batasLembab = 50.0;
 
 int phAdc;
-float phVal;
-float phLast;
+float phVal = 0.0;
+float phLast = 0.0;
+
+float temperatureC = 0.0;
+float soilPercent = 0.0;
+
+unsigned long lcdUpdateTime = 0;
+unsigned long lcdUpdateInterval = 2500;
+
+unsigned long phUpdateTime = 0;
+unsigned long phUpdateInterval = 10000;
+
+unsigned long dmsUpdateTime = 0;
+unsigned long dmsUpdateInterval = 3000;
+
+bool dmsOn = true;
+bool phDisplay = false;
 
 void setup() {
   Serial.begin(115200);
@@ -74,12 +89,18 @@ void setup() {
   pinMode(dmsPin, OUTPUT);
   digitalWrite(dmsPin, HIGH);
 
-  lcdPrintAll("Connecting to:", String(WIFI_SSID), 0);
+  
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Connecting to:");
+  lcd.setCursor(0, 1);
+  lcd.print(WIFI_SSID);
 
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.print("Connecting to Wi-Fi");
   while (WiFi.status() != WL_CONNECTED) {
     Serial.print(".");
+    lcd.print(".");
     delay(500);
   }
 
@@ -88,9 +109,20 @@ void setup() {
   Serial.println(WiFi.localIP());
   Serial.println();
 
-  lcdPrintAll("Connected. IP :", String(WiFi.localIP()), 1500);
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Connected. IP : ");
+  lcd.setCursor(0, 1);
+  lcd.print(WiFi.localIP());
+  delay(1000);
 
-  lcdPrintAll("Initialize", "Firebase...", 1000);
+  
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Initializing");
+  lcd.setCursor(0, 1);
+  lcd.print("Firebase.....");
+  delay(1000);
   Serial.printf("Firebase Client v%s\n\n", FIREBASE_CLIENT_VERSION);
 
   config.api_key = API_KEY;
@@ -117,69 +149,104 @@ void setup() {
 }
 
 void loop() {
-  Serial.println("----START LOOP----");
-  sensors.requestTemperatures();                    // Minta pembacaan suhu
-  float temperatureC = sensors.getTempCByIndex(0);  // Ambil suhu dalam derajat Celsius
-  Serial.print("Suhu: ");
-  Serial.print(temperatureC);
-  Serial.println(" °C");
+  unsigned long currentTime = millis();
 
-  int soilAdc = maxAdc - analogRead(soilPin);  // read the analog value from sensor
-  float soilVoltage = (float)soilAdc / maxAdc * 3.3;
-  float soilPercent = (float)soilAdc / maxAdc * 100;
+  if (currentTime - lcdUpdateTime >= lcdUpdateInterval) {
+    sensors.requestTemperatures();              // Minta pembacaan suhu
+    temperatureC = sensors.getTempCByIndex(0);  // Ambil suhu dalam derajat Celsius
+    Serial.print("Suhu: ");
+    Serial.print(temperatureC);
+    Serial.println(" °C");
 
-  Serial.print("Moisture (Adc): ");
-  Serial.print(soilAdc);
-  Serial.print("\tPercent : ");
-  Serial.print(soilPercent);
-  Serial.println(" %");
+    int soilAdc = maxAdc - analogRead(soilPin);  // read the analog value from sensor
+    float soilVoltage = (float)soilAdc / maxAdc * 3.3;
+    soilPercent = (float)soilAdc / maxAdc * 100;
 
-  // delay(500);
-  lcdPrintAll("T: " + String(temperatureC), "M: " + String(soilPercent) + " %", 500);
+    Serial.print("Moisture (Adc): ");
+    Serial.print(soilAdc);
+    Serial.print("\tPercent : ");
+    Serial.print(soilPercent);
+    Serial.println(" %");
 
-  if (soilPercent > batasLembab) {
-    digitalWrite(relayPin, HIGH);
-    pompaOn = false;
-  } else {
-    digitalWrite(relayPin, LOW);
-    pompaOn = true;
+    // delay(500);
+    lcd.clear();
+    if (phDisplay == false) {
+      lcd.setCursor(0, 0);
+      lcd.print("T: ");
+      lcd.print(temperatureC);
+      lcd.print(" ");
+      lcd.print((char)223);
+      lcd.print("C");
+      lcd.setCursor(0, 1);
+      lcd.print("M: ");
+      lcd.print(soilPercent);
+      lcd.print(" %");
+      phDisplay = true;
+    } else {
+      lcd.setCursor(0, 0);
+      lcd.print("PH: ");
+      lcd.print(phVal);
+      phDisplay = false;
+    }
+
+    if (soilPercent > batasLembab) {
+      digitalWrite(relayPin, HIGH);
+      pompaOn = false;
+    } else {
+      digitalWrite(relayPin, LOW);
+      pompaOn = true;
+    }
+    lcdUpdateTime = currentTime;
   }
 
-  digitalWrite(dmsPin, LOW);
-  delay(10 * 1000);
+  if ((currentTime - phUpdateTime >= phUpdateInterval) && dmsOn == true) {
+    phAdc = analogRead(phPin);
+    phVal = (-0.0139 * phAdc) + 7.7851;
+    if (phVal != phLast) {
+      phLast = phVal;
+    }
 
-  phAdc = analogRead(phPin);
-  phVal = (-0.0139 * phAdc) + 7.7851;
-  if (phVal != phLast) {
-    phLast = phVal;
+    Serial.print("PH (Adc) : ");
+    Serial.print(phAdc);
+    Serial.print("\tValue : ");
+    Serial.println(phVal);
+
+    Serial.println("DMS Off");
+    dmsOn = false;
+    digitalWrite(dmsPin, HIGH);
+    // phUpdateTime = currentTime;
+    dmsUpdateTime = currentTime;
   }
 
-  lcdPrintAll("PH : " + String(phVal), "", 500);
+  if ((currentTime - dmsUpdateTime >= dmsUpdateInterval) && dmsOn == false) {
 
-  Serial.print("PH (Adc) : ");
-  Serial.print(phAdc);
-  Serial.print("\tValue : ");
-  Serial.println(phVal);
+    Serial.println("DMS Standby");
+    digitalWrite(dmsPin, LOW);
+    dmsOn = true;
+    
 
-  if (Firebase.ready() && (millis() - sendDataPrevMillis > intervalMillis || sendDataPrevMillis == 0)) {
-    sendDataPrevMillis = millis();
-    lcdPrintAll("SEND TO", "FIREBASE", 0);
-    Serial.println();
-    Serial.printf("Send Status Pompa: %s\n", Firebase.RTDB.setBool(&fbdo, F("/test/pompa"), pompaOn) ? "sent" : fbdo.errorReason().c_str());
-    Serial.printf("Send Kelembaban  : %s\n", Firebase.RTDB.setFloat(&fbdo, F("/test/kelembaban"), soilPercent) ? "sent" : fbdo.errorReason().c_str());
-    Serial.printf("Send pH Tanah    : %s\n", Firebase.RTDB.setFloat(&fbdo, F("/test/phTanah"), phVal) ? "sent" : fbdo.errorReason().c_str());
-    Serial.printf("Send Suhu        : %s\n", Firebase.RTDB.setFloat(&fbdo, F("/test/suhu"), temperatureC) ? "sent" : fbdo.errorReason().c_str());
+    lcd.setCursor(14, 1);
+    lcd.print("F");
+    lcd.print((char)126);
+
+    Serial.println("SEND TO FIREBASE");
+    if (Firebase.ready()) {
+      Serial.printf("Send Status Pompa: %s\n", Firebase.RTDB.setBool(&fbdo, F("/test/pompa"), pompaOn) ? "sent" : fbdo.errorReason().c_str());
+      Serial.printf("Send Kelembaban  : %s\n", Firebase.RTDB.setFloat(&fbdo, F("/test/kelembaban"), soilPercent) ? "sent" : fbdo.errorReason().c_str());
+      Serial.printf("Send pH Tanah    : %s\n", Firebase.RTDB.setFloat(&fbdo, F("/test/phTanah"), phVal) ? "sent" : fbdo.errorReason().c_str());
+      Serial.printf("Send Suhu        : %s\n", Firebase.RTDB.setFloat(&fbdo, F("/test/suhu"), temperatureC) ? "sent" : fbdo.errorReason().c_str());
+    }
+
+    // dmsUpdateTime = currentTime;
+    phUpdateTime = currentTime;
   }
 
-  digitalWrite(dmsPin, HIGH);
-  delay(3 * 1000);
+
+
+  // if (Firebase.ready() && (millis() - sendDataPrevMillis > intervalMillis || sendDataPrevMillis == 0)) {
+  //   sendDataPrevMillis = millis();
+
+  // }
 }
 
-void lcdPrintAll(String baris1, String baris2, int jeda) {
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print(baris1);
-  lcd.setCursor(0, 1);
-  lcd.print(baris2);
-  delay(jeda);
-}
+
