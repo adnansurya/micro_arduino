@@ -6,12 +6,10 @@
 #include "esp_camera.h"
 #include <UniversalTelegramBot.h>
 #include <ArduinoJson.h>
-#include "BluetoothSerial.h"
+#include <WebServer.h>
+#include <ESPmDNS.h>
 
-BluetoothSerial pirBT;
-uint8_t address[6] = { 0xE8, 0x6B, 0xEA, 0xDF, 0xBB, 0x12 };  // Alamat Bluetooth slave
-String name = "ESP32";                                        // Nama perangkat Bluetooth slave
-// char* pin = "1234";                                           // PIN untuk pairing
+WebServer server(80);
 
 const char* ssid = "MIKRO";
 const char* password = "IDEAlist";
@@ -54,6 +52,82 @@ unsigned long lastTimeBotRan;
 #define VSYNC_GPIO_NUM 25
 #define HREF_GPIO_NUM 23
 #define PCLK_GPIO_NUM 22
+
+
+
+void setup() {
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+  // Init Serial Monitor
+  Serial.begin(115200);
+  // Set LED Flash as output
+  pinMode(FLASH_LED_PIN, OUTPUT);
+  digitalWrite(FLASH_LED_PIN, flashState);
+
+  // Config and init the camera
+  configInitCamera();
+
+  // Connect to Wi-Fi
+  WiFi.mode(WIFI_STA);
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+  WiFi.begin(ssid, password);
+  clientTCP.setCACert(TELEGRAM_CERTIFICATE_ROOT);  // Add root certificate for api.telegram.org
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print(".");
+    delay(500);
+  }
+  Serial.println();
+  Serial.print("ESP32-CAM IP Address: ");
+  Serial.println(WiFi.localIP());
+
+  if (MDNS.begin("esp32")) {
+    Serial.println("MDNS responder started");
+  }
+  server.on("/", handleRoot);
+  server.on("/ada_gerakan", adaGerakan);
+  server.begin();
+
+  String ipNotif = "IP Cam Server : " + WiFi.localIP().toString();
+  bot.sendMessage(CHAT_ID, ipNotif, "");
+}
+
+void loop() {
+
+
+  if (sendPhoto) {
+    Serial.println("Preparing photo");
+    flashState = !flashState;
+    digitalWrite(FLASH_LED_PIN, flashState);
+    sendPhotoTelegram();
+    flashState = !flashState;
+    digitalWrite(FLASH_LED_PIN, flashState);
+
+    sendPhoto = false;
+  }
+  if (millis() > lastTimeBotRan + botRequestDelay) {
+
+    int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+    while (numNewMessages) {
+      Serial.println("got response");
+      handleNewMessages(numNewMessages);
+      numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+    }
+    lastTimeBotRan = millis();
+
+  } else {
+    server.handleClient();
+  }
+}
+
+void adaGerakan() {
+  sendPhoto = true;
+  server.send(200, "text/plain", "Ada Gerakan, Mengambil Foto...");
+}
+
+void handleRoot() {
+  server.send(200, "text/plain", "hello from esp32!");
+}
 
 
 void configInitCamera() {
@@ -135,14 +209,10 @@ void handleNewMessages(int numNewMessages) {
 
     if (text == "/buka") {
       Serial.println("Buka Pintu");
-      // pirBT.print("Buka Pintu");
-      // pirBT.print("\n");
     }
 
     if (text == "/kunci") {
       Serial.println("Kunci Pintu");
-      // pirBT.print("Kunci Pintu");
-      // pirBT.print("\n");
     }
   }
 }
@@ -229,70 +299,4 @@ String sendPhotoTelegram() {
     Serial.println("Connected to api.telegram.org failed.");
   }
   return getBody;
-}
-
-void setup() {
-  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
-  // Init Serial Monitor
-  Serial.begin(115200);
-
-  // Set LED Flash as output
-  pinMode(FLASH_LED_PIN, OUTPUT);
-  digitalWrite(FLASH_LED_PIN, flashState);
-
-  // Config and init the camera
-  configInitCamera();
-
-  // Connect to Wi-Fi
-  WiFi.mode(WIFI_STA);
-  Serial.println();
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
-  WiFi.begin(ssid, password);
-  clientTCP.setCACert(TELEGRAM_CERTIFICATE_ROOT);  // Add root certificate for api.telegram.org
-  while (WiFi.status() != WL_CONNECTED) {
-    Serial.print(".");
-    delay(500);
-  }
-  Serial.println();
-  Serial.print("ESP32-CAM IP Address: ");
-  Serial.println(WiFi.localIP());
-
-  // pirBT.begin(name);
-  // pirBT.connect(address);
-  // pirBT.print("Terhubung");
-  // pirBT.print("\n");
-  // Serial.println("Menghubungkan ke perangkat Bluetooth slave...");
-}
-
-void loop() {
-
-  // if (pirBT.available() > 0) {
-  //   String dataPir = pirBT.readStringUntil('\n');
-  //   dataPir.trim();
-  //   Serial.print("Dari Pir : ");
-  //   Serial.println(dataPir);
-  //   // kedipLed(0.5);
-  //   if (dataPir == "Gerakan Terdeteksi") {
-  //     sendPhoto = true;
-  //   }
-  // }
-  if (sendPhoto) {
-    Serial.println("Preparing photo");
-    flashState = !flashState;
-    digitalWrite(FLASH_LED_PIN, flashState);
-    sendPhotoTelegram();
-    flashState = !flashState;
-    digitalWrite(FLASH_LED_PIN, flashState);
-    sendPhoto = false;
-  }
-  if (millis() > lastTimeBotRan + botRequestDelay) {
-    int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
-    while (numNewMessages) {
-      Serial.println("got response");
-      handleNewMessages(numNewMessages);
-      numNewMessages = bot.getUpdates(bot.last_message_received + 1);
-    }
-    lastTimeBotRan = millis();
-  }
 }
