@@ -6,8 +6,11 @@
 #include "esp_camera.h"
 #include <UniversalTelegramBot.h>
 #include <ArduinoJson.h>
+
 #include <WebServer.h>
 #include <ESPmDNS.h>
+
+#include <HTTPClient.h>
 
 WebServer server(80);
 
@@ -53,7 +56,8 @@ unsigned long lastTimeBotRan;
 #define HREF_GPIO_NUM 23
 #define PCLK_GPIO_NUM 22
 
-
+String pirIP = "http://192.168.188.231";
+String pirURL = "";
 
 void setup() {
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
@@ -209,11 +213,33 @@ void handleNewMessages(int numNewMessages) {
 
     if (text == "/buka") {
       Serial.println("Buka Pintu");
+      openURL(pirIP + "/buka_pintu");
+
     }
 
     if (text == "/kunci") {
       Serial.println("Kunci Pintu");
+      openURL(pirIP + "/kunci_pintu");
     }
+  }
+}
+
+void openURL(String urlLink) {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    http.begin(urlLink);
+
+    int httpCode = http.GET();
+    if (httpCode > 0) {
+      String payload = http.getString();
+      Serial.println("Response: " + payload);
+      // Lakukan sesuatu dengan data yang diterima (misalnya, kendalikan perangkat berdasarkan respons)
+    } else {
+      Serial.println("Error on HTTP request");
+    }
+
+    http.end();
+    // delay(5000);  // Tunggu 5 detik sebelum mengirim permintaan berikutnya
   }
 }
 
