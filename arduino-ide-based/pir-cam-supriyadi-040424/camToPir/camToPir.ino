@@ -14,16 +14,16 @@
 
 WebServer server(80);
 
-const char* ssid = "MIKRO";
-const char* password = "IDEAlist";
+const char* ssid = "Sel";
+const char* password = "supriyadiii";
 
 // Initialize Telegram BOT
-String BOTtoken = "1115765927:AAFgDI003Xn41tererJRuoU543tBsg8CBpE";  // your Bot Token (Get from Botfather)
+String BOTtoken = "6721147993:AAHZNZmWzhr_VL380irmmQnlzL5p3Ur75wQ";  // your Bot Token (Get from Botfather)
 
 // Use @myidbot to find out the chat ID of an individual or a group
 // Also note that you need to click "start" on a bot before it can
 // message you
-String CHAT_ID = "108488036";
+String CHAT_ID = "2004198872";
 
 bool sendPhoto = false;
 
@@ -56,7 +56,7 @@ unsigned long lastTimeBotRan;
 #define HREF_GPIO_NUM 23
 #define PCLK_GPIO_NUM 22
 
-String pirIP = "http://192.168.188.231";
+String pirIP = "http://192.168.209.231";
 String pirURL = "";
 
 void setup() {
@@ -208,8 +208,11 @@ void handleNewMessages(int numNewMessages) {
 
   for (int i = 0; i < numNewMessages; i++) {
     String chat_id = String(bot.messages[i].chat_id);
+   
     if (chat_id != CHAT_ID) {
       bot.sendMessage(chat_id, "Unauthorized user", "");
+       Serial.print("Chat Id From : ");
+       Serial.println(chat_id);
       continue;
     }
 

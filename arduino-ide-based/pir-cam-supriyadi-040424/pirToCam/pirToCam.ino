@@ -17,8 +17,8 @@ WebServer server(80);
 #define relayPin 5
 
 // Replace with your network credentials
-const char* ssid = "MIKRO";
-const char* password = "IDEAlist";
+const char* ssid = "Sel";
+const char* password = "supriyadiii";
 
 // Checks for new messages every 1 second.
 int sensorCheckDelay = 50;
@@ -29,7 +29,7 @@ int lastGerak = 0;
 
 bool relayState = LOW;
 
-String camIP = "http://192.168.188.31";
+String camIP = "http://192.168.209.31";
 String camURL = camIP + "/ada_gerakan";
 
 void setup() {
