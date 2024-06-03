@@ -18,12 +18,12 @@ const char* ssid = "MIKRO";
 const char* password = "IDEAlist";
 
 // Initialize Telegram BOT
-String BOTtoken = "908284467:AAGgjXqY56NORtl6Toj4u1WwEP_KJR95ImA";  // your Bot Token (Get from Botfather)
+String BOTtoken = "1115765927:AAFWPVbEpYJY8I9yBAEvFUifkLPQzlE8pxQ";  // your Bot Token (Get from Botfather)
 
 // Use @myidbot to find out the chat ID of an individual or a group
 // Also note that you need to click "start" on a bot before it can
 // message you
-String CHAT_ID = "998815337";
+String CHAT_ID = "108488036";
 
 bool sendPhoto = false;
 
@@ -34,7 +34,7 @@ UniversalTelegramBot bot(BOTtoken, clientTCP);
 bool flashState = LOW;
 
 //Checks for new messages every 1 second.
-int botRequestDelay = 1000;
+long botRequestDelay = 1000;
 unsigned long lastTimeBotRan;
 
 //CAMERA_MODEL_AI_THINKER
@@ -56,7 +56,7 @@ unsigned long lastTimeBotRan;
 #define HREF_GPIO_NUM 23
 #define PCLK_GPIO_NUM 22
 
-String pirIP = "http://192.168.188.166";
+String pirIP = "http://192.168.101.233";
 String pirURL = "";
 
 void setup() {
@@ -83,7 +83,21 @@ void setup() {
   }
   Serial.println();
   Serial.print("ESP32-CAM IP Address: ");
-  Serial.println(WiFi.localIP());
+  IPAddress ip = WiFi.localIP();
+  Serial.println(ip);
+  pirIP = String(ip[0]) + "." +  String(ip[1]) + "." +  String(ip[2]) + ".233";
+  pirURL = "http://" + pirIP;
+
+  Serial.print("Retrieving time: ");
+  configTime(0, 0, "pool.ntp.org"); // get UTC time via NTP
+  time_t now = time(nullptr);
+  while (now < 24 * 3600)
+  {
+    Serial.print(".");
+    delay(100);
+    now = time(nullptr);
+  }
+  Serial.println(now);
 
   if (MDNS.begin("esp32")) {
     Serial.println("MDNS responder started");
@@ -110,7 +124,7 @@ void loop() {
     sendPhoto = false;
   }
   if (millis() > lastTimeBotRan + botRequestDelay) {
-
+    Serial.println("handle telegram");
     int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
     while (numNewMessages) {
       Serial.println("got response");
@@ -118,6 +132,7 @@ void loop() {
       numNewMessages = bot.getUpdates(bot.last_message_received + 1);
     }
     lastTimeBotRan = millis();
+    
 
   } else {
     server.handleClient();
@@ -237,31 +252,31 @@ void handleNewMessages(int numNewMessages) {
 
     if (text == "/on1") {
       Serial.println("Buka Kunci 1");
-      openURL(pirIP + "/on1");
+      openURL(pirURL + "/on1");
     }
 
     if (text == "/off1") {
       Serial.println("Kunci Laci 1");
-      openURL(pirIP + "/off1");
+      openURL(pirURL + "/off1");
     }
 
     if (text == "/on2") {
       Serial.println("Buka Kunci 2");
-      openURL(pirIP + "/on2");
+      openURL(pirURL + "/on2");
     }
 
     if (text == "/off2") {
       Serial.println("Kunci Laci 2");
-      openURL(pirIP + "/off2");
+      openURL(pirURL+ "/off2");
     }
     if (text == "/on3") {
       Serial.println("Buka Kunci 3");
-      openURL(pirIP + "/on3");
+      openURL(pirURL + "/on3");
     }
 
     if (text == "/off3") {
       Serial.println("Kunci Laci 3");
-      openURL(pirIP + "/off3");
+      openURL(pirURL + "/off3");
     }
   }
 }

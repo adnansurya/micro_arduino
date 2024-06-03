@@ -14,9 +14,8 @@
 
 WebServer server(80);
 
-#define BOT_TOKEN "908284467:AAGgjXqY56NORtl6Toj4u1WwEP_KJR95ImA"
-#define CHAT_ID "998815337"
-const unsigned long BOT_MTBS = 1000;  // mean time between scan messages
+#define BOT_TOKEN "1115765927:AAFgDI003Xn41tererJRuoU543tBsg8CBpE"
+#define CHAT_ID "108488036"
 
 #define TRIGGER_PIN 19    // Arduino pin tied to trigger pin on the ultrasonic sensor.
 #define ECHO_PIN 18       // Arduino pin tied to echo pin on the ultrasonic sensor.
@@ -27,6 +26,8 @@ const unsigned long BOT_MTBS = 1000;  // mean time between scan messages
 #define SOLE3_PIN 17
 #define SOLE4_PIN 16
 
+#define ledPin 2
+
 
 char ssid[] = "MIKRO";
 char pass[] = "IDEAlist";
@@ -35,7 +36,10 @@ NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE);  // NewPing setup of pins an
 LiquidCrystal_I2C lcd(0x27, 20, 4);
 
 int sensorCheckDelay = 100;
-unsigned long lastTimeCheckSensor;  //deklarasi objek lcd
+unsigned long lastTimeCheckSensor;
+
+int lcdCheckDelay = 1000;
+unsigned long lastTimeCheckLcd;
 
 int adaGerak = 0;
 int lastGerak = 0;
@@ -44,7 +48,7 @@ bool open1 = false;
 bool open2 = false;
 bool open3 = false;
 
-String camIP = "http://192.168.188.133";
+String camIP = "http://192.168.101.133";
 String camURL = camIP + "/ada_gerakan";
 
 int jarak;
@@ -55,6 +59,9 @@ void setup() {
   lcd.init();
   // lcd.begin();
   lcd.backlight();
+
+  pinMode(ledPin, OUTPUT);
+  digitalWrite(ledPin, LOW);
 
   Serial.begin(115200);
   Serial.print("Connecting to WiFi");
@@ -76,11 +83,16 @@ void setup() {
     delay(100);
     Serial.print(".");
     lcd.print(".");
+    kedipLed(0.2);
   }
 
   lcdPrompt("Connected to :" + String(ssid), 2000);
   // Print ESP32 Local IP Address
-  Serial.println(WiFi.localIP());
+  IPAddress ip = WiFi.localIP();  
+  Serial.println(ip);
+  camIP = String(ip[0]) + "." + String(ip[1]) + "." + String(ip[2]) + ".133";
+  camURL = "http://" + camIP + "/ada_gerakan";
+  
 
 
 
@@ -96,14 +108,14 @@ void setup() {
   server.on("/on3", on3);
   server.on("/off3", off3);
   server.begin();
-  lcdPrintAll("IP Address : ", WiFi.localIP().toString(), "", "", 5000);
+  lcdPrintAll("IP Address : ", ip.toString(), "CAM IP:", camIP, 5000);
+  kedipLed(2);
   lcdStandby();
-  
 }
 
 void loop() {
-  
-  
+
+
 
   if (millis() > lastTimeCheckSensor + sensorCheckDelay) {
 
@@ -119,15 +131,21 @@ void loop() {
     }
     if (adaGerak != lastGerak) {  //filter untuk mendeteksi perubahan status
       if (adaGerak) {
+        kedipLed(0.2);
         Serial.println("Gerakan Terdeteksi");
-        openURL(camURL);
+        openURL(camURL);                
         lcdPrintAll("Gerakan Terdeteksi", "Mengirim Foto ", "      ke Telegram", "", 3000);
       }
     }
     lastGerak = adaGerak;
     lastTimeCheckSensor = millis();
   } else {
-    lcdStandby();
+
+    if (millis() > lastTimeCheckLcd + lcdCheckDelay) {
+      lcdStandby();
+      lastTimeCheckLcd = millis();
+    }
+
     server.handleClient();
   }
 }
@@ -137,13 +155,15 @@ void handleRoot() {
 }
 
 void on1() {
-  server.send(200, "text/plain", "Membuka Kunci 1...");  
+  kedipLed(0.2);
+  server.send(200, "text/plain", "Membuka Kunci 1...");
   digitalWrite(SOLE1_PIN, LOW);
   open1 = true;
   lcdPrompt("Membuka Kunci 1... ", 2000);
 }
 
 void off1() {
+  kedipLed(0.2);
   server.send(200, "text/plain", "Mengunci Laci 1...");
   digitalWrite(SOLE1_PIN, HIGH);
   open1 = false;
@@ -151,6 +171,7 @@ void off1() {
 }
 
 void on2() {
+  kedipLed(0.2);
   server.send(200, "text/plain", "Membuka Kunci 2...");
   digitalWrite(SOLE2_PIN, LOW);
   open2 = true;
@@ -158,15 +179,15 @@ void on2() {
 }
 
 void off2() {
+  kedipLed(0.2);
   server.send(200, "text/plain", "Mengunci Laci 2...");
   digitalWrite(SOLE2_PIN, HIGH);
   open2 = false;
   lcdPrompt("Mengunci Laci 2... ", 2000);
-
-  
 }
 
 void on3() {
+  kedipLed(0.2);
   server.send(200, "text/plain", "Membuka Kunci 3...");
   digitalWrite(SOLE3_PIN, LOW);
   open3 = true;
@@ -174,11 +195,11 @@ void on3() {
 }
 
 void off3() {
+  kedipLed(0.2);
   server.send(200, "text/plain", "Mengunci Laci 3...");
   digitalWrite(SOLE3_PIN, HIGH);
   open3 = false;
   lcdPrompt("Mengunci Laci 3... ", 2000);
-
 }
 
 void lcdPrintAll(String baris1, String baris2, String baris3, String baris4, int jeda) {
@@ -220,29 +241,35 @@ void openURL(String urlLink) {
   }
 }
 
-void lcdStandby(){
+void lcdStandby() {
   lcd.clear();
-  lcd.setCursor(0,0);
+  lcd.setCursor(0, 0);
   lcd.print("Status -- > STANDBY");
 
-  lcd.setCursor(0,1);
-  if(open1){
+  lcd.setCursor(0, 1);
+  if (open1) {
     lcd.print("Laci 1: Terbuka");
-  }else{
+  } else {
     lcd.print("Laci 1: Tertutup");
   }
 
-  lcd.setCursor(0,2);
-  if(open2){
+  lcd.setCursor(0, 2);
+  if (open2) {
     lcd.print("Laci 2: Terbuka");
-  }else{
+  } else {
     lcd.print("Laci 2: Tertutup");
   }
 
-  lcd.setCursor(0,3);
-  if(open3){
+  lcd.setCursor(0, 3);
+  if (open3) {
     lcd.print("Laci 3: Terbuka");
-  }else{
+  } else {
     lcd.print("Laci 3: Tertutup");
   }
+}
+
+void kedipLed(float detik) {
+  digitalWrite(ledPin, HIGH);
+  delay(detik * 1000);
+  digitalWrite(ledPin, LOW);
 }
