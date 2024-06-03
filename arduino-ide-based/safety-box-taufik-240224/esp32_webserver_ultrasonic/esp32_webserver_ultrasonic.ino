@@ -48,6 +48,12 @@ bool open1 = false;
 bool open2 = false;
 bool open3 = false;
 
+long soleOpenTimeOut = 20000;
+
+unsigned long sole1OpenTime = 0;
+unsigned long sole2OpenTime = 0;
+unsigned long sole3OpenTime = 0;
+
 String camIP = "http://192.168.101.133";
 String camURL = camIP + "/ada_gerakan";
 
@@ -88,11 +94,11 @@ void setup() {
 
   lcdPrompt("Connected to :" + String(ssid), 2000);
   // Print ESP32 Local IP Address
-  IPAddress ip = WiFi.localIP();  
+  IPAddress ip = WiFi.localIP();
   Serial.println(ip);
   camIP = String(ip[0]) + "." + String(ip[1]) + "." + String(ip[2]) + ".133";
   camURL = "http://" + camIP + "/ada_gerakan";
-  
+
 
 
 
@@ -133,7 +139,7 @@ void loop() {
       if (adaGerak) {
         kedipLed(0.2);
         Serial.println("Gerakan Terdeteksi");
-        openURL(camURL);                
+        openURL(camURL);
         lcdPrintAll("Gerakan Terdeteksi", "Mengirim Foto ", "      ke Telegram", "", 3000);
       }
     }
@@ -144,6 +150,24 @@ void loop() {
     if (millis() > lastTimeCheckLcd + lcdCheckDelay) {
       lcdStandby();
       lastTimeCheckLcd = millis();
+    }
+
+    if (open1) {
+      if (millis() > sole1OpenTime + soleOpenTimeOut) {
+        off1();
+      }
+    }
+
+    if (open2) {
+      if (millis() > sole2OpenTime + soleOpenTimeOut) {
+        off2();
+      }
+    }
+
+    if (open3) {
+      if (millis() > sole3OpenTime + soleOpenTimeOut) {
+        off3();
+      }
     }
 
     server.handleClient();
@@ -159,6 +183,7 @@ void on1() {
   server.send(200, "text/plain", "Membuka Kunci 1...");
   digitalWrite(SOLE1_PIN, LOW);
   open1 = true;
+  sole1OpenTime = millis();
   lcdPrompt("Membuka Kunci 1... ", 2000);
 }
 
@@ -175,6 +200,7 @@ void on2() {
   server.send(200, "text/plain", "Membuka Kunci 2...");
   digitalWrite(SOLE2_PIN, LOW);
   open2 = true;
+  sole2OpenTime = millis();
   lcdPrompt("Membuka Kunci 2... ", 2000);
 }
 
@@ -191,6 +217,7 @@ void on3() {
   server.send(200, "text/plain", "Membuka Kunci 3...");
   digitalWrite(SOLE3_PIN, LOW);
   open3 = true;
+  sole3OpenTime = millis();
   lcdPrompt("Membuka Kunci 3... ", 2000);
 }
 
@@ -250,21 +277,21 @@ void lcdStandby() {
   if (open1) {
     lcd.print("Laci 1: Terbuka");
   } else {
-    lcd.print("Laci 1: Tertutup");
+    lcd.print("Laci 1: Terkunci");
   }
 
   lcd.setCursor(0, 2);
   if (open2) {
     lcd.print("Laci 2: Terbuka");
   } else {
-    lcd.print("Laci 2: Tertutup");
+    lcd.print("Laci 2: Terkunci");
   }
 
   lcd.setCursor(0, 3);
   if (open3) {
     lcd.print("Laci 3: Terbuka");
   } else {
-    lcd.print("Laci 3: Tertutup");
+    lcd.print("Laci 3: Terkunci");
   }
 }
 
