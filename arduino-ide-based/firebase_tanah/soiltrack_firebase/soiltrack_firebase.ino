@@ -10,6 +10,11 @@
 #include <DallasTemperature.h>
 #include <LiquidCrystal_I2C.h>
 
+#include <NTPClient.h>
+#include <WiFiUdp.h>
+
+
+
 //Provide the token generation process info.
 #include "addons/TokenHelper.h"
 //Provide the RTDB payload printing info and other helper functions.
@@ -18,16 +23,16 @@
 // #define WIFI_SSID "SAUMATA TEKNOSAINS GLOBAL"
 // #define WIFI_PASSWORD "11022022"
 
-// #define API_KEY "AIzaSyDtg593BAXgGTY8h3yNWklaTilrC5_qDAI"
-// #define DATABASE_URL "https://soiltrack-4a415-default-rtdb.firebaseio.com/"
+#define API_KEY "AIzaSyDtg593BAXgGTY8h3yNWklaTilrC5_qDAI"
+#define DATABASE_URL "https://soiltrack-4a415-default-rtdb.firebaseio.com/"
 // #define USER_EMAIL "junitasalonga@gmail.com"
 // #define USER_PASSWORD "soiltrack123"
 
 #define WIFI_SSID "MIKRO"
 #define WIFI_PASSWORD "IDEAlist"
 
-#define API_KEY "AIzaSyDEGNgsHGBT2jeQIi7kCBnYqjCZmoTPEDo"
-#define DATABASE_URL "https://pendeteksi01.firebaseio.com/"
+// #define API_KEY "AIzaSyDEGNgsHGBT2jeQIi7kCBnYqjCZmoTPEDo"
+// #define DATABASE_URL "https://pendeteksi01.firebaseio.com/"
 
 
 #define suhuPin 32
@@ -47,6 +52,22 @@ DallasTemperature sensors(&oneWire);
 FirebaseData fbdo;
 FirebaseAuth auth;
 FirebaseConfig config;
+
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org");
+
+time_t epochTime;
+String weekDay, formattedTime, currentDate, waktu, tStamp;
+int currentYear = 0;
+
+#define GMT_OFFSET 8
+
+//Nama hari
+String weekDays[7] = { "Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu" };
+
+//Nama bulan
+String months[12] = { "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember" };
+
 
 unsigned long sendDataPrevMillis = 0;
 long intervalMillis = 5000;
@@ -89,7 +110,7 @@ void setup() {
   pinMode(dmsPin, OUTPUT);
   digitalWrite(dmsPin, HIGH);
 
-  
+
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("Connecting to:");
@@ -114,9 +135,13 @@ void setup() {
   lcd.print("Connected. IP : ");
   lcd.setCursor(0, 1);
   lcd.print(WiFi.localIP());
+
+  timeClient.begin();
+  timeClient.setTimeOffset(GMT_OFFSET * 3600);
   delay(1000);
 
-  
+
+
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("Initializing");
@@ -223,7 +248,7 @@ void loop() {
     Serial.println("DMS Standby");
     digitalWrite(dmsPin, LOW);
     dmsOn = true;
-    
+
 
     lcd.setCursor(14, 1);
     lcd.print("F");
@@ -231,10 +256,12 @@ void loop() {
 
     Serial.println("SEND TO FIREBASE");
     if (Firebase.ready()) {
-      Serial.printf("Send Status Pompa: %s\n", Firebase.RTDB.setBool(&fbdo, F("/test/pompa"), pompaOn) ? "sent" : fbdo.errorReason().c_str());
-      Serial.printf("Send Kelembaban  : %s\n", Firebase.RTDB.setFloat(&fbdo, F("/test/kelembaban"), soilPercent) ? "sent" : fbdo.errorReason().c_str());
-      Serial.printf("Send pH Tanah    : %s\n", Firebase.RTDB.setFloat(&fbdo, F("/test/phTanah"), phVal) ? "sent" : fbdo.errorReason().c_str());
-      Serial.printf("Send Suhu        : %s\n", Firebase.RTDB.setFloat(&fbdo, F("/test/suhu"), temperatureC) ? "sent" : fbdo.errorReason().c_str());
+      // Serial.printf("Send Status Pompa: %s\n", Firebase.RTDB.setBool(&fbdo, F("/test/pompa"), pompaOn) ? "sent" : fbdo.errorReason().c_str());
+      // Serial.printf("Send Kelembaban  : %s\n", Firebase.RTDB.setFloat(&fbdo, F("/test/kelembaban"), soilPercent) ? "sent" : fbdo.errorReason().c_str());
+      // Serial.printf("Send pH Tanah    : %s\n", Firebase.RTDB.setFloat(&fbdo, F("/test/phTanah"), phVal) ? "sent" : fbdo.errorReason().c_str());
+      // Serial.printf("Send Suhu        : %s\n", Firebase.RTDB.setFloat(&fbdo, F("/test/suhu"), temperatureC) ? "sent" : fbdo.errorReason().c_str());
+      getWaktu();
+      sendRTDB(pompaOn, soilPercent, temperatureC, phVal);
     }
 
     // dmsUpdateTime = currentTime;
@@ -250,3 +277,72 @@ void loop() {
 }
 
 
+void sendRTDB(bool pompa, float lembab, float suhu, float ph) {
+  FirebaseJson json;
+
+  json.set("pompa", pompa);
+  json.set("kelembaban", lembab);
+  json.set("phTanah", ph);
+  json.set("suhu", suhu);
+  json.set("waktu", waktu);
+  json.set("timestamp", tStamp);
+
+  
+  if (Firebase.RTDB.updateNode(&fbdo, "/realtime", &json)) {
+
+    Serial.println(fbdo.dataPath());
+
+    Serial.println(fbdo.pushName());
+
+    Serial.println(fbdo.dataPath() + "/" + fbdo.pushName());
+
+  } else {
+    Serial.println(fbdo.errorReason());
+  }
+
+  if (Firebase.RTDB.pushJSON(&fbdo, "/histori", &json)) {
+
+    Serial.println(fbdo.dataPath());
+
+    Serial.println(fbdo.pushName());
+
+    Serial.println(fbdo.dataPath() + "/" + fbdo.pushName());
+
+  } else {
+    Serial.println(fbdo.errorReason());
+  }
+}
+
+void getWaktu() {
+
+  timeClient.update();
+
+  epochTime = timeClient.getEpochTime();
+
+  tStamp = String(epochTime);
+
+  formattedTime = timeClient.getFormattedTime();
+
+  int currentHour = timeClient.getHours();
+  int currentMinute = timeClient.getMinutes();
+  int currentSecond = timeClient.getSeconds();
+
+  weekDay = weekDays[timeClient.getDay()];
+
+  //Get a time structure
+  struct tm *ptm = gmtime((time_t *)&epochTime);
+
+  int monthDay = ptm->tm_mday;
+  int currentMonth = ptm->tm_mon + 1;
+  String currentMonthName = months[currentMonth - 1];
+
+  currentYear = ptm->tm_year + 1900;
+
+  //Print complete date:
+  currentDate = String(monthDay) + "-" + String(currentMonth) + "-" + String(currentYear);
+
+  waktu = weekDay + ", " + currentDate + " " + formattedTime + " WITA";
+
+  Serial.print("->GetWaktu: ");
+  Serial.println(waktu);
+}
