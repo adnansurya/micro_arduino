@@ -81,6 +81,7 @@ float batasLembab = 50.0;
 int phAdc;
 float phVal = 0.0;
 float phLast = 0.0;
+float toleransi = 7;
 
 float temperatureC = 0.0;
 float soilPercent = 0.0;
@@ -96,6 +97,7 @@ unsigned long dmsUpdateInterval = 3000;
 
 bool dmsOn = true;
 bool phDisplay = false;
+bool dmsStart = false;
 
 void setup() {
   Serial.begin(115200);
@@ -210,7 +212,12 @@ void loop() {
     } else {
       lcd.setCursor(0, 0);
       lcd.print("PH: ");
-      lcd.print(phVal);
+      if(dmsStart){
+        lcd.print(phLast);
+      }else{
+        lcd.print("<Not Ready>");
+      }
+      
       phDisplay = false;
     }
 
@@ -228,7 +235,10 @@ void loop() {
     phAdc = analogRead(phPin);
     phVal = (-0.0139 * phAdc) + 7.7851;
     if (phVal != phLast) {
-      phLast = phVal;
+      phLast = anomaliChecker(phLast, phVal);
+      if(dmsStart == false){
+        dmsStart = true;    
+      }
     }
 
     Serial.print("PH (Adc) : ");
@@ -261,7 +271,7 @@ void loop() {
       // Serial.printf("Send pH Tanah    : %s\n", Firebase.RTDB.setFloat(&fbdo, F("/test/phTanah"), phVal) ? "sent" : fbdo.errorReason().c_str());
       // Serial.printf("Send Suhu        : %s\n", Firebase.RTDB.setFloat(&fbdo, F("/test/suhu"), temperatureC) ? "sent" : fbdo.errorReason().c_str());
       getWaktu();
-      sendRTDB(pompaOn, soilPercent, temperatureC, phVal);
+      sendRTDB(pompaOn, soilPercent, temperatureC, phLast);
     }
 
     // dmsUpdateTime = currentTime;
@@ -345,4 +355,14 @@ void getWaktu() {
 
   Serial.print("->GetWaktu: ");
   Serial.println(waktu);
+}
+
+float anomaliChecker(float before, float after){
+  float nilaiPh;
+  if(after > 14 || after < 0){
+    nilaiPh = before;
+  }else{
+    nilaiPh = after;
+  }
+  return nilaiPh; 
 }
