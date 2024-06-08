@@ -73,8 +73,8 @@ long intervalMillis = 5000;
 bool signupOK = false;
 
 float maxAdc = 4095.0;
-int adcKering = 990;
-int adcBasah = 2595;
+int adcKering = 0;
+int adcBasah = 0;
 bool pompaOn = false;
 bool lastPompa = pompaOn;
 
@@ -107,6 +107,7 @@ void setup() {
 
   lcd.init();  // initialize the lcd
   lcd.backlight();
+  
 
   pinMode(relayPin, OUTPUT);
   digitalWrite(relayPin, HIGH);
@@ -176,13 +177,16 @@ void setup() {
   Firebase.setDoubleDigits(5);
   config.timeout.serverResponse = 10 * 1000;
 
-  Serial.printf("Get bool ref... %s\n", Firebase.RTDB.getBool(&fbdo, F("/kalibrasi"), &modeKalibrasi) ? modeKalibrasi ? "true" : "false" : fbdo.errorReason().c_str());
+  Serial.printf("Get kalibrasi... %s\n", Firebase.RTDB.getBool(&fbdo, F("/config/kalibrasi"), &modeKalibrasi) ? modeKalibrasi ? "true" : "false" : fbdo.errorReason().c_str());
   if (modeKalibrasi) {
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("Mode Kalibrasi");
     delay(2000);
   }
+
+  Serial.printf("Get adcBasah... %s\n", Firebase.RTDB.getInt(&fbdo, F("/config/adcBasah"), &adcBasah) ? String(adcBasah).c_str() : fbdo.errorReason().c_str());
+  Serial.printf("Get adcKering... %s\n", Firebase.RTDB.getInt(&fbdo, F("/config/adcKering"), &adcKering) ? String(adcKering).c_str() : fbdo.errorReason().c_str());
 }
 
 void loop() {
@@ -231,6 +235,7 @@ void loop() {
         lcd.print("M: ");
         lcd.print(soilPercent);
         lcd.print(" %");
+        
         phDisplay = true;
       } else {
         lcd.setCursor(0, 0);
@@ -241,6 +246,14 @@ void loop() {
           lcd.print("<Not Ready>");
         }
 
+        if (pompaOn == false) {
+          lcd.setCursor(0, 1);
+          lcd.print("Pompa OFF");
+        } else {
+          lcd.setCursor(0, 1);
+          lcd.print("Pompa ON");
+        }
+
         phDisplay = false;
       }
     }
@@ -248,20 +261,18 @@ void loop() {
 
     if (soilPercent > batasLembab) {
       digitalWrite(relayPin, HIGH);
-      lcd.setCursor(11, 1);
-      lcd.print("p:OFF");      
+
       pompaOn = false;
 
     } else {
       if (!modeKalibrasi) {
         digitalWrite(relayPin, LOW);
       }
-      lcd.setCursor(11, 1);
-      lcd.print(" p:ON"); 
+
       pompaOn = true;
     }
     if (pompaOn != lastPompa) {
-      delay(100);
+      delay(3000);
     }
     lastPompa = pompaOn;
     lcdUpdateTime = currentTime;
