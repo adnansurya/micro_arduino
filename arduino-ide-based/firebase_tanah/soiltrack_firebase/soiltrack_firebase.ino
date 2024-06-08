@@ -60,7 +60,7 @@ int currentYear = 0;
 #define GMT_OFFSET 8
 
 
-bool modeKalibrasi = false;
+bool modeKalibrasi = true;
 //Nama hari
 String weekDays[7] = { "Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu" };
 
@@ -73,7 +73,10 @@ long intervalMillis = 5000;
 bool signupOK = false;
 
 float maxAdc = 4095.0;
+int adcKering = 990;
+int adcBasah = 2595;
 bool pompaOn = false;
+bool lastPompa = pompaOn;
 
 float batasLembab = 50.0;
 
@@ -172,6 +175,14 @@ void setup() {
   Firebase.begin(&config, &auth);
   Firebase.setDoubleDigits(5);
   config.timeout.serverResponse = 10 * 1000;
+
+  Serial.printf("Get bool ref... %s\n", Firebase.RTDB.getBool(&fbdo, F("/kalibrasi"), &modeKalibrasi) ? modeKalibrasi ? "true" : "false" : fbdo.errorReason().c_str());
+  if (modeKalibrasi) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Mode Kalibrasi");
+    delay(2000);
+  }
 }
 
 void loop() {
@@ -186,7 +197,11 @@ void loop() {
 
     int soilAdc = maxAdc - analogRead(soilPin);  // read the analog value from sensor
     float soilVoltage = (float)soilAdc / maxAdc * 3.3;
-    soilPercent = (float)soilAdc / maxAdc * 100;
+
+    // soilPercent = (float)soilAdc / maxAdc * 100;
+    int soilInteger = map(soilAdc, adcKering, adcBasah, 0, 10000);
+    float soilPercent = (float)soilInteger / 100.0;
+
 
     Serial.print("Moisture (Adc): ");
     Serial.print(soilAdc);
@@ -194,54 +209,78 @@ void loop() {
     Serial.print(soilPercent);
     Serial.println(" %");
 
+
     // delay(500);
     lcd.clear();
-    if (phDisplay == false) {
-      lcd.setCursor(0, 0);
-      lcd.print("T: ");
-      lcd.print(temperatureC);
-      lcd.print(" ");
-      lcd.print((char)223);
-      lcd.print("C");
+    if (modeKalibrasi == true) {
       lcd.setCursor(0, 1);
-      lcd.print("M: ");
-      lcd.print(soilPercent);
-      lcd.print(" %");
-      phDisplay = true;
-    } else {
+      lcd.print("PH_ADC: ");
+      lcd.print(phAdc);
       lcd.setCursor(0, 0);
-      lcd.print("PH: ");
-      if (dmsStart) {
-        lcd.print(phLast);
+      lcd.print("M_ADC: ");
+      lcd.print(soilAdc);
+    } else {
+      if (phDisplay == false) {
+        lcd.setCursor(0, 0);
+        lcd.print("T: ");
+        lcd.print(temperatureC);
+        lcd.print(" ");
+        lcd.print((char)223);
+        lcd.print("C");
+        lcd.setCursor(0, 1);
+        lcd.print("M: ");
+        lcd.print(soilPercent);
+        lcd.print(" %");
+        phDisplay = true;
       } else {
-        lcd.print("<Not Ready>");
-      }
+        lcd.setCursor(0, 0);
+        lcd.print("PH: ");
+        if (dmsStart && dmsStart) {
+          lcd.print(phLast);
+        } else {
+          lcd.print("<Not Ready>");
+        }
 
-      phDisplay = false;
+        phDisplay = false;
+      }
     }
+
 
     if (soilPercent > batasLembab) {
       digitalWrite(relayPin, HIGH);
+      lcd.setCursor(11, 1);
+      lcd.print("p:OFF");      
       pompaOn = false;
+
     } else {
-      digitalWrite(relayPin, LOW);
+      if (!modeKalibrasi) {
+        digitalWrite(relayPin, LOW);
+      }
+      lcd.setCursor(11, 1);
+      lcd.print(" p:ON"); 
       pompaOn = true;
     }
+    if (pompaOn != lastPompa) {
+      delay(100);
+    }
+    lastPompa = pompaOn;
     lcdUpdateTime = currentTime;
   }
 
   if ((currentTime - phUpdateTime >= phUpdateInterval) && dmsOn == true) {
     phAdc = analogRead(phPin);
-    if (modeKalibrasi == true) {
-      lcd.setCursor(0, 1);
-      lcd.print("PH_ADC: ");
-      lcd.print(phAdc);
+
+    // phVal = (0.012654 * phAdc) + 1.02836;
+    //  phVal = (-0.0139 * phAdc) + 7.7851;
+    if (phAdc == 0) {
+      phVal = 7.0;
+    } else {
+      phVal = (0.013362 * phAdc) + 0.834948;
     }
 
-    phVal = (-0.0139 * phAdc) + 7.7851;
     if (phVal != phLast) {
       phLast = anomaliChecker(phLast, phVal);
-      if (dmsStart == false) {
+      if (dmsStart == false && phVal > 0.0) {
         dmsStart = true;
       }
     }
@@ -265,7 +304,7 @@ void loop() {
     dmsOn = true;
 
 
-    lcd.setCursor(14, 1);
+    lcd.setCursor(14, 0);
     lcd.print("F");
     lcd.print((char)126);
 
