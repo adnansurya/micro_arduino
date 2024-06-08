@@ -31,9 +31,6 @@
 #define WIFI_SSID "MIKRO"
 #define WIFI_PASSWORD "IDEAlist"
 
-// #define API_KEY "AIzaSyDEGNgsHGBT2jeQIi7kCBnYqjCZmoTPEDo"
-// #define DATABASE_URL "https://pendeteksi01.firebaseio.com/"
-
 
 #define suhuPin 32
 #define relayPin 17  //VP Pin = 36
@@ -62,6 +59,8 @@ int currentYear = 0;
 
 #define GMT_OFFSET 8
 
+
+bool modeKalibrasi = false;
 //Nama hari
 String weekDays[7] = { "Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu" };
 
@@ -212,12 +211,12 @@ void loop() {
     } else {
       lcd.setCursor(0, 0);
       lcd.print("PH: ");
-      if(dmsStart){
+      if (dmsStart) {
         lcd.print(phLast);
-      }else{
+      } else {
         lcd.print("<Not Ready>");
       }
-      
+
       phDisplay = false;
     }
 
@@ -233,11 +232,17 @@ void loop() {
 
   if ((currentTime - phUpdateTime >= phUpdateInterval) && dmsOn == true) {
     phAdc = analogRead(phPin);
+    if (modeKalibrasi == true) {
+      lcd.setCursor(0, 1);
+      lcd.print("PH_ADC: ");
+      lcd.print(phAdc);
+    }
+
     phVal = (-0.0139 * phAdc) + 7.7851;
     if (phVal != phLast) {
       phLast = anomaliChecker(phLast, phVal);
-      if(dmsStart == false){
-        dmsStart = true;    
+      if (dmsStart == false) {
+        dmsStart = true;
       }
     }
 
@@ -297,7 +302,7 @@ void sendRTDB(bool pompa, float lembab, float suhu, float ph) {
   json.set("waktu", waktu);
   json.set("timestamp", tStamp);
 
-  
+
   if (Firebase.RTDB.updateNode(&fbdo, "/realtime", &json)) {
 
     Serial.println(fbdo.dataPath());
@@ -357,12 +362,12 @@ void getWaktu() {
   Serial.println(waktu);
 }
 
-float anomaliChecker(float before, float after){
+float anomaliChecker(float before, float after) {
   float nilaiPh;
-  if(after > 14 || after < 0){
+  if (after > 14 || after < 0) {
     nilaiPh = before;
-  }else{
+  } else {
     nilaiPh = after;
   }
-  return nilaiPh; 
+  return nilaiPh;
 }
