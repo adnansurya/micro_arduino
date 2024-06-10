@@ -23,23 +23,15 @@ void setup() {
 
 void loop() {
 
-  adaGerak = digitalRead(pirPin);
-  Serial.print("SENSOR : ");
-  Serial.println(adaGerak);
-
-  if(lastGerak != adaGerak){
-    if(adaGerak == 1){
-      Serial.println("GERAKAN TERDETEKSI !");
-      delay(2000);
-    }else{
-      delay(500);
-    }
-    
+  for(int u = 0; u < 10; u++){
+     beriMakan();
   }
-  lastGerak = adaGerak;
-  delay(200);
+  myservo.write(servoPin, 90); 
+  delay(5000);
+    
 
-  // beriMakan();
+ 
+  
 }
 
 void beriMakan() {
