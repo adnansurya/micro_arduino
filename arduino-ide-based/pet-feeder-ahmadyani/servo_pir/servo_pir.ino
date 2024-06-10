@@ -18,6 +18,9 @@ void setup() {
   digitalWrite(ledIndikatorPin, LOW);
 
   pinMode(pirPin, INPUT);
+
+  myservo.write(servoPin, 90);
+  delay(2000);
 }
 
 void loop() {
@@ -29,27 +32,32 @@ void loop() {
   if (lastGerak != adaGerak) {
     if (adaGerak == 1) {
       Serial.println("GERAKAN TERDETEKSI !");
-      beriMakan(10);
-      // delay(2000);
+      digitalWrite(ledIndikatorPin, HIGH);
+      for (int u = 0; u < 20; u++) {
+        beriMakan();
+      }
+      myservo.write(servoPin, 90);
+      delay(2000);
+      digitalWrite(ledIndikatorPin, LOW);
+      
     } else {
       delay(500);
     }
   }
   lastGerak = adaGerak;
-  delay(200);
+  delay(1000);
 
   // beriMakan();
 }
 
-void beriMakan(int ulang) {
-  for (int u = 0; u < ulang; u++) {
-    for (int pos = 0; pos <= 180; pos++) {  // go from 0-180 degrees
-      myservo.write(servoPin, pos);         // set the servo position (degrees)
-      delay(1);
-    }
-    for (int pos = 180; pos >= 0; pos--) {  // go from 180-0 degrees
-      myservo.write(servoPin, pos);         // set the servo position (degrees)
-      delay(1);
-    }
+void beriMakan() {
+
+  for (int pos = 0; pos <= 180; pos++) {  // go from 0-180 degrees
+    myservo.write(servoPin, pos);         // set the servo position (degrees)
+    delay(1);
+  }
+  for (int pos = 180; pos >= 0; pos--) {  // go from 180-0 degrees
+    myservo.write(servoPin, pos);         // set the servo position (degrees)
+    delay(1);
   }
 }
