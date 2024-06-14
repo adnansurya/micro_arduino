@@ -14,16 +14,17 @@
 
 WebServer server(80);
 
-const char* ssid = "MIKRO";
-const char* password = "IDEAlist";
+
+const char* ssid = "TAD";
+const char* password = "TAD20000";
 
 // Initialize Telegram BOT
-String BOTtoken = "1115765927:AAFWPVbEpYJY8I9yBAEvFUifkLPQzlE8pxQ";  // your Bot Token (Get from Botfather)
+String BOTtoken = "908284467:AAGgjXqY56NORtl6Toj4u1WwEP_KJR95ImA";  // your Bot Token (Get from Botfather)
 
 // Use @myidbot to find out the chat ID of an individual or a group
 // Also note that you need to click "start" on a bot before it can
 // message you
-String CHAT_ID = "108488036";
+String CHAT_ID = "998815337";
 
 bool sendPhoto = false;
 
@@ -56,7 +57,8 @@ unsigned long lastTimeBotRan;
 #define HREF_GPIO_NUM 23
 #define PCLK_GPIO_NUM 22
 
-String pirIP = "http://192.168.101.233";
+String pirIPEnd = "233";
+String pirIP = "";
 String pirURL = "";
 
 void setup() {
@@ -85,7 +87,7 @@ void setup() {
   Serial.print("ESP32-CAM IP Address: ");
   IPAddress ip = WiFi.localIP();
   Serial.println(ip);
-  pirIP = String(ip[0]) + "." +  String(ip[1]) + "." +  String(ip[2]) + ".233";
+  pirIP = String(ip[0]) + "." +  String(ip[1]) + "." +  String(ip[2]) + "." + pirIPEnd;
   pirURL = "http://" + pirIP;
 
   Serial.print("Retrieving time: ");

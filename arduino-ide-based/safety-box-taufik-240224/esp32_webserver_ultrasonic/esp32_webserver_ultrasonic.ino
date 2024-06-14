@@ -14,8 +14,8 @@
 
 WebServer server(80);
 
-#define BOT_TOKEN "1115765927:AAFgDI003Xn41tererJRuoU543tBsg8CBpE"
-#define CHAT_ID "108488036"
+#define BOT_TOKEN "908284467:AAGgjXqY56NORtl6Toj4u1WwEP_KJR95ImA"
+#define CHAT_ID "998815337"
 
 #define TRIGGER_PIN 19    // Arduino pin tied to trigger pin on the ultrasonic sensor.
 #define ECHO_PIN 18       // Arduino pin tied to echo pin on the ultrasonic sensor.
@@ -29,8 +29,8 @@ WebServer server(80);
 #define ledPin 2
 
 
-char ssid[] = "MIKRO";
-char pass[] = "IDEAlist";
+char ssid[] = "TAD";
+char pass[] = "TAD20000";
 
 NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE);  // NewPing setup of pins and maximum distance.
 LiquidCrystal_I2C lcd(0x27, 20, 4);
@@ -55,6 +55,7 @@ unsigned long sole2OpenTime = 0;
 unsigned long sole3OpenTime = 0;
 
 String camIP = "http://192.168.101.133";
+String camIPEnd = "133";
 String camURL = camIP + "/ada_gerakan";
 
 int jarak;
@@ -96,7 +97,7 @@ void setup() {
   // Print ESP32 Local IP Address
   IPAddress ip = WiFi.localIP();
   Serial.println(ip);
-  camIP = String(ip[0]) + "." + String(ip[1]) + "." + String(ip[2]) + ".133";
+  camIP = String(ip[0]) + "." + String(ip[1]) + "." + String(ip[2]) + "." + camIPEnd;
   camURL = "http://" + camIP + "/ada_gerakan";
 
 
