@@ -9,6 +9,7 @@
 BluetoothSerial SerialBT;
 
 DFRobotDFPlayerMini mp3;
+int perintahInt;
 
 void setup() {
 
@@ -52,7 +53,7 @@ void loop() {
   if (SerialBT.available() > 0) {
     String perintah = SerialBT.readStringUntil('\n');
     perintah.trim();
-    int perintahInt = perintah.toInt();
+    perintahInt = perintah.toInt();
 
     if (perintahInt > 0) {
       mp3.play(perintahInt);
@@ -71,6 +72,9 @@ void loop() {
       } else if (perintah == "play") {
         mp3.start();
         SerialBT.println("Pemutar Dimainkan");
+      } else if (perintah == "loop") {
+        mp3.loop(perintahInt);
+        SerialBT.println("Pemutar DiLoop");
       } else if (perintah == "+") {
         mp3.volumeUp();
         SerialBT.print("Volume Naik ke : ");
