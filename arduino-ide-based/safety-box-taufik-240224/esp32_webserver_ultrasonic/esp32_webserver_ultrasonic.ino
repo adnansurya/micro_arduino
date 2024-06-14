@@ -22,8 +22,8 @@ WebServer server(80);
 #define MAX_DISTANCE 200  // Maximum distance we want to ping for (in centimeters). Maximum sensor distance is rated at 400-500cm.
 
 #define SOLE1_PIN 5
-#define SOLE2_PIN 4
-#define SOLE3_PIN 17
+#define SOLE2_PIN 17
+#define SOLE3_PIN 4
 #define SOLE4_PIN 16
 
 #define ledPin 2
@@ -38,7 +38,7 @@ LiquidCrystal_I2C lcd(0x27, 20, 4);
 int sensorCheckDelay = 100;
 unsigned long lastTimeCheckSensor;
 
-int lcdCheckDelay = 1000;
+int lcdCheckDelay = 200;
 unsigned long lastTimeCheckLcd;
 
 int adaGerak = 0;
@@ -58,7 +58,7 @@ String camIP = "http://192.168.101.133";
 String camURL = camIP + "/ada_gerakan";
 
 int jarak;
-const int batasJarak = 30;
+const int batasJarak = 50;
 
 
 void setup() {
@@ -140,7 +140,7 @@ void loop() {
         kedipLed(0.2);
         Serial.println("Gerakan Terdeteksi");
         openURL(camURL);
-        lcdPrintAll("Gerakan Terdeteksi", "Mengirim Foto ", "      ke Telegram", "", 3000);
+        lcdPrintAll("Gerakan Terdeteksi", "Mengirim Foto ", "      ke Telegram", "", 2000);
       }
     }
     lastGerak = adaGerak;
@@ -271,7 +271,7 @@ void openURL(String urlLink) {
 void lcdStandby() {
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("Status -- > STANDBY");
+  lcd.print("STATUS");
 
   lcd.setCursor(0, 1);
   if (open1) {
