@@ -19,16 +19,11 @@
 //Provide the RTDB payload printing info and other helper functions.
 #include "addons/RTDBHelper.h"
 
-// #define WIFI_SSID "SAUMATA TEKNOSAINS GLOBAL"
-// #define WIFI_PASSWORD "11022022"
+#define WIFI_SSID "SAUMATA TEKNOSAINS GLOBAL"
+#define WIFI_PASSWORD "11022022"
 
 #define API_KEY "AIzaSyDtg593BAXgGTY8h3yNWklaTilrC5_qDAI"
 #define DATABASE_URL "https://soiltrack-4a415-default-rtdb.firebaseio.com/"
-// #define USER_EMAIL "junitasalonga@gmail.com"
-// #define USER_PASSWORD "soiltrack123"
-
-#define WIFI_SSID "MIKRO"
-#define WIFI_PASSWORD "IDEAlist"
 
 
 #define suhuPin 32
