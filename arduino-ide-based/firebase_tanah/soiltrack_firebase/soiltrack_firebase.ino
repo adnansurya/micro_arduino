@@ -14,7 +14,6 @@
 #include <WiFiUdp.h>
 
 
-
 //Provide the token generation process info.
 #include "addons/TokenHelper.h"
 //Provide the RTDB payload printing info and other helper functions.
@@ -158,9 +157,6 @@ void setup() {
   config.api_key = API_KEY;
   config.database_url = DATABASE_URL;
   config.token_status_callback = tokenStatusCallback;
-
-  // auth.user.email = USER_EMAIL;
-  // auth.user.password = USER_PASSWORD;
 
   if (Firebase.signUp(&config, &auth, "", "")) {
     Serial.println("ok");
@@ -321,10 +317,7 @@ void loop() {
 
     Serial.println("SEND TO FIREBASE");
     if (Firebase.ready()) {
-      // Serial.printf("Send Status Pompa: %s\n", Firebase.RTDB.setBool(&fbdo, F("/test/pompa"), pompaOn) ? "sent" : fbdo.errorReason().c_str());
-      // Serial.printf("Send Kelembaban  : %s\n", Firebase.RTDB.setFloat(&fbdo, F("/test/kelembaban"), soilPercent) ? "sent" : fbdo.errorReason().c_str());
-      // Serial.printf("Send pH Tanah    : %s\n", Firebase.RTDB.setFloat(&fbdo, F("/test/phTanah"), phVal) ? "sent" : fbdo.errorReason().c_str());
-      // Serial.printf("Send Suhu        : %s\n", Firebase.RTDB.setFloat(&fbdo, F("/test/suhu"), temperatureC) ? "sent" : fbdo.errorReason().c_str());
+
       getWaktu();
       sendRTDB(pompaOn, soilPercent, temperatureC, phLast);
     }
@@ -333,12 +326,6 @@ void loop() {
     phUpdateTime = currentTime;
   }
 
-
-
-  // if (Firebase.ready() && (millis() - sendDataPrevMillis > intervalMillis || sendDataPrevMillis == 0)) {
-  //   sendDataPrevMillis = millis();
-
-  // }
 }
 
 
