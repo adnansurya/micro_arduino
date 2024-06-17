@@ -1,6 +1,8 @@
 #include <NewPing.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_ADXL345_U.h>
 #ifdef ESP32
 #include <WiFi.h>
 #else
@@ -27,7 +29,14 @@ WebServer server(80);
 #define SOLE4_PIN 16
 
 #define ledPin 2
+#define buzzerPin 13
 
+Adafruit_ADXL345_Unified accel = Adafruit_ADXL345_Unified(12345);
+
+float xNow, yNow, zNow, xLast, yLast, zLast;
+float batasXYZ = 7.0;
+bool adaGoncangan = false;
+bool nilaiAwal = true;
 
 char ssid[] = "TAD";
 char pass[] = "TAD20000";
@@ -70,6 +79,9 @@ void setup() {
   pinMode(ledPin, OUTPUT);
   digitalWrite(ledPin, LOW);
 
+  pinMode(buzzerPin, OUTPUT);
+  digitalWrite(buzzerPin, LOW);
+
   Serial.begin(115200);
   Serial.print("Connecting to WiFi");
   lcdPrompt("Connecting to Wifi ", 0);
@@ -83,6 +95,15 @@ void setup() {
   digitalWrite(SOLE2_PIN, HIGH);
   digitalWrite(SOLE3_PIN, HIGH);
   digitalWrite(SOLE4_PIN, HIGH);
+
+  if (!accel.begin()) {
+    /* There was a problem detecting the ADXL345 ... check your connections */
+    Serial.println("Ooops, no ADXL345 detected ... Check your wiring!");
+    lcdPrompt("ADXL345 Error ", 1000);
+    while (1)
+      ;
+  }
+  accel.setRange(ADXL345_RANGE_16_G);
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, pass);
@@ -101,9 +122,6 @@ void setup() {
   camURL = "http://" + camIP + "/ada_gerakan";
 
 
-
-
-
   if (MDNS.begin("esp32")) {
     Serial.println("MDNS responder started");
   }
@@ -114,6 +132,7 @@ void setup() {
   server.on("/off2", off2);
   server.on("/on3", on3);
   server.on("/off3", off3);
+  server.on("/silent", silent);
   server.begin();
   lcdPrintAll("IP Address : ", ip.toString(), "CAM IP:", camIP, 5000);
   kedipLed(2);
@@ -125,6 +144,35 @@ void loop() {
 
 
   if (millis() > lastTimeCheckSensor + sensorCheckDelay) {
+
+    sensors_event_t event;
+    accel.getEvent(&event);
+    xNow = abs(event.acceleration.x);
+    yNow = abs(event.acceleration.y);
+    zNow = abs(event.acceleration.z);
+
+    float selisihX = abs(xLast - xNow);
+    float selisihY = abs(yLast - yNow);
+    float selisihZ = abs(zLast - zNow);
+
+    Serial.print("X: ");
+    Serial.print(selisihX);
+    Serial.print("  ");
+    Serial.print("Y: ");
+    Serial.print(selisihY);
+    Serial.print("  ");
+    Serial.print("Z: ");
+    Serial.print(selisihZ);
+    Serial.print("  ");
+    Serial.println("m/s^2 ");
+
+    if (selisihX > batasXYZ || selisihY > batasXYZ || selisihZ > batasXYZ) {
+      if (!nilaiAwal) {
+        lcdPrompt("ADA GONCANGAN!", 2000);
+        adaGoncangan = true;
+      }
+    }
+
 
     jarak = sonar.ping_cm();  // Wait 50ms between pings (about 20 pings/sec). 29ms should be the shortest delay between pings.
     Serial.print("Ping: ");
@@ -144,6 +192,15 @@ void loop() {
         lcdPrintAll("Gerakan Terdeteksi", "Mengirim Foto ", "      ke Telegram", "", 2000);
       }
     }
+
+    if (adaGoncangan) {
+      alarmBunyi();
+    }
+
+    xLast = xNow;
+    yLast = yNow;
+    zLast = zNow;
+    nilaiAwal = false;
     lastGerak = adaGerak;
     lastTimeCheckSensor = millis();
   } else {
@@ -230,6 +287,13 @@ void off3() {
   lcdPrompt("Mengunci Laci 3... ", 2000);
 }
 
+void silent() {
+  kedipLed(0.2);
+  server.send(200, "text/plain", "Mematikan Alarm");
+  adaGoncangan = false;
+  lcdPrompt("Mematikan Alarm ", 2000);
+}
+
 void lcdPrintAll(String baris1, String baris2, String baris3, String baris4, int jeda) {
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -300,4 +364,13 @@ void kedipLed(float detik) {
   digitalWrite(ledPin, HIGH);
   delay(detik * 1000);
   digitalWrite(ledPin, LOW);
+}
+
+void alarmBunyi() {
+  for (int i = 0; i < 5; i++) {
+    digitalWrite(buzzerPin, HIGH);
+    delay(200);
+    digitalWrite(buzzerPin, LOW);
+    delay(200);
+  }
 }
