@@ -57,7 +57,7 @@ unsigned long lastTimeBotRan;
 #define HREF_GPIO_NUM 23
 #define PCLK_GPIO_NUM 22
 
-String pirIPEnd = "233";
+String pirIPEnd = "29";
 String pirIP = "";
 String pirURL = "";
 
@@ -87,14 +87,13 @@ void setup() {
   Serial.print("ESP32-CAM IP Address: ");
   IPAddress ip = WiFi.localIP();
   Serial.println(ip);
-  pirIP = String(ip[0]) + "." +  String(ip[1]) + "." +  String(ip[2]) + "." + pirIPEnd;
+  pirIP = String(ip[0]) + "." + String(ip[1]) + "." + String(ip[2]) + "." + pirIPEnd;
   pirURL = "http://" + pirIP;
 
   Serial.print("Retrieving time: ");
-  configTime(0, 0, "pool.ntp.org"); // get UTC time via NTP
+  configTime(0, 0, "pool.ntp.org");  // get UTC time via NTP
   time_t now = time(nullptr);
-  while (now < 24 * 3600)
-  {
+  while (now < 24 * 3600) {
     Serial.print(".");
     delay(100);
     now = time(nullptr);
@@ -106,6 +105,7 @@ void setup() {
   }
   server.on("/", handleRoot);
   server.on("/ada_gerakan", adaGerakan);
+  server.on("/ada_goncangan", adaGoncangan);
   server.begin();
 
   String ipNotif = "IP Cam Server : " + WiFi.localIP().toString();
@@ -134,7 +134,7 @@ void loop() {
       numNewMessages = bot.getUpdates(bot.last_message_received + 1);
     }
     lastTimeBotRan = millis();
-    
+
 
   } else {
     server.handleClient();
@@ -144,10 +144,18 @@ void loop() {
 void adaGerakan() {
   sendPhoto = true;
   server.send(200, "text/plain", "Ada Gerakan, Mengambil Foto...");
+    bot.sendMessage(CHAT_ID, "ADA GERAKAN", "");
+}
+
+void adaGoncangan() {
+  sendPhoto = true;
+  server.send(200, "text/plain", "Ada Goncangan, Mengambil Foto...");
+  bot.sendMessage(CHAT_ID, "ADA GONCANGAN!!!", "");
 }
 
 void handleRoot() {
-  server.send(200, "text/plain", "hello from esp32!");
+  server.send(200, "text/plain", "Halo! (ESP32 CAM)");
+
 }
 
 
@@ -252,33 +260,38 @@ void handleNewMessages(int numNewMessages) {
       Serial.println("New photo request");
     }
 
-    if (text == "/on1") {
+    if (text == "/buka1") {
       Serial.println("Buka Kunci 1");
       openURL(pirURL + "/on1");
     }
 
-    if (text == "/off1") {
+    if (text == "/kunci1") {
       Serial.println("Kunci Laci 1");
       openURL(pirURL + "/off1");
     }
 
-    if (text == "/on2") {
+    if (text == "/buka2") {
       Serial.println("Buka Kunci 2");
       openURL(pirURL + "/on2");
     }
 
-    if (text == "/off2") {
+    if (text == "/kunci2") {
       Serial.println("Kunci Laci 2");
-      openURL(pirURL+ "/off2");
+      openURL(pirURL + "/off2");
     }
-    if (text == "/on3") {
+    if (text == "/buka3") {
       Serial.println("Buka Kunci 3");
       openURL(pirURL + "/on3");
     }
 
-    if (text == "/off3") {
+    if (text == "/kunci3") {
       Serial.println("Kunci Laci 3");
       openURL(pirURL + "/off3");
+    }
+
+    if (text == "/silent") {
+      Serial.println("Silent");
+      openURL(pirURL + "/silent");
     }
   }
 }

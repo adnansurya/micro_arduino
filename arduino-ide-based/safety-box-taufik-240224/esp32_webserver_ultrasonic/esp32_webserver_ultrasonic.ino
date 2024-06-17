@@ -41,6 +41,11 @@ bool nilaiAwal = true;
 char ssid[] = "TAD";
 char pass[] = "TAD20000";
 
+String camIP = "http://192.168.101.133";
+String camIPEnd = "31";
+String camURL;
+String alarmURL;
+
 NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE);  // NewPing setup of pins and maximum distance.
 LiquidCrystal_I2C lcd(0x27, 20, 4);
 
@@ -49,6 +54,10 @@ unsigned long lastTimeCheckSensor;
 
 int lcdCheckDelay = 200;
 unsigned long lastTimeCheckLcd;
+
+int notifSendDelay = 10000;
+unsigned long lastTimeSendNotif;
+
 
 int adaGerak = 0;
 int lastGerak = 0;
@@ -62,10 +71,6 @@ long soleOpenTimeOut = 20000;
 unsigned long sole1OpenTime = 0;
 unsigned long sole2OpenTime = 0;
 unsigned long sole3OpenTime = 0;
-
-String camIP = "http://192.168.101.133";
-String camIPEnd = "133";
-String camURL = camIP + "/ada_gerakan";
 
 int jarak;
 const int batasJarak = 50;
@@ -120,6 +125,7 @@ void setup() {
   Serial.println(ip);
   camIP = String(ip[0]) + "." + String(ip[1]) + "." + String(ip[2]) + "." + camIPEnd;
   camURL = "http://" + camIP + "/ada_gerakan";
+  alarmURL = "http://" + camIP + "/ada_goncangan";
 
 
   if (MDNS.begin("esp32")) {
@@ -140,7 +146,6 @@ void setup() {
 }
 
 void loop() {
-
 
 
   if (millis() > lastTimeCheckSensor + sensorCheckDelay) {
@@ -168,7 +173,6 @@ void loop() {
 
     if (selisihX > batasXYZ || selisihY > batasXYZ || selisihZ > batasXYZ) {
       if (!nilaiAwal) {
-        lcdPrompt("ADA GONCANGAN!", 2000);
         adaGoncangan = true;
       }
     }
@@ -195,6 +199,10 @@ void loop() {
 
     if (adaGoncangan) {
       alarmBunyi();
+      if (millis() > lastTimeSendNotif + notifSendDelay) {
+        openURL(alarmURL);
+        lastTimeSendNotif = millis();
+      }
     }
 
     xLast = xNow;
@@ -233,7 +241,7 @@ void loop() {
 }
 
 void handleRoot() {
-  server.send(200, "text/plain", "hello from esp32!");
+  server.send(200, "text/plain", "HALO! (ESP32 + ULTRASONIC + SOLENOID)");
 }
 
 void on1() {
@@ -336,7 +344,13 @@ void openURL(String urlLink) {
 void lcdStandby() {
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("STATUS");
+
+  if (adaGoncangan) {
+    lcd.print("ADA GONCANGAN!!!");
+  } else {
+    lcd.print("STATUS");
+  }
+
 
   lcd.setCursor(0, 1);
   if (open1) {
