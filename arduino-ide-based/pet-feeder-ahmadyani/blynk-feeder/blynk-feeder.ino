@@ -9,7 +9,7 @@
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <BlynkSimpleEsp32.h>
-
+#include <NewPing.h>
 #include <Servo.h>
 #include <Arduino.h>
 #include "HX711.h"
@@ -24,37 +24,131 @@ BlynkTimer mainTimer, scaleTimer;
 
 HX711 scale;
 
-#define loadCellDoutPin 16
-#define loadCellSckPin 4
+#define loadCellDoutPin 27
+#define loadCellSckPin 14
 
 #define ledIndikatorPin 2
-#define pirPin 19
+#define pirPin 13
 #define servoPin 23
+#define pompaPin 19
+#define waterSensorPin 32
+
+#define trigPin 4   // Arduino pin tied to trigger pin on the ultrasonic sensor.
+#define echoPin 16  // Arduino pin tied to echo pin on the ultrasonic sensor.
+#define maxDistance 200
 
 Servo myservo = Servo();
+NewPing sonar(trigPin, echoPin, maxDistance);
 
-int adaGerak = 0;
-int lastGerak = 0;
+int modeOtomatis = 0;
+
+String foodStat = "";
+String waterStat = "";
+int batasJarak = 15;
+
+unsigned long foodDelay = 30000;
+unsigned long foodLastOut = 0;
+
+unsigned long waterDelay = 15000;
+unsigned long waterLastOut = 0;
+unsigned long waterDuration = 3000;
+unsigned long waterOn = 0;
+bool pompaOn = false;
+
+
 rtc_cpu_freq_config_t config;
 // This function is called every time the Virtual Pin 0 state changes
 BLYNK_WRITE(V0) {
   // Set incoming value from pin V0 to a variable
   int value = param.asInt();
+  modeOtomatis = value;
+  Serial.print("MODE AUTO: ");
+  Serial.println(modeOtomatis);
+}
 
-  // Update state
-  Blynk.virtualWrite(V1, value);
+BLYNK_WRITE(V1) {
+  // Set incoming value from pin V0 to a variable
+  int value = param.asInt();  
+  Serial.print("MAKAN MANUAL: ");
+  Serial.println(value);
+  if(value == 1){
+    beriMakan();
+  }
+}
+
+BLYNK_WRITE(V4) {
+  // Set incoming value from pin V0 to a variable
+  int value = param.asInt();  
+  Serial.print("MINUM MANUAL: ");
+  Serial.println(value);
+  if(value == 1){
+    pompaOn = true;
+  }
 }
 
 
 // This function sends Arduino's uptime every second to Virtual Pin 2.
 void mainEvent() {
 
-  Blynk.virtualWrite(V0, millis() / 1000);
-  adaGerak = digitalRead(pirPin);
-  Serial.print("SENSOR : ");
-  Serial.println(adaGerak);
-  Blynk.virtualWrite(V1, adaGerak);
-  lastGerak = adaGerak;
+  int foodObjek = digitalRead(pirPin);
+  int waterAdc = analogRead(waterSensorPin);
+  int jarakObjek = sonar.ping_cm();
+
+
+  waterAdc = map(waterAdc, 0, 4096, 0, 10000);
+  float waterPersen = (float)waterAdc / 100.0;
+  Serial.print("FOOD : ");
+  Serial.print(foodObjek);
+  Serial.print("\tWATER : ");
+  Serial.print(waterPersen);
+  Serial.println(" %");
+
+  if (foodObjek) {
+    foodStat = "Ada Objek";
+    if (modeOtomatis) {
+      if (millis() >= foodDelay + foodLastOut) {
+        beriMakan();
+        foodLastOut = millis();
+      } else {
+        Serial.println("Food Delay");
+      }
+    }
+  } else {
+    foodStat = "Standby";
+  }
+
+  if (jarakObjek <= batasJarak) {
+    waterStat = "Ada Objek";
+    if (modeOtomatis) {
+      if (pompaOn == false && millis() >= waterDelay + waterLastOut) {
+        Serial.println("POMPA ON!");
+        pompaOn = true;
+        waterOn = millis();
+      } else {
+        Serial.println("Water Delay");
+      }
+    } else {
+      pompaOn = false;
+    }
+  } else {
+    waterStat = "Standby";
+  }
+
+
+
+  if (pompaOn) {
+
+    if (millis() >= (waterOn + waterDuration)) {
+      Serial.println("POMPA OFF!");
+      pompaOn = false;
+      digitalWrite(pompaPin, LOW);
+      waterLastOut = millis();
+    } else {
+      digitalWrite(pompaPin, HIGH);
+    }
+  }
+  
+  Blynk.virtualWrite(V3, waterPersen);  
 }
 
 void getBerat() {
@@ -73,6 +167,9 @@ void setup() {
   Serial.begin(115200);
   pinMode(ledIndikatorPin, OUTPUT);
   digitalWrite(ledIndikatorPin, HIGH);
+
+  pinMode(pompaPin, OUTPUT);
+  digitalWrite(pompaPin, LOW);
 
   Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
 
@@ -139,4 +236,21 @@ void initScale(float cal_factor) {
 
   Serial.print("get units: \t\t");
   Serial.println(scale.get_units(5), 1);
+}
+
+void beriMakan() {
+  Serial.println("BERI MAKAN!");
+
+
+  for (int u = 0; u < 10; u++) {
+    for (int pos = 0; pos <= 180; pos++) {  // go from 0-180 degrees
+      myservo.write(servoPin, pos);         // set the servo position (degrees)
+      delay(1);
+    }
+    for (int pos = 180; pos >= 0; pos--) {  // go from 180-0 degrees
+      myservo.write(servoPin, pos);         // set the servo position (degrees)
+      delay(1);
+    }
+  }
+  myservo.write(servoPin, 90);
 }
