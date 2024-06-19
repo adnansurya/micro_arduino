@@ -60,30 +60,37 @@ rtc_cpu_freq_config_t config;
 // This function is called every time the Virtual Pin 0 state changes
 BLYNK_WRITE(V0) {
   // Set incoming value from pin V0 to a variable
+  digitalWrite(ledIndikatorPin, HIGH);
   int value = param.asInt();
   modeOtomatis = value;
   Serial.print("MODE AUTO: ");
   Serial.println(modeOtomatis);
+  digitalWrite(ledIndikatorPin, LOW);
 }
 
 BLYNK_WRITE(V1) {
   // Set incoming value from pin V0 to a variable
-  int value = param.asInt();  
+  digitalWrite(ledIndikatorPin, HIGH);
+  int value = param.asInt();
   Serial.print("MAKAN MANUAL: ");
   Serial.println(value);
-  if(value == 1){
+  if (value == 1) {
     beriMakan();
   }
+  digitalWrite(ledIndikatorPin, LOW);
 }
 
 BLYNK_WRITE(V4) {
   // Set incoming value from pin V0 to a variable
-  int value = param.asInt();  
+  digitalWrite(ledIndikatorPin, HIGH);
+  int value = param.asInt();
   Serial.print("MINUM MANUAL: ");
   Serial.println(value);
-  if(value == 1){
+  if (value == 1) {
     pompaOn = true;
+    waterOn = millis();
   }
+  digitalWrite(ledIndikatorPin, LOW);
 }
 
 
@@ -104,6 +111,7 @@ void mainEvent() {
   Serial.println(" %");
 
   if (foodObjek) {
+    digitalWrite(ledIndikatorPin, HIGH);
     foodStat = "Ada Objek";
     if (modeOtomatis) {
       if (millis() >= foodDelay + foodLastOut) {
@@ -113,12 +121,14 @@ void mainEvent() {
         Serial.println("Food Delay");
       }
     }
+    digitalWrite(ledIndikatorPin, LOW);
   } else {
     foodStat = "Standby";
   }
 
   if (jarakObjek <= batasJarak) {
     waterStat = "Ada Objek";
+    digitalWrite(ledIndikatorPin, HIGH);
     if (modeOtomatis) {
       if (pompaOn == false && millis() >= waterDelay + waterLastOut) {
         Serial.println("POMPA ON!");
@@ -130,6 +140,7 @@ void mainEvent() {
     } else {
       pompaOn = false;
     }
+    digitalWrite(ledIndikatorPin, LOW);
   } else {
     waterStat = "Standby";
   }
@@ -147,19 +158,20 @@ void mainEvent() {
       digitalWrite(pompaPin, HIGH);
     }
   }
-  
-  Blynk.virtualWrite(V3, waterPersen);  
+
+  Blynk.virtualWrite(V3, waterPersen);
 }
 
 void getBerat() {
-  digitalWrite(ledIndikatorPin, HIGH);
+
+  
   scale.power_up();
   float berat = scale.get_units();
   Serial.print(berat);
   Serial.println(" gram");
   Blynk.virtualWrite(V2, berat);
   scale.power_down();
-  digitalWrite(ledIndikatorPin, LOW);
+  
 }
 
 void setup() {
@@ -175,7 +187,7 @@ void setup() {
 
   pinMode(pirPin, INPUT);
 
-  initScale(73.89);
+  initScale(241.265);
 
   myservo.write(servoPin, 90);
   digitalWrite(ledIndikatorPin, LOW);
