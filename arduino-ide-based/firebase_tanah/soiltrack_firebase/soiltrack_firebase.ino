@@ -27,7 +27,7 @@
 
 
 #define suhuPin 32
-#define relayPin 17  //VP Pin = 36
+#define relayPin 17  //TX2
 #define soilPin 33
 
 #define dmsPin 13
@@ -272,8 +272,6 @@ void loop() {
   if ((currentTime - phUpdateTime >= phUpdateInterval) && dmsOn == true) {
     phAdc = analogRead(phPin);
 
-    // phVal = (0.012654 * phAdc) + 1.02836;
-    //  phVal = (-0.0139 * phAdc) + 7.7851;
     if (phAdc == 0) {
       phVal = 7.0;
     } else {
@@ -317,7 +315,6 @@ void loop() {
       sendRTDB(pompaOn, soilPercent, temperatureC, phLast);
     }
 
-    // dmsUpdateTime = currentTime;
     phUpdateTime = currentTime;
   }
 
