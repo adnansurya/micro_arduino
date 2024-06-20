@@ -24,17 +24,17 @@ BlynkTimer mainTimer, scaleTimer;
 
 HX711 scale;
 
-#define loadCellDoutPin 27
-#define loadCellSckPin 14
+#define loadCellDoutPin 26
+#define loadCellSckPin 27
 
 #define ledIndikatorPin 2
 #define pirPin 13
-#define servoPin 23
-#define pompaPin 19
+#define servoPin 12
+#define pompaPin 18
 #define waterSensorPin 32
 
-#define trigPin 4   // Arduino pin tied to trigger pin on the ultrasonic sensor.
-#define echoPin 16  // Arduino pin tied to echo pin on the ultrasonic sensor.
+#define trigPin 15  // Arduino pin tied to trigger pin on the ultrasonic sensor.
+#define echoPin 4   // Arduino pin tied to echo pin on the ultrasonic sensor.
 #define maxDistance 200
 
 Servo myservo = Servo();
@@ -104,9 +104,12 @@ void mainEvent() {
 
   waterAdc = map(waterAdc, 0, 4096, 0, 10000);
   float waterPersen = (float)waterAdc / 100.0;
-  Serial.print("FOOD : ");
+  Serial.print("PIR: ");
   Serial.print(foodObjek);
-  Serial.print("\tWATER : ");
+  Serial.print("\tPING: ");
+  Serial.print(jarakObjek);
+  Serial.print(" cm");
+  Serial.print("\tWATER: ");
   Serial.print(waterPersen);
   Serial.println(" %");
 
@@ -164,14 +167,13 @@ void mainEvent() {
 
 void getBerat() {
 
-  
+
   scale.power_up();
   float berat = scale.get_units();
   Serial.print(berat);
   Serial.println(" gram");
   Blynk.virtualWrite(V2, berat);
   scale.power_down();
-  
 }
 
 void setup() {
