@@ -14,6 +14,7 @@
 #include <Arduino.h>
 #include "HX711.h"
 #include "soc/rtc.h"
+#include <HTTPClient.h>
 
 // Your WiFi credentials.
 // Set password to "" for open networks.
@@ -32,6 +33,9 @@ HX711 scale;
 #define servoPin 12
 #define pompaPin 18
 #define waterSensorPin 32
+
+#define rx2Pin 16
+#define tx2Pin 17
 
 #define trigPin 15  // Arduino pin tied to trigger pin on the ultrasonic sensor.
 #define echoPin 4   // Arduino pin tied to echo pin on the ultrasonic sensor.
@@ -55,6 +59,9 @@ unsigned long waterDuration = 3000;
 unsigned long waterOn = 0;
 bool pompaOn = false;
 
+String camIPEnd = "1";
+String camIP = "";
+String camURL = "";
 
 rtc_cpu_freq_config_t config;
 // This function is called every time the Virtual Pin 0 state changes
@@ -74,6 +81,10 @@ BLYNK_WRITE(V1) {
   int value = param.asInt();
   Serial.print("MAKAN MANUAL: ");
   Serial.println(value);
+
+  camURL = camIP + "/makan_manual";
+  openURL(camURL);
+
   if (value == 1) {
     beriMakan();
   }
@@ -86,6 +97,10 @@ BLYNK_WRITE(V4) {
   int value = param.asInt();
   Serial.print("MINUM MANUAL: ");
   Serial.println(value);
+
+  camURL = camIP + "/minum_manual";
+  openURL(camURL);
+
   if (value == 1) {
     pompaOn = true;
     waterOn = millis();
@@ -120,6 +135,8 @@ void mainEvent() {
       if (millis() >= foodDelay + foodLastOut) {
         beriMakan();
         foodLastOut = millis();
+        camURL = camIP + "/makan_auto";
+        openURL(camURL);
       } else {
         Serial.println("Food Delay");
       }
@@ -137,6 +154,8 @@ void mainEvent() {
         Serial.println("POMPA ON!");
         pompaOn = true;
         waterOn = millis();
+        camURL = camIP + "/minum_auto";
+        openURL(camURL);
       } else {
         Serial.println("Water Delay");
       }
@@ -179,6 +198,11 @@ void getBerat() {
 void setup() {
   // Debug console
   Serial.begin(115200);
+  Serial2.begin(115200, SERIAL_8N1, rx2Pin, tx2Pin);
+
+  Serial.println("Serial Txd2 is on pin: " + String(TX));
+  Serial.println("Serial Rxd2 is on pin: " + String(RX));
+
   pinMode(ledIndikatorPin, OUTPUT);
   digitalWrite(ledIndikatorPin, HIGH);
 
@@ -193,6 +217,10 @@ void setup() {
 
   myservo.write(servoPin, 90);
   digitalWrite(ledIndikatorPin, LOW);
+
+  IPAddress ip = WiFi.localIP();
+  Serial.println(ip);
+  camIP = "http://" + String(ip[0]) + "." + String(ip[1]) + "." + String(ip[2]) + "." + camIPEnd;
 
   // Setup a function to be called every second
   mainTimer.setInterval(1000L, mainEvent);
@@ -267,4 +295,23 @@ void beriMakan() {
     }
   }
   myservo.write(servoPin, 90);
+}
+
+void openURL(String urlLink) {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    http.begin(urlLink);
+
+    int httpCode = http.GET();
+    if (httpCode > 0) {
+      String payload = http.getString();
+      Serial.println("Response: " + payload);
+      // Lakukan sesuatu dengan data yang diterima (misalnya, kendalikan perangkat berdasarkan respons)
+    } else {
+      Serial.println("Error on HTTP request");
+    }
+
+    http.end();
+    // delay(5000);  // Tunggu 5 detik sebelum mengirim permintaan berikutnya
+  }
 }

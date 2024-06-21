@@ -18,6 +18,11 @@
 #include <UniversalTelegramBot.h>
 #include <ArduinoJson.h>
 
+#include <WebServer.h>
+#include <ESPmDNS.h>
+
+WebServer server(80);
+
 const char* ssid = "MIKRO";
 const char* password = "IDEAlist";
 
@@ -238,7 +243,7 @@ void setup() {
 
   // Connect to Wi-Fi
   WiFi.mode(WIFI_STA);
-  
+
   Serial.println();
   Serial.print("Connecting to ");
   Serial.println(ssid);
@@ -262,7 +267,18 @@ void setup() {
   }
   Serial.println(now);
 
-  bot.sendMessage(CHAT_ID, String(now), "");
+  if (MDNS.begin("esp32")) {
+    Serial.println("MDNS responder started");
+  }
+  server.on("/", handleRoot);
+  server.on("/makan_auto", makanAuto);
+  server.on("/minum_auto", minumAuto);
+  server.on("/makan_manual", makanManual);
+  server.on("/minum_manual", minumManual);
+  server.begin();
+
+  String ipNotif = "IP Cam Server : " + WiFi.localIP().toString();
+  bot.sendMessage(CHAT_ID, ipNotif, "");
 }
 
 void loop() {
@@ -270,42 +286,35 @@ void loop() {
     Serial.println("Preparing photo");
     sendPhotoTelegram();
     sendPhoto = false;
+  } else {
+    server.handleClient();
   }
+}
 
-  if (Serial.available() > 0) {
-    String data = Serial.readStringUntil('\n');
-    data.trim();
+void makanAuto() {
+  server.send(200, "text/plain", "Memberi Makan Secara Otomatis");
+  bot.sendMessage(CHAT_ID, "Memberi Makan Secara Otomatis", "");
+  sendPhoto = true;
+}
 
-    if (data == "makan_manual") {
-      bot.sendMessage(CHAT_ID, "Memberi Makan Secara Manual", "");
-      sendPhoto = true;
+void minumAuto() {
+  server.send(200, "text/plain", "Memberi Minum Secara Otomatis");
+  bot.sendMessage(CHAT_ID, "Memberi Minum Secara Otomatis", "");
+  sendPhoto = true;
+}
 
-    } else if (data == "makan_auto") {
-      bot.sendMessage(CHAT_ID, "Memberi Makan Secara Otomatis", "");
-      sendPhoto = true;
+void makanManual() {
+  server.send(200, "text/plain", "Memberi Makan Secara Manual");
+  bot.sendMessage(CHAT_ID, "Memberi Makan Secara Manual", "");
+  sendPhoto = true;
+}
 
-    } else if (data == "minum_manual") {
-      bot.sendMessage(CHAT_ID, "Memberi Minum Secara Manual", "");
-      sendPhoto = true;
+void minumManual() {
+  server.send(200, "text/plain", "Memberi Minum Secara Manual");
+  bot.sendMessage(CHAT_ID, "Memberi Minum Secara Manual", "");
+  sendPhoto = true;
+}
 
-    } else if (data == "minum_auto") {
-      bot.sendMessage(CHAT_ID, "Memberi Minum Secara Otomatis", "");
-      sendPhoto = true;
-
-    } else {
-      bot.sendMessage(CHAT_ID, "Comm : " + String(data) + ", Tidak dikenali", "");
-      delay(2000);      
-    }
-  }
-
-
-  // if (millis() > lastTimeBotRan + botRequestDelay)  {
-  //   int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
-  //   while (numNewMessages) {
-  //     Serial.println("got response");
-  //     handleNewMessages(numNewMessages);
-  //     numNewMessages = bot.getUpdates(bot.last_message_received + 1);
-  //   }
-  //   lastTimeBotRan = millis();
-  // }
+void handleRoot() {
+  server.send(200, "text/plain", "Halo! (ESP32 CAM)");
 }
