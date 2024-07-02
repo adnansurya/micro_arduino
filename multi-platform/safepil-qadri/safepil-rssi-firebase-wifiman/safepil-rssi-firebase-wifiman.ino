@@ -8,14 +8,15 @@
 #include <Firebase_ESP_Client.h>
 #include <WiFiManager.h>  // https://github.com/tzapu/WiFiManager
 
+
 //Provide the token generation process info.
 #include "addons/TokenHelper.h"
 //Provide the RTDB payload printing info and other helper functions.
 #include "addons/RTDBHelper.h"
 
 // Insert your network credentials
-#define WIFI_SSID "PLAZGOZZ_OUT"
-#define WIFI_PASSWORD "grapari78"
+#define WIFI_SSID "TP-Link_2C04"
+#define WIFI_PASSWORD "92120266"
 
 // Insert Firebase project API Key
 #define API_KEY "AIzaSyBc6X4IjEKCtd1pw_2Cc6DIkrmXbqT3Hmg"
@@ -39,6 +40,9 @@ String fbDir = "main/realtime/" + deviceId;
 
 WiFiManager wm;
 bool res;
+
+String str_a, str_n;
+float nilai_a, nilai_n;
 
 void setup() {
   Serial.begin(115200);
@@ -71,10 +75,19 @@ void setup() {
 
   Firebase.begin(&config, &auth);
   Firebase.reconnectWiFi(true);
+
+
+
+  Serial.printf("Get Nilai N... %s\n", Firebase.RTDB.getString(&fbdo, F("/main/nilai_n"), &str_n) ? String(str_n).c_str() : fbdo.errorReason().c_str());
+  Serial.printf("Get Nilai A... %s\n", Firebase.RTDB.getString(&fbdo, F("/main/nilai_a"), &str_a) ? String(str_a).c_str() : fbdo.errorReason().c_str());
+  nilai_n = str_n.toFloat();
+  nilai_a = str_a.toFloat();
 }
 
 void loop() {
   long rssiVal = WiFi.RSSI();
+  float jarak = rssiToMeter(rssiVal, nilai_a, nilai_n);
+  Serial.println(jarak);
 
   if (Firebase.ready() && signupOK && (millis() - sendDataPrevMillis > intervalMillis || sendDataPrevMillis == 0)) {
     Serial.print("RSSI  : ");
@@ -89,5 +102,26 @@ void loop() {
       Serial.println("FAILED");
       Serial.println("REASON: " + fbdo.errorReason());
     }
+
+    if (Firebase.RTDB.setFloat(&fbdo, fbDir + "/meter", jarak)) {
+      Serial.println("PASSED");
+      Serial.println("PATH: " + fbdo.dataPath());
+      Serial.println("TYPE: " + fbdo.dataType());
+    } else {
+      Serial.println("FAILED");
+      Serial.println("REASON: " + fbdo.errorReason());
+    }
   }
+}
+
+float rssiToMeter(long rssiUkur, float nilaiA, float nilaiN) {
+  float meterHasil = 0.0;
+
+  float pembilang = nilaiA - (float) rssiUkur ;
+  float penyebut = 10 * nilaiN;
+  float pangkat = pembilang / penyebut;
+  
+  meterHasil = pow(10, pangkat);
+
+  return abs(meterHasil);
 }
