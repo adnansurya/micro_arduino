@@ -14,9 +14,7 @@
 //Provide the RTDB payload printing info and other helper functions.
 #include "addons/RTDBHelper.h"
 
-// Insert your network credentials
-#define WIFI_SSID "TP-Link_2C04"
-#define WIFI_PASSWORD "92120266"
+#define buzzerPin D4
 
 // Insert Firebase project API Key
 #define API_KEY "AIzaSyBc6X4IjEKCtd1pw_2Cc6DIkrmXbqT3Hmg"
@@ -44,8 +42,17 @@ bool res;
 String str_a, str_n;
 float nilai_a, nilai_n;
 
+float batasBawah = 5;
+float batasAtas = 10;
+
+int kondisiAlarm = 0;
+
+
 void setup() {
   Serial.begin(115200);
+
+  pinMode(buzzerPin, OUTPUT);
+  digitalWrite(buzzerPin, LOW);
 
   res = wm.autoConnect("AutoConnectAP");  // anonymous ap
   if (!res) {
@@ -87,7 +94,25 @@ void setup() {
 void loop() {
   long rssiVal = WiFi.RSSI();
   float jarak = rssiToMeter(rssiVal, nilai_a, nilai_n);
+
+  if(jarak <= batasBawah){
+    kondisiAlarm = 0;
+  }else if(jarak > batasBawah && jarak <= batasAtas){
+    kondisiAlarm = 1;
+  }else{
+    kondisiAlarm = 2;
+  }
   Serial.println(jarak);
+
+  if(kondisiAlarm == 0){
+    digitalWrite(buzzerPin, LOW);
+  }else if(kondisiAlarm == 1){
+    digitalWrite(buzzerPin, HIGH);
+    delay(200);      
+    digitalWrite(buzzerPin, LOW);
+  }else{
+    digitalWrite(buzzerPin, HIGH);
+  }
 
   if (Firebase.ready() && signupOK && (millis() - sendDataPrevMillis > intervalMillis || sendDataPrevMillis == 0)) {
     Serial.print("RSSI  : ");
