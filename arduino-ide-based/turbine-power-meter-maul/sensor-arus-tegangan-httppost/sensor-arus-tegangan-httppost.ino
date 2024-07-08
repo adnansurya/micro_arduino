@@ -1,8 +1,8 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 
-const char* ssid = "PLAZGOZZ_OUT";
-const char* password = "grapari78";
+const char* ssid = "MIKRO";
+const char* password = "IDEAlist";
 
 //Your Domain name with URL path or IP address with path
 const char* serverName = "http://maulana.bantilang.my.id/postdata.php";
@@ -13,10 +13,11 @@ unsigned long timerDelay = 10000;
 
 #include "ACS712.h"
 
-#define ANALOG_IN_PIN 34
+#define voltagePin 34
+#define currentPin 32
 
-ACS712 sensor(ACS712_05B, 32);
-// Floats for ADC voltage & Input voltage
+ACS712 sensor(ACS712_05B, currentPin);
+
 float adc_voltage = 0.0;
 float in_voltage = 0.0;
 
@@ -57,7 +58,7 @@ void loop() {
   if ((millis() - lastTime) > timerDelay) {
 
     // Read the Analog Input
-    adc_value = analogRead(ANALOG_IN_PIN);
+    adc_value = analogRead(voltagePin);
 
     // Determine voltage at ADC input
     adc_voltage = (adc_value * ref_voltage) / 4096.0;
