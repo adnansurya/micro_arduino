@@ -100,9 +100,9 @@ void loop() {
       if (sensorData.startsWith(lora_raply)) {
         Serial.println("Diterima dari " + String(lora_raply) + ": " + sensorData);
       }
-      hum = extractFromRawString(sensorData, "Humidity:", "%");
+      hum = extractFromRawString(sensorData, "Humidity:", "% Soil");
       temp = extractFromRawString(sensorData, "Temp:", "C");
-      moist = extractFromRawString(sensorData, "Soil Moist:", "%");
+      moist = extractFromRawString(sensorData, "Soil Moist:", "% Flow");
       flowrate1 = extractFromRawString(sensorData, "Flow1:", "L/min");
       flowrate2 = extractFromRawString(sensorData, "Flow2:", "L/min");
       rssiVal = LoRa.packetRssi();
@@ -121,7 +121,7 @@ float extractFromRawString(String sourceStr, String startWith, String endsWith) 
   int firstIndex = sourceStr.indexOf(startWith) + startWith.length();
   int lastIndex = sourceStr.indexOf(endsWith);
 
-  extractedStr = sourceStr.substring(firstIndex, lastIndex);
+  extractedStr = sourceStr.substring(firstIndex, lastIndex);  
   extractedStr.trim();
   return extractedStr.toFloat();
 }

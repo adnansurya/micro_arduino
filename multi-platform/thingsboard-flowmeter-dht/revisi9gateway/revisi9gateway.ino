@@ -289,7 +289,7 @@ void loop() {
   LoRa.print("C Humidity: ");
   LoRa.print(h);
   LoRa.print("% Soil Moist: ");
-  LoRa.print(soilmoist);
+  LoRa.print(moisturePercentage);
   LoRa.print("% Flow1: ");
   LoRa.print(flowRate1);
   LoRa.print(" L/min Flow2: ");
