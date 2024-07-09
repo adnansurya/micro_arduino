@@ -9,6 +9,9 @@
 #include <LoRa.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <WiFi.h>
+#include <PubSubClient.h>
+#include <ArduinoJson.h>
 
 // OLED pins
 #define OLED_SDA 21
@@ -29,6 +32,19 @@
 //id lora yang diizinkan
 const char* lora_rafa = "rafa";
 const char* lora_raply = "raply";
+
+// Set WiFi credentials
+const char* ssid = "MIKRO";
+const char* password = "IDEAlist";
+
+// Set ThingsBoard credentials
+const char* mqtt_server = "52.185.184.82";   // atau server ThingsBoard anda
+const char* token = "i8rju4gslhc29sc7s3wv";  // Token perangkat dari ThingsBoard
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+long lastMsg = 0;
+long delaySending = 5000;
 
 //variabel untuk menampung data yang dikirim dari lora
 float hum = 0.0;
@@ -68,6 +84,9 @@ void setup() {
   display.print("Initializing...");
   display.display();
 
+  setup_wifi();
+  client.setServer(mqtt_server, 1883);
+
   if (!LoRa.begin(915E6)) {
     Serial.println("LORA TIDAK JALAN");
     while (1)
@@ -85,6 +104,8 @@ void setup() {
 }
 
 void loop() {
+  long now = millis();
+
   // try to parse packet
   int packetSize = LoRa.parsePacket();
   if (packetSize) {
@@ -113,6 +134,22 @@ void loop() {
     Serial.print("' with RSSI ");
     Serial.println(rssiVal);
   }
+
+  if (now - lastMsg > delaySending) {
+    lastMsg = now;    
+
+    // Buat payload JSON menggunakan ArduinoJson
+    DynamicJsonDocument doc(1024);
+    doc["humidity"] = hum;
+    doc["temperature"] = temp;
+    doc["soil_moisture"] = moist;
+    doc["flow_rate1"] = flowrate1;
+    doc["flow_rate2"] = flowrate2;
+
+
+    // Kirim payload
+    sendPayload(doc);
+  }
 }
 
 float extractFromRawString(String sourceStr, String startWith, String endsWith) {
@@ -121,7 +158,7 @@ float extractFromRawString(String sourceStr, String startWith, String endsWith) 
   int firstIndex = sourceStr.indexOf(startWith) + startWith.length();
   int lastIndex = sourceStr.indexOf(endsWith);
 
-  extractedStr = sourceStr.substring(firstIndex, lastIndex);  
+  extractedStr = sourceStr.substring(firstIndex, lastIndex);
   extractedStr.trim();
   return extractedStr.toFloat();
 }
@@ -155,4 +192,52 @@ void refreshDisplay() {
   display.print(rssiVal);
   display.print(" dBm");
   display.display();
+}
+
+void setup_wifi() {
+  delay(10);
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("");
+  Serial.println("WiFi connected");
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
+}
+
+
+void reconnect() {
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    if (client.connect("ESP32_Client", token, NULL)) {
+      Serial.println("connected");
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 5 seconds");
+      delay(5000);
+    }
+  }
+}
+
+void sendPayload(DynamicJsonDocument& doc) {
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
+
+  String output;
+  serializeJson(doc, output);
+
+  Serial.print("Publish message: ");
+  Serial.println(output);
+  client.publish("v1/devices/me/telemetry", output.c_str());
 }
