@@ -15,6 +15,8 @@
 #include "HX711.h"
 #include "soc/rtc.h"
 #include <HTTPClient.h>
+#include <NTPClient.h>
+#include <WiFiUdp.h>
 
 // Your WiFi credentials.
 // Set password to "" for open networks.
@@ -25,24 +27,34 @@ BlynkTimer mainTimer, scaleTimer;
 
 HX711 scale;
 
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org");
+
 #define loadCellDoutPin 26
 #define loadCellSckPin 27
 
 #define ledIndikatorPin 2
-#define pirPin 13
-#define servoPin 12
-#define pompaPin 18
+#define servoPin 14
+#define pompaPin 4
 #define waterSensorPin 32
 
-#define rx2Pin 16
-#define tx2Pin 17
 
-#define trigPin 15  // Arduino pin tied to trigger pin on the ultrasonic sensor.
-#define echoPin 4   // Arduino pin tied to echo pin on the ultrasonic sensor.
+// #define trigPin 16  // Arduino pin tied to trigger pin on the ultrasonic sensor.
+// #define echoPin 4   // Arduino pin tied to echo pin on the ultrasonic sensor.
+#define pirPin 16
 #define maxDistance 200
 
+#define GMT_OFFSET 8
+
+time_t epochTime;
+String weekDay, formattedTime, currentDate, waktu, tStamp;
+int currentYear = 0;
+
+int jadwalMakan[] = { 9, 19, 29, 39, 49, 59 };
+int lastHour, lastMinute, lastSecond;
+
 Servo myservo = Servo();
-NewPing sonar(trigPin, echoPin, maxDistance);
+// NewPing sonar(trigPin, echoPin, maxDistance);
 
 int modeOtomatis = 0;
 
@@ -55,7 +67,7 @@ unsigned long foodLastOut = 0;
 
 unsigned long waterDelay = 15000;
 unsigned long waterLastOut = 0;
-unsigned long waterDuration = 3000;
+unsigned long waterDuration = 2000;
 unsigned long waterOn = 0;
 bool pompaOn = false;
 
@@ -82,76 +94,76 @@ BLYNK_WRITE(V1) {
   Serial.print("MAKAN MANUAL: ");
   Serial.println(value);
 
-  camURL = camIP + "/makan_manual";
-  openURL(camURL);
+
 
   if (value == 1) {
+
     beriMakan();
+    camURL = camIP + "/makan_manual";
+    openURL(camURL);
   }
   digitalWrite(ledIndikatorPin, LOW);
 }
 
 BLYNK_WRITE(V4) {
   // Set incoming value from pin V0 to a variable
-  digitalWrite(ledIndikatorPin, HIGH);
-  int value = param.asInt();
-  Serial.print("MINUM MANUAL: ");
-  Serial.println(value);
 
-  camURL = camIP + "/minum_manual";
-  openURL(camURL);
+  int value = param.asInt();
 
   if (value == 1) {
-    pompaOn = true;
-    waterOn = millis();
+    digitalWrite(ledIndikatorPin, HIGH);
+    digitalWrite(pompaPin, HIGH);
+    delay(waterDuration);
+    Serial.println("POMPA ON MANUAL!");
+    digitalWrite(pompaPin, LOW);
+
+    camURL = camIP + "/minum_manual";
+    openURL(camURL);
+    digitalWrite(ledIndikatorPin, LOW);
   }
-  digitalWrite(ledIndikatorPin, LOW);
 }
 
 
 // This function sends Arduino's uptime every second to Virtual Pin 2.
 void mainEvent() {
 
-  int foodObjek = digitalRead(pirPin);
-  int waterAdc = analogRead(waterSensorPin);
-  int jarakObjek = sonar.ping_cm();
+  timeClient.update();
+  formattedTime = timeClient.getFormattedTime();
+  int currentHour = timeClient.getHours();
+  int currentMinute = timeClient.getMinutes();
+  int currentSecond = timeClient.getSeconds();
+  Serial.print("WAKTU : ");
+  Serial.print(formattedTime);
 
+  int waterAdc = analogRead(waterSensorPin);
+  // int jarakObjek = sonar.ping_cm();
+  int waterObjek = digitalRead(pirPin);
 
   waterAdc = map(waterAdc, 0, 4096, 0, 10000);
   float waterPersen = (float)waterAdc / 100.0;
-  Serial.print("PIR: ");
-  Serial.print(foodObjek);
-  Serial.print("\tPING: ");
-  Serial.print(jarakObjek);
-  Serial.print(" cm");
+  Serial.print("\tPIR: ");
+  Serial.print(waterObjek);  
   Serial.print("\tWATER: ");
   Serial.print(waterPersen);
   Serial.println(" %");
 
-  if (foodObjek) {
-    digitalWrite(ledIndikatorPin, HIGH);
-    foodStat = "Ada Objek";
-    if (modeOtomatis) {
-      if (millis() >= foodDelay + foodLastOut) {
-        beriMakan();
-        foodLastOut = millis();
-        camURL = camIP + "/makan_auto";
-        openURL(camURL);
-      } else {
-        Serial.println("Food Delay");
-      }
+  if (modeOtomatis) {
+    if (saatnyaMakan(currentMinute) == true && belumMakan(currentMinute, lastMinute) == true) {
+      digitalWrite(ledIndikatorPin, HIGH);
+      beriMakan();
+      camURL = camIP + "/makan_auto";
+      openURL(camURL);
+      digitalWrite(ledIndikatorPin, LOW);
     }
-    digitalWrite(ledIndikatorPin, LOW);
-  } else {
-    foodStat = "Standby";
   }
 
-  if (jarakObjek <= batasJarak) {
+  if (waterObjek == true) {
     waterStat = "Ada Objek";
     digitalWrite(ledIndikatorPin, HIGH);
     if (modeOtomatis) {
       if (pompaOn == false && millis() >= waterDelay + waterLastOut) {
         Serial.println("POMPA ON!");
+        digitalWrite(pompaPin, HIGH);
         pompaOn = true;
         waterOn = millis();
         camURL = camIP + "/minum_auto";
@@ -176,10 +188,12 @@ void mainEvent() {
       pompaOn = false;
       digitalWrite(pompaPin, LOW);
       waterLastOut = millis();
-    } else {
-      digitalWrite(pompaPin, HIGH);
     }
   }
+
+  lastHour = currentHour;
+  lastMinute = currentMinute;
+  lastSecond = currentSecond;
 
   Blynk.virtualWrite(V3, waterPersen);
 }
@@ -198,10 +212,6 @@ void getBerat() {
 void setup() {
   // Debug console
   Serial.begin(115200);
-  Serial2.begin(115200, SERIAL_8N1, rx2Pin, tx2Pin);
-
-  Serial.println("Serial Txd2 is on pin: " + String(TX));
-  Serial.println("Serial Rxd2 is on pin: " + String(RX));
 
   pinMode(ledIndikatorPin, OUTPUT);
   digitalWrite(ledIndikatorPin, HIGH);
@@ -209,9 +219,10 @@ void setup() {
   pinMode(pompaPin, OUTPUT);
   digitalWrite(pompaPin, LOW);
 
-  Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
+  Blynk.connectWiFi(ssid, pass);
 
-  pinMode(pirPin, INPUT);
+  Blynk.config(BLYNK_AUTH_TOKEN);
+
 
   initScale(241.265);
 
@@ -221,6 +232,9 @@ void setup() {
   IPAddress ip = WiFi.localIP();
   Serial.println(ip);
   camIP = "http://" + String(ip[0]) + "." + String(ip[1]) + "." + String(ip[2]) + "." + camIPEnd;
+
+  timeClient.begin();
+  timeClient.setTimeOffset(GMT_OFFSET * 3600);
 
   // Setup a function to be called every second
   mainTimer.setInterval(1000L, mainEvent);
@@ -313,5 +327,29 @@ void openURL(String urlLink) {
 
     http.end();
     // delay(5000);  // Tunggu 5 detik sebelum mengirim permintaan berikutnya
+  }
+}
+
+bool saatnyaMakan(int waktuSekarang) {
+  bool waktuMakan = false;
+  int banyakJadwal = sizeof(jadwalMakan) / sizeof(int);
+  for (int j = 0; j < banyakJadwal; j++) {
+    if (jadwalMakan[j] == waktuSekarang) {
+      waktuMakan = true;
+      break;
+    }
+  }
+  return waktuMakan;
+}
+
+bool belumMakan(int waktuSekarang, int waktuSebelumnya) {
+  Serial.print("NOW : ");
+  Serial.print(waktuSekarang);
+  Serial.print("\tLAST : ");
+  Serial.println(waktuSebelumnya);
+  if (waktuSekarang != waktuSebelumnya) {
+    return true;
+  } else {
+    return false;
   }
 }
