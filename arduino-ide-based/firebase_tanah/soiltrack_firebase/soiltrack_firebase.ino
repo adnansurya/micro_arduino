@@ -194,7 +194,7 @@ void loop() {
 
     // soilPercent = (float)soilAdc / maxAdc * 100;
     int soilInteger = map(soilAdc, adcKering, adcBasah, 0, 10000);
-    float soilPercent = (float)soilInteger / 100.0;
+    soilPercent = (float)soilInteger / 100.0;
 
 
     Serial.print("Moisture (Adc): ");
