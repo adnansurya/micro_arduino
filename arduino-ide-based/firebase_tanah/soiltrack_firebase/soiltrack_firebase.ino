@@ -19,8 +19,8 @@
 //Provide the RTDB payload printing info and other helper functions.
 #include "addons/RTDBHelper.h"
 
-#define WIFI_SSID "SAUMATA TEKNOSAINS GLOBAL"
-#define WIFI_PASSWORD "11022022"
+#define WIFI_SSID "MIKRO"
+#define WIFI_PASSWORD "IDEAlist"
 
 #define API_KEY "AIzaSyDtg593BAXgGTY8h3yNWklaTilrC5_qDAI"
 #define DATABASE_URL "https://soiltrack-4a415-default-rtdb.firebaseio.com/"
@@ -48,7 +48,7 @@ WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org");
 
 time_t epochTime;
-String weekDay, formattedTime, currentDate, waktu, tStamp;
+String weekDay, formattedTime, currentDate, strDir, waktu, tStamp;
 int currentYear = 0;
 
 #define GMT_OFFSET 8
@@ -101,7 +101,7 @@ void setup() {
 
   lcd.init();  // initialize the lcd
   lcd.backlight();
-  
+
 
   pinMode(relayPin, OUTPUT);
   digitalWrite(relayPin, HIGH);
@@ -138,7 +138,6 @@ void setup() {
   timeClient.begin();
   timeClient.setTimeOffset(GMT_OFFSET * 3600);
   delay(1000);
-
 
 
   lcd.clear();
@@ -226,7 +225,7 @@ void loop() {
         lcd.print("M: ");
         lcd.print(soilPercent);
         lcd.print(" %");
-        
+
         phDisplay = true;
       } else {
         lcd.setCursor(0, 0);
@@ -317,8 +316,8 @@ void loop() {
 
     phUpdateTime = currentTime;
   }
-
 }
+
 
 
 void sendRTDB(bool pompa, float lembab, float suhu, float ph) {
@@ -352,6 +351,11 @@ void sendRTDB(bool pompa, float lembab, float suhu, float ph) {
 
     Serial.println(fbdo.dataPath() + "/" + fbdo.pushName());
 
+    
+    String targetDir = "/time_query/" + strDir;
+
+    Serial.printf("Set string... %s\n", Firebase.RTDB.setString(&fbdo, targetDir, fbdo.pushName()) ? "ok" : fbdo.errorReason().c_str());
+
   } else {
     Serial.println(fbdo.errorReason());
   }
@@ -384,8 +388,9 @@ void getWaktu() {
 
   //Print complete date:
   currentDate = String(monthDay) + "-" + String(currentMonth) + "-" + String(currentYear);
+  strDir = String(currentYear) + "/" + String(currentMonth) + "/" + String(monthDay) + "/" + formattedTime;
 
-  waktu = weekDay + ", " + currentDate + " " + formattedTime + " WITA";
+  waktu = weekDay + " " + currentDate + " " + formattedTime + " WITA";
 
   Serial.print("->GetWaktu: ");
   Serial.println(waktu);
