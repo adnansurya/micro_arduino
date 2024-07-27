@@ -1,0 +1,20 @@
+http://127.0.0.1:8000/api/add_data?from=anu&temperature=0&humidity=0&soil_moisture=0&drip=OFF&mist=OFF&flowrate_mist=0&flowrate_drip=0
+http://127.0.0.1:8000/api/add_data?from=anu&temperature=120.1&humidity=30.2&soil_moisture=2.3&drip=ON&mist=OFF&flowrate_mist=33.4&flowrate_drip=22.5
+http://127.0.0.1:8000/api/add_data?from=anu&temperature=7&humidity=30.2&soil_moisture=7.3&drip=ON&mist=ON&flowrate_mist=3.4&flowrate_drip=2.5
+
+
+Menerima Paket:   Diterima dari rafa: rafa 151 Temp: 30.10C Humidity: 71.40% Soil Moist: 3% Flow1: 0.00 L/min Flow2: 0.00 L/min Drip: OFF Mist: OFF:
+' with RSSI -117
+Menerima Paket:   Diterima dari rafa: rafa 152 Temp: 30.10C Humidity: 71.40% Soil Moist: 3% Flow1: 0.00 L/min Flow2: 0.00 L/min Drip: OFF Mist: OFF:
+' with RSSI -117
+Menerima Paket:   Diterima dari rafa: rafa 153 Temp: 30.10C Humidity: 71.40% Soil Moist: 4% Flow1: 0.00 L/min Flow2: 0.00 L/min Drip: OFF Mist: OFF:
+' with RSSI -115
+Menerima Paket:   Diterima dari rafa: rafa 154 Temp: 30.10C Humidity: 71.40% Soil Moist: 3% Flow1: 0.00 L/min Flow2: 0.00 L/min Drip: OFF Mist: OFF:
+' with RSSI -114
+Menerima Paket:   Diterima dari rafa: rafa 155 Temp: 30.10C Humidity: 71.40% Soil Moist: 4% Flow1: 0.00 L/min Flow2: 0.00 L/min Drip: OFF Mist: OFF:
+' with RSSI -115
+Menerima Paket:   Diterima dari rafa: rafa 156 Temp: 30.10C Humidity: 71.50% Soil Moist: 4% Flow1: 0.00 L/min Flow2: 0.00 L/min Drip: OFF Mist: OFF:
+' with RSSI -103
+
+
+rafa 156 Temp: 30.10C Humidity: 71.50% Soil Moist: 4% Flow1: 0.00 L/min Flow2: 0.00 L/min Drip: OFF Mist: OFF:
