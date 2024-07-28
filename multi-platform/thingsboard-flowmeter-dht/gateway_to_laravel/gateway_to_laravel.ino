@@ -41,7 +41,7 @@ String serverName = "http://192.168.8.111";
 String serverPort = ":8000";
 String targetUrl = serverName + serverPort +  "/api/add_data";
 
-bool debugMode = true; //turn off when debugging ends
+bool debugMode = false; //turn off when debugging ends
 
 long lastMsg = 0;
 long delaySending = 5000;
@@ -134,7 +134,7 @@ void loop() {
       temp = extractFromRawString(sensorData, "Temp:", "C").toFloat();
       moist = extractFromRawString(sensorData, "Soil Moist:", "% Flow").toFloat();
       flowrate1 = extractFromRawString(sensorData, "Flow1:", "L/min").toFloat();
-      flowrate2 = extractFromRawString(sensorData, "Flow2:", "L/min").toFloat();
+      flowrate2 = extractFromRawString(sensorData, "Flow2:", "L/min Drip").toFloat();
       drip = extractFromRawString(sensorData, "Drip:", "Mist");
       mist = extractFromRawString(sensorData, "Mist:", "");
       mist.replace(":","");
@@ -147,7 +147,11 @@ void loop() {
 
       refreshDisplay();
 
-      sendData(fromDevice, temp, hum, moist, flowrate1, flowrate2, drip, mist);
+      if((drip == "OFF" || drip == "ON") && (mist == "OFF" || mist == "ON")){
+        sendData(fromDevice, temp, hum, moist, flowrate1, flowrate2, drip, mist);
+      }
+
+      
     }
 
   }else{
