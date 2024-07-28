@@ -33,11 +33,13 @@ const char* lora_rafa = "rafa";
 const char* lora_raply = "raply";
 
 // Set WiFi credentials
-const char* ssid = "MIKRO";
-const char* password = "IDEAlist";
+const char* ssid = "HUAWEI-B311-F0B8";
+const char* password = "64305618";
 
 //Your Domain name with URL path or IP address with path
-const char* serverName = "http://192.168.203.53:8000/api/add_data";
+String serverName = "http://192.168.8.111";
+String serverPort = ":8000";
+String targetUrl = serverName + serverPort +  "/api/add_data";
 
 bool debugMode = true; //turn off when debugging ends
 
@@ -185,7 +187,7 @@ void sendData(String fr, float t, float h, float sm, float f1, float f2, String 
     HTTPClient http;
 
     // Your Domain name with URL path or IP address with path
-    http.begin(client, serverName);
+    http.begin(client, targetUrl);
 
     // Specify content-type header
     http.addHeader("Content-Type", "application/x-www-form-urlencoded");
