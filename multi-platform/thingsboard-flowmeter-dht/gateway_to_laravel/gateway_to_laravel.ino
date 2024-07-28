@@ -39,7 +39,7 @@ const char* password = "IDEAlist";
 //Your Domain name with URL path or IP address with path
 const char* serverName = "http://192.168.203.53:8000/api/add_data";
 
-bool debugMode = true;
+bool debugMode = true; //turn off when debugging ends
 
 long lastMsg = 0;
 long delaySending = 5000;
