@@ -17,4 +17,6 @@ Menerima Paket:   Diterima dari rafa: rafa 156 Temp: 30.10C Humidity: 71.50% Soi
 ' with RSSI -103
 
 
+Diterima dari rafa: rafa 332 Temp: 24.60C Humidity: 78.50% Soil Moist: 0% Flow1: 1.00 L/min Flow2: 2.00 L/min Drip: OFF Mist: OFF:
+
 rafa 156 Temp: 30.10C Humidity: 71.50% Soil Moist: 4% Flow1: 0.00 L/min Flow2: 0.00 L/min Drip: OFF Mist: OFF:

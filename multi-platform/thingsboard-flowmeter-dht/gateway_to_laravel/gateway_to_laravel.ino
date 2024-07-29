@@ -123,12 +123,14 @@ void loop() {
     // read packet
     while (LoRa.available()) {
       String sensorData = LoRa.readString();
-      if (sensorData.startsWith(lora_rafa)) {
-        Serial.println("Diterima dari " + String(lora_rafa) + ": " + sensorData);
-      }
-      if (sensorData.startsWith(lora_raply)) {
-        Serial.println("Diterima dari " + String(lora_raply) + ": " + sensorData);
-      }
+      // if (sensorData.startsWith(lora_rafa)) {
+      //   Serial.println("Diterima dari " + String(lora_rafa) + ": " + sensorData);
+      // }
+      // if (sensorData.startsWith(lora_raply)) {
+      //   Serial.println("Diterima dari " + String(lora_raply) + ": " + sensorData);
+      // }
+      Serial.println("DARI LORA : ");
+      Serial.println(sensorData);
       fromDevice = extractFromRawString(sensorData, "", " ");
       hum = extractFromRawString(sensorData, "Humidity:", "% Soil").toFloat();
       temp = extractFromRawString(sensorData, "Temp:", "C").toFloat();
