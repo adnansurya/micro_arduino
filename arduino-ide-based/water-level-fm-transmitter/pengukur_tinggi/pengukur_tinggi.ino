@@ -4,12 +4,12 @@
 #define ECHO_PIN     25  
 #define MAX_DISTANCE 200 
 
-long tinggiMax = 150;
+long tinggiMax = 80;
 long jarakUkur, tinggiAir;
-long batasTinggi = 30;
+long batasTinggi = 60;
 
 
-NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE); 
+NewPing sonar(TRIGGER_PIN, ECHO_PIN, tinggiMax); 
 
 
 void setup() {
@@ -22,7 +22,7 @@ void loop() {
 
   tinggiAir = tinggiMax - jarakUkur;
   
-  if(tinggiAir > 30){
+  if(tinggiAir > batasTinggi){
     Serial.println("BAHAYA!");
   }
 
