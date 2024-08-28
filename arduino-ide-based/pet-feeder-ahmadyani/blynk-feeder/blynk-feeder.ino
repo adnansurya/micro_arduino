@@ -9,7 +9,6 @@
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <BlynkSimpleEsp32.h>
-#include <NewPing.h>
 #include <Servo.h>
 #include <Arduino.h>
 #include "HX711.h"
@@ -20,8 +19,8 @@
 
 // Your WiFi credentials.
 // Set password to "" for open networks.
-char ssid[] = "MIKRO";
-char pass[] = "IDEAlist";
+char ssid[] = "Ahmad";
+char pass[] = "123456789";
 
 BlynkTimer mainTimer, scaleTimer;
 
@@ -35,7 +34,7 @@ NTPClient timeClient(ntpUDP, "pool.ntp.org");
 
 #define ledIndikatorPin 2
 #define servoPin 14
-#define pompaPin 4
+#define pompaPin 17
 #define waterSensorPin 32
 
 
@@ -50,7 +49,7 @@ time_t epochTime;
 String weekDay, formattedTime, currentDate, waktu, tStamp;
 int currentYear = 0;
 
-int jadwalMakan[] = { 9, 19, 29, 39, 49, 59 };
+int jadwalMakan[] = { 8, 12, 15, 18};
 int lastHour, lastMinute, lastSecond;
 
 Servo myservo = Servo();
@@ -71,9 +70,11 @@ unsigned long waterDuration = 2000;
 unsigned long waterOn = 0;
 bool pompaOn = false;
 
-String camIPEnd = "1";
+String camIPEnd = "119";
 String camIP = "";
 String camURL = "";
+String feederIP = "";
+
 
 rtc_cpu_freq_config_t config;
 // This function is called every time the Virtual Pin 0 state changes
@@ -85,6 +86,7 @@ BLYNK_WRITE(V0) {
   Serial.print("MODE AUTO: ");
   Serial.println(modeOtomatis);
   digitalWrite(ledIndikatorPin, LOW);
+   Blynk.logEvent("ip_address", "IP: " + feederIP);
 }
 
 BLYNK_WRITE(V1) {
@@ -134,6 +136,7 @@ void mainEvent() {
   int currentSecond = timeClient.getSeconds();
   Serial.print("WAKTU : ");
   Serial.print(formattedTime);
+ 
 
   int waterAdc = analogRead(waterSensorPin);
   // int jarakObjek = sonar.ping_cm();
@@ -142,7 +145,7 @@ void mainEvent() {
   waterAdc = map(waterAdc, 0, 4096, 0, 10000);
   float waterPersen = (float)waterAdc / 100.0;
   Serial.print("\tPIR: ");
-  Serial.print(waterObjek);  
+  Serial.print(waterObjek);
   Serial.print("\tWATER: ");
   Serial.print(waterPersen);
   Serial.println(" %");
@@ -217,7 +220,7 @@ void setup() {
   digitalWrite(ledIndikatorPin, HIGH);
 
   pinMode(pompaPin, OUTPUT);
-  digitalWrite(pompaPin, LOW);
+
 
   Blynk.connectWiFi(ssid, pass);
 
@@ -230,11 +233,14 @@ void setup() {
   digitalWrite(ledIndikatorPin, LOW);
 
   IPAddress ip = WiFi.localIP();
-  Serial.println(ip);
+  feederIP = ip.toString();
+  Serial.println(feederIP);
   camIP = "http://" + String(ip[0]) + "." + String(ip[1]) + "." + String(ip[2]) + "." + camIPEnd;
 
   timeClient.begin();
   timeClient.setTimeOffset(GMT_OFFSET * 3600);
+
+
 
   // Setup a function to be called every second
   mainTimer.setInterval(1000L, mainEvent);
@@ -273,7 +279,7 @@ void initScale(float cal_factor) {
 
   Serial.print("get units: \t\t");
   Serial.println(scale.get_units(5), 1);  // print the average of 5 readings from the ADC minus tare weight (not set) divided
-                                          // by the SCALE parameter (not set yet)
+  // by the SCALE parameter (not set yet)
 
   scale.set_scale(cal_factor);
   //scale.set_scale(-471.497);                      // this value is obtained by calibrating the scale with known weights; see the README for details
