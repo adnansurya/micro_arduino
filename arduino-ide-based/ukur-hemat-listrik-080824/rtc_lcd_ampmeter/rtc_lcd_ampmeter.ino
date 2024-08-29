@@ -19,25 +19,125 @@ RtcDS1302<ThreeWire> Rtc(myWire);
 
 LiquidCrystal_I2C lcd(0x27, 20, 4);  // set the LCD address to 0x27 for a 20 chars and 4 line display
 
+unsigned long lcdUpdateTime = 0;
+unsigned long lcdUpdateInterval = 1000;
+
+String* dateTimeStrings;
+
+int updateCounter = 0;
+int savingTimer = 5;
+
+
 void setup() {
   Serial.begin(9600);
 
-  lcd.init();  // initialize the lcd
-  // Print a message to the LCD.
-  lcd.backlight();
-  lcd.setCursor(0, 0);
-  lcd.print("initializing..");
+  rtcInit();
 
+  lcdInit();
+
+  sensorInit();
+}
+
+void loop() {
+
+  unsigned long currentTime = millis();
+
+  if (currentTime - lcdUpdateTime >= lcdUpdateInterval) {
+    getSensorData();
+
+    if (updateCounter < savingTimer) {  
+      displaySensorData();
+
+    } else {
+      
+      updateTime();
+      displayTime();
+      updateCounter = 0;
+    }
+
+    updateCounter++;
+    lcdUpdateTime = currentTime;
+  }
+}
+
+void displayTime() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Date: ");
+  lcd.setCursor(0, 1);
+  lcd.print(dateTimeStrings[0]);
+  lcd.setCursor(0, 2);
+  lcd.print("Time: ");
+  lcd.setCursor(0, 3);
+  lcd.print(dateTimeStrings[1]);
+}
+
+
+void updateTime() {
+
+  RtcDateTime now = Rtc.GetDateTime();
+  dateTimeStrings = getDateTimeStrings(now);
+  if (!now.IsValid()) {
+    Serial.println("RTC lost confidence in the DateTime!");
+  }
+
+  Serial.print("Date: ");
+  Serial.println(dateTimeStrings[0]);
+  Serial.print("Time: ");
+  Serial.println(dateTimeStrings[1]);
+}
+
+void sensorInit() {
   sensor1.calibrate();
   sensor2.calibrate();
   sensor3.calibrate();
   sensor4.calibrate();
-  Serial.println("Calibrating Sensor OK");
+  Serial.println("Calibrating Sensors OK");
+}
 
-  Serial.print("compiled: ");
-  Serial.print(__DATE__);
-  Serial.println(__TIME__);
+void displaySensorData() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("I_1 = ");
+  lcd.print(current1);
+  lcd.print(" A");
+  lcd.setCursor(0, 1);
+  lcd.print("I_2 = ");
+  lcd.print(current2);
+  lcd.print(" A");
+  lcd.setCursor(0, 2);
+  lcd.print("I_3 = ");
+  lcd.print(current3);
+  lcd.print(" A");
+  lcd.setCursor(0, 3);
+  lcd.print("I_4 = ");
+  lcd.print(current4);
+  lcd.print(" A");
+}
 
+void getSensorData() {
+  current1 = sensor1.getCurrentAC();
+  current2 = sensor2.getCurrentAC();
+  current3 = sensor3.getCurrentAC();
+  current4 = sensor4.getCurrentAC();
+
+  // Send it to serial
+  Serial.print("I_1 = ");
+  Serial.print(current1);
+  Serial.print(" A\t");
+  Serial.print("I_2 = ");
+  Serial.print(current2);
+  Serial.print(" A\t");
+  Serial.print("I_3 = ");
+  Serial.print(current3);
+  Serial.print(" A\t");
+  Serial.print("I_4 = ");
+  Serial.print(current4);
+  Serial.println(" A");
+}
+
+
+void rtcInit() {
   Rtc.Begin();
 
   RtcDateTime compiled = RtcDateTime(__DATE__, __TIME__);
@@ -75,68 +175,25 @@ void setup() {
     Rtc.SetDateTime(compiled);
   } else if (now > compiled) {
     Serial.println("RTC is newer than compile time. (this is expected)");
+    //  Rtc.SetDateTime(compiled);
   } else if (now == compiled) {
     Serial.println("RTC is the same as compile time! (not expected but all is fine)");
   }
+
+
+  Serial.print("compiled: ");
+  Serial.print(__DATE__);
+  Serial.println(__TIME__);
 }
 
-void loop() {
-  lcd.clear();
-  RtcDateTime now = Rtc.GetDateTime();
-  String* dateTimeStrings = getDateTimeStrings(now);
+void lcdInit() {
 
-  Serial.print("Date: ");
-  Serial.println(dateTimeStrings[0]);
-  Serial.print("Time: ");
-  Serial.println(dateTimeStrings[1]);
-  Serial.println();
-
-  if (!now.IsValid()) {
-    Serial.println("RTC lost confidence in the DateTime!");
-  }
-  Serial.println();
-
-  current1 = sensor1.getCurrentAC();
-  current2 = sensor2.getCurrentAC();
-  current3 = sensor3.getCurrentAC();
-  current4 = sensor4.getCurrentAC();
-
-  // Send it to serial
-  Serial.print("I_1 = ");
-  Serial.print(current1);
-  Serial.print(" A\t");
-  Serial.print("I_2 = ");
-  Serial.print(current2);
-  Serial.print(" A\t");
-  Serial.print("I_3 = ");
-  Serial.print(current3);
-  Serial.print(" A\t");
-  Serial.print("I_4 = ");
-  Serial.print(current4);
-  Serial.println(" A");
-
-  // Send it to serial
+  lcd.init();  // initialize the lcd
+  // Print a message to the LCD.
+  lcd.backlight();
   lcd.setCursor(0, 0);
-  lcd.print("I_1 = ");
-  lcd.print(current1);
-  lcd.print(" A");
-  lcd.setCursor(0, 1);
-  lcd.print("I_2 = ");
-  lcd.print(current2);
-  lcd.print(" A");
-  lcd.setCursor(0, 2);
-  lcd.print("I_3 = ");
-  lcd.print(current3);
-  lcd.print(" A");
-  lcd.setCursor(0, 3);
-  lcd.print("I_4 = ");
-  lcd.print(current4);
-  lcd.print(" A");
-
-  delay(1000);
+  lcd.print("Initializing..");
 }
-
-#define countof(a) (sizeof(a) / sizeof(a[0]))
 
 String* getDateTimeStrings(const RtcDateTime& dt) {
   static String result[2];  // array to hold date and time strings
