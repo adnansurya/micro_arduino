@@ -41,7 +41,13 @@ void setup() {
   Rtc.Begin();
 
   RtcDateTime compiled = RtcDateTime(__DATE__, __TIME__);
-  printDateTime(compiled);
+  String* compDateTimeStrings = getDateTimeStrings(compiled);
+
+  Serial.print("Date: ");
+  Serial.println(compDateTimeStrings[0]);
+  Serial.print("Time: ");
+  Serial.println(compDateTimeStrings[1]);
+  Serial.println();
   Serial.println();
 
   if (!Rtc.IsDateTimeValid()) {
@@ -77,8 +83,17 @@ void setup() {
 void loop() {
   lcd.clear();
   RtcDateTime now = Rtc.GetDateTime();
+  String* dateTimeStrings = getDateTimeStrings(now);
 
-  printDateTime(now);
+  Serial.print("Date: ");
+  Serial.println(dateTimeStrings[0]);
+  Serial.print("Time: ");
+  Serial.println(dateTimeStrings[1]);
+  Serial.println();
+
+  if (!now.IsValid()) {
+    Serial.println("RTC lost confidence in the DateTime!");
+  }
   Serial.println();
 
   current1 = sensor1.getCurrentAC();
@@ -118,28 +133,33 @@ void loop() {
   lcd.print(current4);
   lcd.print(" A");
 
-  if (!now.IsValid()) {
-    // Common Causes:
-    //    1) the battery on the device is low or even missing and the power line was disconnected
-    Serial.println("RTC lost confidence in the DateTime!");
-  }
-
-  delay(1000);  // ten seconds
+  delay(1000);
 }
 
 #define countof(a) (sizeof(a) / sizeof(a[0]))
 
-void printDateTime(const RtcDateTime& dt) {
-  char datestring[26];
+String* getDateTimeStrings(const RtcDateTime& dt) {
+  static String result[2];  // array to hold date and time strings
 
-  snprintf_P(datestring,
-             countof(datestring),
-             PSTR("%02u/%02u/%04u %02u:%02u:%02u"),
+  char dateStr[11];  // "MM/DD/YYYY\0" -> 10 characters + 1 null terminator
+  char timeStr[9];   // "HH:MM:SS\0" -> 8 characters + 1 null terminator
+
+  snprintf_P(dateStr,
+             sizeof(dateStr),
+             PSTR("%02u/%02u/%04u"),
              dt.Month(),
              dt.Day(),
-             dt.Year(),
+             dt.Year());
+
+  snprintf_P(timeStr,
+             sizeof(timeStr),
+             PSTR("%02u:%02u:%02u"),
              dt.Hour(),
              dt.Minute(),
              dt.Second());
-  Serial.print(datestring);
+
+  result[0] = String(dateStr);
+  result[1] = String(timeStr);
+
+  return result;
 }
