@@ -1,5 +1,6 @@
 #include <NewPing.h>
 #include "BluetoothSerial.h"
+#include "HardwareSerial.h"
 #include "DFRobotDFPlayerMini.h"
 
 #if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
@@ -8,7 +9,12 @@
 
 BluetoothSerial SerialBT;
 DFRobotDFPlayerMini mp3;
+HardwareSerial dfSD(1); // Use UART channel 1
 
+#define RXD2 16 // Connects to module's RX 
+#define TXD2 17 // Connects to module's TX 
+
+#define buzzerPin 14
 
 #define TRIGGER_PIN 21
 #define ECHO_PIN 22
@@ -26,8 +32,10 @@ NewPing sonar(TRIGGER_PIN, ECHO_PIN, tinggiMax);
 
 
 void setup() {
+  pinMode(buzzerPin, OUTPUT);
+  beep(1, 0.2);
   Serial.begin(115200);
-  Serial2.begin(9600);
+  dfSD.begin(9600, SERIAL_8N1, RXD2, TXD2);  // 16,17
   SerialBT.begin("ESP32 Water");
   delay(100);
 
@@ -39,7 +47,7 @@ void setup() {
   SerialBT.println(F("DFRobot DFPlayer Mini Demo"));
   SerialBT.println(F("Initializing DFPlayer ... (May take 3~5 seconds)"));
 
-  if (!mp3.begin(Serial2)) {  //Use softwareSerial to communicate with mp3.
+  if (!mp3.begin(dfSD))  { //Use softwareSerial to communicate with mp3.
     Serial.println(F("Unable to begin:"));
     Serial.println(F("1.Please recheck the connection!"));
     Serial.println(F("2.Please insert the SD card!"));
@@ -48,7 +56,8 @@ void setup() {
     SerialBT.println(F("1.Please recheck the connection!"));
     SerialBT.println(F("2.Please insert the SD card!"));
     while (true)
-      ;
+      beep(1, 0.5);
+      
   }
 
   SerialBT.println(F("DFPlayer Mini online."));
@@ -61,6 +70,7 @@ void setup() {
 
   //----Set different EQ----
   mp3.EQ(DFPLAYER_EQ_NORMAL);
+  beep(2, 0.2);
 }
 
 void loop() {
@@ -80,11 +90,13 @@ void loop() {
   if (tinggiAir > batasTinggi && tinggiAir < (tinggiMax - jarakDeteksi)) {
     Serial.println("PERINGATAN!");
     SerialBT.println("PERINGATAN!");
+    beep(3, 0.2);
     mp3.play(2);
     delay(3000);
   } else if (tinggiAir > batasTinggi && tinggiAir >= (tinggiMax - jarakDeteksi)) {
     Serial.println("BAHAYA!");
     SerialBT.println("BAHAYA!");
+    beep(5, 0.2);
     mp3.play(1);
     delay(16000);
   }
@@ -103,4 +115,13 @@ void loop() {
   SerialBT.print("Tinggi Air : ");
   SerialBT.print(tinggiAir);
   SerialBT.println("cm");
+}
+
+void beep(int ulang, float detik) {
+  for (int i = 0; i < ulang; i++) {
+    digitalWrite(buzzerPin, HIGH);
+    delay(detik * 1000);
+    digitalWrite(buzzerPin, LOW);
+    delay(detik * 1000);
+  }
 }
