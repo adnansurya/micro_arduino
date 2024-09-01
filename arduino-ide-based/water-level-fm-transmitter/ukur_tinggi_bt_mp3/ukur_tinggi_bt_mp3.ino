@@ -10,8 +10,8 @@ BluetoothSerial SerialBT;
 DFRobotDFPlayerMini mp3;
 
 
-#define TRIGGER_PIN 18
-#define ECHO_PIN 19
+#define TRIGGER_PIN 21
+#define ECHO_PIN 22
 #define MAX_DISTANCE 200
 
 long tinggiMax = 80;
