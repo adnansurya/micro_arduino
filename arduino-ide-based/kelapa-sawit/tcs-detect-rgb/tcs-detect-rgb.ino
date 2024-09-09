@@ -6,21 +6,17 @@ Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_50MS, TCS3472
 
 // Pin GPIO untuk mengontrol LED
 const int ledPin = 15;
-const int sensorPin = 34;
 
 float currentClear = 0.0;
-float lastClear = 0.0;
-float deltaClear = 0.0;
-float detectionThreshold = 500.0;
+float detectionThreshold = 10.0;
 
-bool setupDone = false;
 bool objectDetected = false;
 bool lastObjectDetected = false;
 
 void setup() {
   Serial.begin(115200);
   pinMode(ledPin, OUTPUT);    // Set pin GPIO 15 sebagai output
-  digitalWrite(ledPin, LOW);  // Mulai dengan LED mati
+  digitalWrite(ledPin, HIGH);  // Mulai dengan LED mati
 
   if (tcs.begin()) {
     Serial.println("TCS34725 ditemukan!");
@@ -36,42 +32,21 @@ void loop() {
   tcs.getRawData(&r, &g, &b, &c);
 
 
-  // currentClear = c;
-  // deltaClear = currentClear - lastClear;
+  currentClear = c;
 
-  // Serial.print("currentClear: ");
-  // Serial.print(currentClear);
-  // Serial.print(" ");
-  // Serial.print("lastClear: ");
-  // Serial.print(lastClear);
-  // Serial.print(" ");
-  // Serial.print("deltaClear: ");
-  // Serial.println(deltaClear);
+  Serial.print("currentClear: ");
+  Serial.println(currentClear);
+ 
 
-  // Jika nilai clear channel melebihi ambang batas, artinya ada objek di depan sensor
-  // if ((abs(deltaClear) >= detectionThreshold && deltaClear > 0) && setupDone) {
-
-  //   objectDetected = true;
-  // } else if  ((abs(deltaClear) >= detectionThreshold && deltaClear < 0) && setupDone){
-  //    objectDetected = false;
-  // }
-
-  int sensorAdc = analogRead(sensorPin);
-  Serial.print("ADC: ");
-  Serial.println(sensorAdc);
-
-  if(sensorAdc < detectionThreshold){
+  if(currentClear > detectionThreshold){
     objectDetected = true;
   }else{
     objectDetected = false;
   }
 
-  if (objectDetected) {
-    digitalWrite(ledPin, HIGH);  // Nyalakan LED
-    Serial.println("Objek terdeteksi, LED menyala.");
-  }else{
-     digitalWrite(ledPin, LOW);  // Matikan LED
-    Serial.println("Tidak ada objek, LED mati.");
+  if (objectDetected && lastObjectDetected != objectDetected) {
+    Serial.println("Objek terdeteksi");
+    kedip(2, 0.5);
   }
 
 
@@ -96,12 +71,16 @@ void loop() {
   Serial.print("B: ");
   Serial.println((int)blue);
 
-  if (!setupDone) {
-    setupDone = true;
-  }
-
-  lastClear = currentClear;
   lastObjectDetected = objectDetected;
 
   delay(500);  // Baca setiap 1 detik
+}
+
+void kedip(int ulang, float detik) {
+  for (int i = 0; i < ulang; i++) {
+    digitalWrite(ledPin, LOW);
+    delay(detik * 1000);
+    digitalWrite(ledPin, HIGH);
+    delay(detik * 1000);
+  }
 }
