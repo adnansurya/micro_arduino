@@ -82,10 +82,11 @@ void loop() {
     Serial.println(warna);
     kedip(2, 0.5);
     moveCircle(warna);
-    delay(500);
-    myservo.write(180);
-    delay(500);
-     myservo.write(0);
+    delay(1000);
+    myservo.write(200);
+    delay(1000);
+    myservo.write(0);
+    delay(1000);
     digitalWrite(ledPin, HIGH);
   }
 
