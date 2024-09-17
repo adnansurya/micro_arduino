@@ -69,9 +69,7 @@ void loop()
 {
   // Baca pH
   nilai_analog_PH = analogRead(ph_Pin);
-  TeganganPh = 3.3 / 1024.0 * nilai_analog_PH;
-  PH_step = (PH4 - PH7) / 3;
-  Po = 7.00 + ((PH7 - TeganganPh) / PH_step);
+  Po  = 26.0708 - ((0.0323125) * (float) nilai_analog_PH);
 
   // Baca suhu
   sensors.requestTemperatures();
