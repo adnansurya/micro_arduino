@@ -16,7 +16,7 @@ float currentAngle = 0.0;
 
 Stepper myStepper(stepsPerRevolution, IN1, IN3, IN2, IN4);
 // Inisialisasi sensor
-Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_50MS, TCS34725_GAIN_1X);
+Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_50MS, TCS34725_GAIN_60X);
 
 Servo myservo;
 
@@ -28,7 +28,7 @@ const int relayPin = 13;
 const int switchPin = 23;
 
 float currentClear = 0.0;
-float detectionThreshold = 30.0;
+float detectionThreshold = 1000.0;
 
 bool objectDetected = false;
 bool lastObjectDetected = false;
@@ -79,39 +79,41 @@ void loop() {
   Serial.print("currentClear: ");
   Serial.println(currentClear);
 
-  // Konversi nilai raw ke format RGB (0-255)
-  float red = r;
-  float green = g;
-  float blue = b;
-  float sum = r + g + b;
-
-  if (sum > 0) {
-    red = (red / sum) * 255.0;
-    green = (green / sum) * 255.0;
-    blue = (blue / sum) * 255.0;
-  }
-
-  Serial.print("R: ");
-  Serial.print((int)red);
-  Serial.print(" ");
-  Serial.print("G: ");
-  Serial.print((int)green);
-  Serial.print(" ");
-  Serial.print("B: ");
-  Serial.println((int)blue);
-
-
-
-
-
   if (currentClear > detectionThreshold) {
     objectDetected = true;
   } else {
     objectDetected = false;
   }
 
+
+
+
   if (objectDetected && lastObjectDetected != objectDetected) {
+    
     Serial.println("Objek terdeteksi");
+    delay(1500);
+    tcs.getRawData(&r, &g, &b, &c);
+
+    // Konversi nilai raw ke format RGB (0-255)
+    float red = r;
+    float green = g;
+    float blue = b;
+    float sum = r + g + b;
+
+    if (sum > 0) {
+      red = (red / sum) * 255.0;
+      green = (green / sum) * 255.0;
+      blue = (blue / sum) * 255.0;
+    }
+
+    Serial.print("R: ");
+    Serial.print((int)red);
+    Serial.print(" ");
+    Serial.print("G: ");
+    Serial.print((int)green);
+    Serial.print(" ");
+    Serial.print("B: ");
+    Serial.println((int)blue);
     String warna = identifyColor((int)red, (int)green, (int)blue);
     Serial.println(warna);
     kedip(2, 0.5);
@@ -142,18 +144,18 @@ void kedip(int ulang, float detik) {
 
 // Fungsi untuk membedakan warna berdasarkan nilai RGB
 String identifyColor(int r, int g, int b) {
-  if (r > 80 && r < 150 && g < 80 && b > 100 && b < 180) {
+  if (r <= 100 && g <= 50 && b <= 100 && (g < r || g <= b)) {
     return "Ungu Kehitaman";
-  } else if (r > 200 && g > 100 && g < 150 && b < 50) {
-    return "Jingga Kemerahan";
-  } else if (r > 150 && r < 220 && g > 50 && g < 100 && b < 50) {
-    return "Jingga Merah Kehitaman";
-  } else if (r < 50 && g > 80 && g < 150 && b < 50) {
+  } else if (r < g && g >= 100 && b <= g) {
     return "Hijau Gelap";
-  } else if (r > 200 && g > 200 && b < 100) {
-    return "Kuning";
-  } else if (r > 180 && g < 80 && b < 80) {
+  } else if (r <= 180 && g <= 120 && (g - b) <= 100 && ((r - g) <= 100 && r > g)) {
+    return "Jingga Merah Kehitaman";
+  } else if (r >= 120 && g <= 60 && (g - b) <= 20 && (r - g > 100)) {
     return "Merah";
+  } else if (r > 150 && (g - b) > 20 && (r - g > g - b)) {
+    return "Jingga Kemerahan";
+  } else if ((g - b) > 50 && r >= g && b <= 200) {
+    return "Kuning";
   } else {
     return "Tidak Dikenal";
   }
@@ -162,17 +164,17 @@ String identifyColor(int r, int g, int b) {
 
 void moveCircle(String cl) {
   digitalWrite(relayPin, LOW);
-  if (cl == "Ungu Kehitaman") {
+  if (cl == "Merah" || cl == "Jingga Merah Kehitaman") {
     myStepper.step(step_degree(360));
-  } else if (cl == "Jingga Kemerahan") {
+  } else if (cl == "Ungu Kehitaman") {
     myStepper.step(step_degree(60));
-  } else if (cl == "Jingga Merah Kehitaman" || cl == "Merah") {
-    myStepper.step(step_degree(120));
   } else if (cl == "Hijau Gelap") {
+    myStepper.step(step_degree(120));
+  } else if (cl == "Jingga Kemerahan") {
     myStepper.step(step_degree(180));
-  }else if (cl == "Kuning") {
+  } else if (cl == "Kuning") {
     myStepper.step(step_degree(240));
-  }else if (cl == "Tidak Dikenal") {
+  } else if (cl == "Tidak Dikenal") {
     myStepper.step(step_degree(300));
   }
   digitalWrite(relayPin, HIGH);
