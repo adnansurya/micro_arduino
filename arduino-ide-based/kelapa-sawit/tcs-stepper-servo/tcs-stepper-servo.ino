@@ -1,7 +1,7 @@
 #include <Wire.h>
 #include "Adafruit_TCS34725.h"
 #include <Stepper.h>
-#include <ESP32Servo.h> 
+#include <ESP32Servo.h>
 
 
 
@@ -24,6 +24,7 @@ const int servoPin = 13;
 
 // Pin GPIO untuk mengontrol LED
 const int ledPin = 15;
+const int switchPin = 23;
 
 float currentClear = 0.0;
 float detectionThreshold = 30.0;
@@ -33,30 +34,37 @@ bool lastObjectDetected = false;
 
 uint16_t r, g, b, c;
 
-
+int switchVal = 1;
 
 
 void setup() {
   Serial.begin(115200);
-  pinMode(ledPin, OUTPUT);     // Set pin GPIO 15 sebagai output
-  digitalWrite(ledPin, HIGH);  // Mulai dengan LED mati
+  pinMode(ledPin, OUTPUT);  // Set pin GPIO 15 sebagai output
+  kedip(2, 0.5);
+  pinMode(switchPin, INPUT_PULLUP);
 
   if (tcs.begin()) {
     Serial.println("TCS34725 ditemukan!");
   } else {
     Serial.println("TCS34725 tidak ditemukan. Silakan periksa koneksi.");
+    kedip(3, 1);
     while (1)
       ;  // Stop eksekusi jika sensor tidak ditemukan
   }
 
+
+
   myStepper.setSpeed(8);
+  resetStepper();
 
   ESP32PWM::allocateTimer(0);
-	ESP32PWM::allocateTimer(1);
-	ESP32PWM::allocateTimer(2);
-	ESP32PWM::allocateTimer(3);
-  myservo.setPeriodHertz(50);// Standard 50hz servo
-  myservo.attach(servoPin, 500, 2400); 
+  ESP32PWM::allocateTimer(1);
+  ESP32PWM::allocateTimer(2);
+  ESP32PWM::allocateTimer(3);
+  myservo.setPeriodHertz(50);  // Standard 50hz servo
+  myservo.attach(servoPin, 500, 2400);
+
+  kedip(1, 1);
 }
 
 void loop() {
@@ -163,4 +171,17 @@ int step_degree(float desired_degree) {
   int step_moved = (desired_degree - currentAngle) / resolution;
   currentAngle = desired_degree;
   return step_moved;
+}
+
+void resetStepper() {
+
+  while (switchVal == 1) {
+    switchVal = digitalRead(switchPin);
+    Serial.print("SWITCH : ");
+    Serial.println(switchVal);
+    myStepper.step(1);
+    delay(50);
+  }
+
+  Serial.println("Stepper Reset Done!");
 }
