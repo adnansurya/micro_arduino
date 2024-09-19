@@ -20,10 +20,11 @@ Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_50MS, TCS3472
 
 Servo myservo;
 
-const int servoPin = 13;
+const int servoPin = 25;
 
 // Pin GPIO untuk mengontrol LED
 const int ledPin = 15;
+const int relayPin = 13;
 const int switchPin = 23;
 
 float currentClear = 0.0;
@@ -34,7 +35,7 @@ bool lastObjectDetected = false;
 
 uint16_t r, g, b, c;
 
-int switchVal = 1;
+int switchVal = 0;
 
 
 void setup() {
@@ -42,6 +43,8 @@ void setup() {
   pinMode(ledPin, OUTPUT);  // Set pin GPIO 15 sebagai output
   kedip(2, 0.5);
   pinMode(switchPin, INPUT_PULLUP);
+  pinMode(relayPin, OUTPUT);
+  digitalWrite(relayPin, LOW);
 
   if (tcs.begin()) {
     Serial.println("TCS34725 ditemukan!");
@@ -65,6 +68,7 @@ void setup() {
   myservo.attach(servoPin, 500, 2400);
 
   kedip(1, 1);
+  digitalWrite(ledPin, HIGH);
 }
 
 void loop() {
@@ -153,6 +157,7 @@ String classify() {
 
 
 void moveCircle(String cl) {
+  digitalWrite(relayPin, LOW);
   if (cl == "unknown") {
     myStepper.step(step_degree(360));
   } else if (cl == "red") {
@@ -162,6 +167,7 @@ void moveCircle(String cl) {
   } else if (cl == "blue") {
     myStepper.step(step_degree(270));
   }
+  digitalWrite(relayPin, HIGH);
 }
 
 
@@ -175,13 +181,14 @@ int step_degree(float desired_degree) {
 
 void resetStepper() {
 
-  while (switchVal == 1) {
+  while (switchVal == 0) {
     switchVal = digitalRead(switchPin);
     Serial.print("SWITCH : ");
     Serial.println(switchVal);
     myStepper.step(1);
-    delay(50);
+    delay(1);
   }
 
   Serial.println("Stepper Reset Done!");
+  digitalWrite(relayPin, HIGH);
 }
