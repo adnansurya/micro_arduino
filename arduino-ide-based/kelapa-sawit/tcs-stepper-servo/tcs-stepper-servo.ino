@@ -74,12 +74,34 @@ void setup() {
 void loop() {
 
   tcs.getRawData(&r, &g, &b, &c);
-
-
   currentClear = c;
 
   Serial.print("currentClear: ");
   Serial.println(currentClear);
+
+  // Konversi nilai raw ke format RGB (0-255)
+  float red = r;
+  float green = g;
+  float blue = b;
+  float sum = r + g + b;
+
+  if (sum > 0) {
+    red = (red / sum) * 255.0;
+    green = (green / sum) * 255.0;
+    blue = (blue / sum) * 255.0;
+  }
+
+  Serial.print("R: ");
+  Serial.print((int)red);
+  Serial.print(" ");
+  Serial.print("G: ");
+  Serial.print((int)green);
+  Serial.print(" ");
+  Serial.print("B: ");
+  Serial.println((int)blue);
+
+
+
 
 
   if (currentClear > detectionThreshold) {
@@ -90,7 +112,7 @@ void loop() {
 
   if (objectDetected && lastObjectDetected != objectDetected) {
     Serial.println("Objek terdeteksi");
-    String warna = classify();
+    String warna = identifyColor((int)red, (int)green, (int)blue);
     Serial.println(warna);
     kedip(2, 0.5);
     moveCircle(warna);
@@ -118,54 +140,40 @@ void kedip(int ulang, float detik) {
 }
 
 
-String classify() {
-
-  String result = "-";
-  // Konversi nilai raw ke format RGB
-  float red = r;
-  float green = g;
-  float blue = b;
-  float sum = r + g + b;
-
-  if (sum > 0) {
-    red = (red / sum) * 255.0;
-    green = (green / sum) * 255.0;
-    blue = (blue / sum) * 255.0;
-  }
-
-  Serial.print("R: ");
-  Serial.print((int)red);
-  Serial.print(" ");
-  Serial.print("G: ");
-  Serial.print((int)green);
-  Serial.print(" ");
-  Serial.print("B: ");
-  Serial.println((int)blue);
-
-  if (red > green && red > blue) {
-    result = "red";
-  } else if (green > red && green > blue) {
-    result = "green";
-  } else if (blue > red && blue > green) {
-    result = "blue";
+// Fungsi untuk membedakan warna berdasarkan nilai RGB
+String identifyColor(int r, int g, int b) {
+  if (r > 80 && r < 150 && g < 80 && b > 100 && b < 180) {
+    return "Ungu Kehitaman";
+  } else if (r > 200 && g > 100 && g < 150 && b < 50) {
+    return "Jingga Kemerahan";
+  } else if (r > 150 && r < 220 && g > 50 && g < 100 && b < 50) {
+    return "Jingga Merah Kehitaman";
+  } else if (r < 50 && g > 80 && g < 150 && b < 50) {
+    return "Hijau Gelap";
+  } else if (r > 200 && g > 200 && b < 100) {
+    return "Kuning";
+  } else if (r > 180 && g < 80 && b < 80) {
+    return "Merah";
   } else {
-    result = "unknown";
+    return "Tidak Dikenal";
   }
-
-  return result;
 }
 
 
 void moveCircle(String cl) {
   digitalWrite(relayPin, LOW);
-  if (cl == "unknown") {
+  if (cl == "Ungu Kehitaman") {
     myStepper.step(step_degree(360));
-  } else if (cl == "red") {
-    myStepper.step(step_degree(90));
-  } else if (cl == "green") {
+  } else if (cl == "Jingga Kemerahan") {
+    myStepper.step(step_degree(60));
+  } else if (cl == "Jingga Merah Kehitaman" || cl == "Merah") {
+    myStepper.step(step_degree(120));
+  } else if (cl == "Hijau Gelap") {
     myStepper.step(step_degree(180));
-  } else if (cl == "blue") {
-    myStepper.step(step_degree(270));
+  }else if (cl == "Kuning") {
+    myStepper.step(step_degree(240));
+  }else if (cl == "Tidak Dikenal") {
+    myStepper.step(step_degree(300));
   }
   digitalWrite(relayPin, HIGH);
 }
