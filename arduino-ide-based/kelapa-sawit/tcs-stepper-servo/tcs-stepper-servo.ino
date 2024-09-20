@@ -133,6 +133,7 @@ void loop() {
   Serial.print("currentClear: ");
   Serial.println(currentClear);
 
+
   if (currentClear > detectionThreshold) {
     objectDetected = true;
   } else {
@@ -140,15 +141,14 @@ void loop() {
   }
 
 
-
-
   if (objectDetected && lastObjectDetected != objectDetected) {
 
     Serial.println("Objek terdeteksi");
-    delay(1500);
-    tcs.getRawData(&r, &g, &b, &c);
 
-    // Konversi nilai raw ke format RGB (0-255)
+     delay(2000);
+     tcs.getRawData(&r, &g, &b, &c);
+
+     // Konversi nilai raw ke format RGB (0-255)
     float red = r;
     float green = g;
     float blue = b;
@@ -168,6 +168,8 @@ void loop() {
     Serial.print(" ");
     Serial.print("B: ");
     Serial.println((int)blue);
+
+    
     String warna = identifyColor((int)red, (int)green, (int)blue);
     Serial.println(warna);
     kedip(2, 0.5);
@@ -199,7 +201,7 @@ void kedip(int ulang, float detik) {
 
 // Fungsi untuk membedakan warna berdasarkan nilai RGB
 String identifyColor(int r, int g, int b) {
-  if (g <= 100 && (b - g > -30)) {
+  if (r < 120 && g <= 100 && (b - g > -30)) {
     return "Ungu Kehitaman";
   } else if (r < g && g - r > 10 && g > 100 && b < g && (g - b) > 10) {
     return "Hijau Gelap";
@@ -209,7 +211,8 @@ String identifyColor(int r, int g, int b) {
     return "Merah";
   } else if (r > 140 && (g >= b) && (r - g > g - b)) {
     return "Jingga Kemerahan";
-  } else if ((g - b) > 50 && r >= g && b <= 200) {
+   } else if ((g-b) > 50 && (r >= g || g-r < 10) && b <= 200) {
+
     return "Kuning";
   } else {
     return "Tidak Dikenal";
