@@ -199,9 +199,9 @@ void kedip(int ulang, float detik) {
 
 // Fungsi untuk membedakan warna berdasarkan nilai RGB
 String identifyColor(int r, int g, int b) {
-  if (r <= 100 && g <= 50 && b <= 100 && (g < r || g <= b)) {
+  if (g <= 100 && (b - g > -30)) {
     return "Ungu Kehitaman";
-  } else if (r < g && g >= 100 && b <= g) {
+  } else if (r < g && g - r > 10 && g > 100 && b < g && (g - b) > 10) {
     return "Hijau Gelap";
   } else if (r <= 140 && g <= 120 && (g - b) <= 100 && ((r - g) <= 100 && r > g)) {
     return "Jingga Merah Kehitaman";
