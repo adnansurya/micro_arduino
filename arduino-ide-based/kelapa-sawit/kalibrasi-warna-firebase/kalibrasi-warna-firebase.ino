@@ -35,11 +35,11 @@ String identifyColor(int r, int g, int b) {
     return "Ungu Kehitaman";
   } else if (r < g && g >= 100 && b <= g) {
     return "Hijau Gelap";
-  } else if (r <= 180 && g <= 120 && (g - b) <= 100 && ((r - g) <= 100 && r > g)) {
+  } else if (r <= 140 && g <= 120 && (g - b) <= 100 && ((r - g) <= 100 && r > g)) {
     return "Jingga Merah Kehitaman";
   } else if (r >= 120 && g <= 60 && (g - b) <= 20 && (r - g > 100)) {
     return "Merah";
-  } else if (r > 150 && (g - b) > 20 && (r - g > g - b)) {
+  } else if (r > 140 && (g - b) > 20 && (r - g > g - b)) {
     return "Jingga Kemerahan";
   } else if ((g - b) > 50 && r >= g && b <= 200) {
     return "Kuning";
