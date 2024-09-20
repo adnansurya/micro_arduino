@@ -48,7 +48,7 @@ const int servoPin = 25;
 // Pin GPIO untuk mengontrol LED
 const int ledPin = 15;
 const int relayPin = 13;
-const int switchPin = 23;
+const int switchPin = 4;
 
 float currentClear = 0.0;
 float detectionThreshold = 3000.0;
@@ -201,9 +201,9 @@ void kedip(int ulang, float detik) {
 
 // Fungsi untuk membedakan warna berdasarkan nilai RGB
 String identifyColor(int r, int g, int b) {
-  if (r < 120 && g <= 100 && (b - g > -30)) {
+  if (r < 120 && g <= 100 && (b - g > -30) && (b - r < 80)) {
     return "Ungu Kehitaman";
-  } else if (r < g && g - r > 10 && g > 100 && b < g && (g - b) > 10) {
+  } else if (r < g && g - r > 30 && g > 50  && g <= 200 && b < g && (g - b) > 30) {
     return "Hijau Gelap";
   } else if (r <= 140 && g <= 120 && (g - b) <= 100 && ((r - g) <= 100 && r > g)) {
     return "Jingga Merah Kehitaman";

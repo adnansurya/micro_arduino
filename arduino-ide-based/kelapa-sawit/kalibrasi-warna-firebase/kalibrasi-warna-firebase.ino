@@ -31,23 +31,23 @@ Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_50MS, TCS3472
 
 // Fungsi untuk membedakan warna berdasarkan nilai RGB
 String identifyColor(int r, int g, int b) {
-  if (r <= 100 && g <= 50 && b <= 100 && (g < r || g <= b)) {
+  if (r < 120 && g <= 100 && (b - g > -30) && (b - r < 80)) {
     return "Ungu Kehitaman";
-  } else if (r < g && g >= 100 && b <= g) {
+  } else if (r < g && g - r > 30 && g > 50  && g <= 200 && b < g && (g - b) > 30) {
     return "Hijau Gelap";
   } else if (r <= 140 && g <= 120 && (g - b) <= 100 && ((r - g) <= 100 && r > g)) {
     return "Jingga Merah Kehitaman";
   } else if (r >= 120 && g <= 60 && (g - b) <= 20 && (r - g > 100)) {
     return "Merah";
-  } else if (r > 140 && (g - b) > 20 && (r - g > g - b)) {
+  } else if (r > 140 && (g >= b) && (r - g > g - b)) {
     return "Jingga Kemerahan";
-  } else if ((g - b) > 50 && r >= g && b <= 200) {
+   } else if ((g-b) > 50 && (r >= g || g-r < 10) && b <= 200) {
+
     return "Kuning";
   } else {
     return "Tidak Dikenal";
   }
 }
-
 void setup() {
   Serial.begin(115200);
 
