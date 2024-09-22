@@ -25,8 +25,14 @@ float Po = 0;
 float PH_step;
 int nilai_analog_PH;
 double TeganganPh;
-int nilai_analog_MQ3;                                      // Variabel untuk nilai MQ3
-unsigned int redFrequency, greenFrequency, blueFrequency;  // Variabel untuk nilai warna
+int nilai_analog_MQ3;  // Variabel untuk nilai MQ3
+float temperature;
+String jenisCairanPH;
+
+unsigned long previousMillis = 0;  //will store last time LED was blinked
+const long periode = 15000;         // period at which to blink in ms
+
+
 
 
 
@@ -55,16 +61,41 @@ void setup() {
 }
 
 void loop() {
-  // Baca pH
-  nilai_analog_PH = analogRead(ph_Pin);
-  Po = 26.0708 - ((0.0323125) * (float)nilai_analog_PH);
 
-  // Baca suhu
-  sensors.requestTemperatures();
-  float temperature = sensors.getTempCByIndex(0);
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis >= periode) {  // check if 1000ms passed
+    
 
-  // Baca nilai MQ3
-  nilai_analog_MQ3 = analogRead(mq3_Pin);
+    // Baca pH
+    nilai_analog_PH = analogRead(ph_Pin);
+    Po = 26.0708 - ((0.0323125) * (float)nilai_analog_PH);
+
+    // Baca suhu
+    sensors.requestTemperatures();
+    temperature = sensors.getTempCByIndex(0);
+
+    // Baca nilai MQ3
+    nilai_analog_MQ3 = analogRead(mq3_Pin);
+
+    // Deteksi jenis cairan berdasarkan pH dan warna secara terpisah
+    jenisCairanPH = deteksiCairanPH(Po);
+    String jenisCairanWarna = "";    
+
+
+    Serial.println("KIRIM DATA....");
+    espSerial.print("Temp:");
+    espSerial.print(temperature);
+    espSerial.print("\n");
+    espSerial.print("MQ3:");
+    espSerial.print(nilai_analog_MQ3);
+    espSerial.print("\n");
+    espSerial.print("PH:");
+    espSerial.print(Po, 2);
+    espSerial.print("\n");
+
+    previousMillis = currentMillis;
+  }
+
 
   // Tampilkan nilai sensor di LCD
   lcd.clear();
@@ -75,20 +106,18 @@ void loop() {
   lcd.print("Suhu : ");
   lcd.print(temperature, 1);
 
+
+
   delay(1000);
 
-  // Deteksi jenis cairan berdasarkan pH dan warna secara terpisah
-  String jenisCairanPH = deteksiCairanPH(Po);
-  String jenisCairanWarna = "";
 
   // Tampilkan hasil deteksi pada LCD
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("pH : ");
   lcd.print(Po, 2);
-  lcd.setCursor(0, 1);  
+  lcd.setCursor(0, 1);
   lcd.print(jenisCairanPH);
-
 
   Serial.print("PH:");
   Serial.print(Po, 2);
@@ -103,37 +132,21 @@ void loop() {
   Serial.print(jenisCairanPH);
   Serial.print("\n");
 
-    // Kirim data ke ESP8266
-    espSerial.print("PH:");
-    espSerial.print(Po, 2);
-    espSerial.print("\n");
-    espSerial.print("Temp:");
-    espSerial.print(temperature);
-    espSerial.print("\n");
-    espSerial.print("MQ3:");
-    espSerial.print(nilai_analog_MQ3);
-    espSerial.print("\n");
-    espSerial.print("Merah:");
-    espSerial.print(redFrequency);
-    espSerial.print("\n");
-    espSerial.print("Hijau:");
-    espSerial.print(greenFrequency);
-    espSerial.print("\n");
-    espSerial.print("Biru:");
-    espSerial.print(blueFrequency);
-    espSerial.print("\n");
-  
+  // Kirim data ke ESP8266
+
+
+
+
 
   delay(1000);
 }
 
-String deteksiCairanPH(float Po) { 
-    if (Po > 6.50) {
-      return "Minyak Telon";
-    } else if (Po >= 5.00 && Po <= 6.50) {
-      return "Minyak Penyuling";
-    } else {
-      return "Tidak Dikenal";
-    }
-  
+String deteksiCairanPH(float Po) {
+  if (Po > 6.50) {
+    return "Minyak Telon";
+  } else if (Po >= 5.00 && Po <= 6.50) {
+    return "Minyak Penyuling";
+  } else {
+    return "Tidak Dikenal";
+  }
 }

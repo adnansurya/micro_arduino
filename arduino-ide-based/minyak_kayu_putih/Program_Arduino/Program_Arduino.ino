@@ -3,7 +3,7 @@
 #include <DallasTemperature.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
-#include <TCS3200.h> // Tambahkan library TCS3200
+
 
 const int ph_Pin = A0;
 const int oneWireBus = 2; // Pin untuk DS18B20
@@ -127,7 +127,7 @@ void loop()
   espSerial.print(blueFrequency);
   espSerial.print("\n");
 
-  delay(15000);
+  delay(1000);
 }
 
 String deteksiCairanPH(float Po) {
