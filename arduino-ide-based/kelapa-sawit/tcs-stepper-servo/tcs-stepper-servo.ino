@@ -27,7 +27,6 @@ RealtimeDatabase Database;
 AsyncResult result;
 LegacyToken dbSecret(DATABASE_SECRET);
 
-
 #define IN1 19
 #define IN2 18
 #define IN3 5
@@ -145,10 +144,10 @@ void loop() {
 
     Serial.println("Objek terdeteksi");
 
-     delay(2000);
-     tcs.getRawData(&r, &g, &b, &c);
+    delay(2000);
+    tcs.getRawData(&r, &g, &b, &c);
 
-     // Konversi nilai raw ke format RGB (0-255)
+    // Konversi nilai raw ke format RGB (0-255)
     float red = r;
     float green = g;
     float blue = b;
@@ -169,7 +168,7 @@ void loop() {
     Serial.print("B: ");
     Serial.println((int)blue);
 
-    
+
     String warna = identifyColor((int)red, (int)green, (int)blue);
     Serial.println(warna);
     kedip(2, 0.5);
@@ -178,7 +177,8 @@ void loop() {
     myservo.write(200);
     delay(1000);
     myservo.write(0);
-    updateRGB((int)red, (int)green, (int)blue, warna);
+    updateData((int)red, (int)green, (int)blue, warna);
+    updateValue(warna);
     delay(1000);
     digitalWrite(ledPin, HIGH);
   }
@@ -203,7 +203,7 @@ void kedip(int ulang, float detik) {
 String identifyColor(int r, int g, int b) {
   if (r < 120 && g <= 100 && (b - g > -30) && (b - r < 80)) {
     return "Ungu Kehitaman";
-  } else if (r < g && g - r > 30 && g > 50  && g <= 200 && b < g && (g - b) > 30) {
+  } else if (r < g && g - r > 30 && g > 50 && g <= 200 && b < g && (g - b) > 30) {
     return "Hijau Gelap";
   } else if (r <= 140 && g <= 120 && (g - b) <= 100 && ((r - g) <= 100 && r > g)) {
     return "Jingga Merah Kehitaman";
@@ -211,8 +211,7 @@ String identifyColor(int r, int g, int b) {
     return "Merah";
   } else if (r > 140 && (g >= b) && (r - g > g - b)) {
     return "Jingga Kemerahan";
-   } else if ((g-b) > 50 && (r >= g || g-r < 10) && b <= 200) {
-
+  } else if ((g - b) > 50 && (r >= g || g - r < 10) && b <= 200) {
     return "Kuning";
   } else {
     return "Tidak Dikenal";
@@ -222,7 +221,7 @@ String identifyColor(int r, int g, int b) {
 
 void moveCircle(String cl) {
   digitalWrite(relayPin, LOW);
-  if (cl == "Merah" || cl == "Jingga Merah Kehitaman") {
+  if (cl == "Merah") {
     myStepper.step(step_degree(360));
   } else if (cl == "Ungu Kehitaman") {
     myStepper.step(step_degree(60));
@@ -232,7 +231,7 @@ void moveCircle(String cl) {
     myStepper.step(step_degree(180));
   } else if (cl == "Kuning") {
     myStepper.step(step_degree(240));
-  } else if (cl == "Tidak Dikenal") {
+  } else if (cl == "Jingga Merah Kehitaman") {
     myStepper.step(step_degree(300));
   }
   digitalWrite(relayPin, HIGH);
@@ -267,12 +266,52 @@ void printError(int code, const String &msg) {
 }
 
 
-void updateRGB(int r, int g, int b, String text) {
+void updateData(int r, int g, int b, String text) {
   Serial.print("Set JSON... ");
 
-  bool status = Database.set<object_t>(client, "/rgb", object_t("{\"r\":" + String(r) + ",\"g\":" + String(g) + ",\"b\":" + String(b) + ",\"color\":\"" + text + "\"}"));
+  bool status = Database.set<object_t>(client, "/update", object_t("{\"r\":" + String(r) + ",\"g\":" + String(g) + ",\"b\":" + String(b) + ",\"color\":\"" + text + "\"}"));
   if (status)
     Serial.println("ok");
   else
     printError(client.lastError().code(), client.lastError().message());
+}
+
+void updateValue(String color) {
+
+  if (color == "Merah") {
+    useCounter("merah");
+  } else if (color == "Ungu Kehitaman") {
+    useCounter("ungu_kehitaman");
+  } else if (color == "Hijau Gelap") {
+    useCounter("hijau_gelap");
+  } else if (color == "Kuning") {
+    useCounter("kuning");
+  } else if (color == "Jingga Merah Kehitaman") {
+    useCounter("jingga_merah_kehitaman");
+  } else if (color == "Jingga Kemerahan") {
+    useCounter("jingga_kemerahan");
+  }
+}
+
+void useCounter(String color_key) {
+
+  int currentTotal = Database.get<int>(client, "/container/" + color_key);
+  if (client.lastError().code() == 0) {
+    Serial.print("Current " + color_key + ": ");
+    Serial.println(currentTotal);
+  } else {
+    printError(client.lastError().code(), client.lastError().message());
+  }
+
+
+  int updateTotal = currentTotal + 1;
+
+  bool status = Database.set<int>(client, "/container/" + color_key, updateTotal);
+  if (status) {
+    Serial.print("Update " + color_key + " to: " + String(updateTotal) + " ...");
+    Serial.println("ok");
+  }
+  else {
+    printError(client.lastError().code(), client.lastError().message());
+  }
 }
