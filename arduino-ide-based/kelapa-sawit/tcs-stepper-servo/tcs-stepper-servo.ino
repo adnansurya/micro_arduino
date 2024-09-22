@@ -3,18 +3,26 @@
 #include <Stepper.h>
 #include <ESP32Servo.h>
 #include <Arduino.h>
+<<<<<<< Updated upstream
 // #if defined(ESP32) || defined(ARDUINO_RASPBERRY_PI_PICO_W)
 // #include <WiFi.h>
 // #elif defined(ESP8266)
 // #include <ESP8266WiFi.h>
 // #endif
+=======
+#if defined(ESP32) || defined(ARDUINO_RASPBERRY_PI_PICO_W)
+#include <WiFi.h>
+#elif defined(ESP8266)
+#include <ESP8266WiFi.h>
+#endif
+>>>>>>> Stashed changes
 #include <WiFiManager.h>  // https://github.com/tzapu/WiFiManager
 
 #include <FirebaseClient.h>
 #include <WiFiClientSecure.h>
 
-#define WIFI_SSID "MIKRO"
-#define WIFI_PASSWORD "IDEAlist"
+#define WIFI_SSID "inyy"
+#define WIFI_PASSWORD "anyanyanaya"
 
 #define DATABASE_SECRET "n6AqF87ZMBGbNww3rwYm4LANCPHL3r4HxtEhvZtC"
 #define DATABASE_URL "https://colordetectedpalmfruit-default-rtdb.firebaseio.com"
@@ -68,6 +76,22 @@ void setup() {
   pinMode(switchPin, INPUT_PULLUP);
   pinMode(relayPin, OUTPUT);
   digitalWrite(relayPin, LOW);
+  
+  WiFiManager wm;
+
+  bool res;
+    // res = wm.autoConnect(); // auto generated AP name from chipid
+    // res = wm.autoConnect("AutoConnectAP"); // anonymous ap
+    res = wm.autoConnect("ColorDPF","kelapasawit"); // password protected ap
+
+    if(!res) {
+        Serial.println("Failed to connect");
+        // ESP.restart();
+    } 
+    else {
+        //if you get here you have connected to the WiFi    
+        Serial.println("connected...yeey :)");
+    }
 
   if (tcs.begin()) {
     Serial.println("TCS34725 ditemukan!");
