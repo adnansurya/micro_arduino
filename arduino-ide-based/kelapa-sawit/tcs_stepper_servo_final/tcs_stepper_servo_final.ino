@@ -3,11 +3,11 @@
 #include <Stepper.h>
 #include <ESP32Servo.h>
 #include <Arduino.h>
-#if defined(ESP32) || defined(ARDUINO_RASPBERRY_PI_PICO_W)
-#include <WiFi.h>
-#elif defined(ESP8266)
-#include <ESP8266WiFi.h>
-#endif
+// #if defined(ESP32) || defined(ARDUINO_RASPBERRY_PI_PICO_W)
+// #include <WiFi.h>
+// #elif defined(ESP8266)
+// #include <ESP8266WiFi.h>
+// #endif
 #include <WiFiManager.h>  // https://github.com/tzapu/WiFiManager
 
 #include <FirebaseClient.h>
@@ -107,17 +107,17 @@ void setup() {
   myservo.setPeriodHertz(50);  // Standard 50hz servo
   myservo.attach(servoPin, 500, 2400);
 
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  // WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
-  Serial.print("Connecting to Wi-Fi");
-  while (WiFi.status() != WL_CONNECTED) {
-    Serial.print(".");
-    delay(300);
-  }
-  Serial.println();
-  Serial.print("Connected with IP: ");
-  Serial.println(WiFi.localIP());
-  Serial.println();
+  // Serial.print("Connecting to Wi-Fi");
+  // while (WiFi.status() != WL_CONNECTED) {
+  //   Serial.print(".");
+  //   delay(300);
+  // }
+  // Serial.println();
+  // Serial.print("Connected with IP: ");
+  // Serial.println(WiFi.localIP());
+  // Serial.println();
 
   Firebase.printf("Firebase Client v%s\n", FIREBASE_CLIENT_VERSION);
 
