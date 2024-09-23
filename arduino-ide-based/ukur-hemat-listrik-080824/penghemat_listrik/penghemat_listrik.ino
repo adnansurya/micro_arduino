@@ -46,7 +46,7 @@ int lastMotionDetected = 0;
 
 bool relayOn = false;
 unsigned long motionUpdateTime = 0;
-unsigned long motionUpdateTimeOut = 5000;
+unsigned long motionUpdateTimeOut = 10000;
 
 
 void setup() {
@@ -64,10 +64,6 @@ void setup() {
 
   powerOff();
 
-
-
-  
-
   sdCardInit();
 
   rtcInit();
@@ -82,6 +78,7 @@ void loop() {
   unsigned long currentTime = millis();
   if (currentTime - lcdUpdateTime >= lcdUpdateInterval) {
     updateTime();
+
     if (relayOn) {
       getCurrentData();
 
@@ -89,24 +86,21 @@ void loop() {
         displaySensorData();
 
       } else {
-
-      
-        displayTime(true);
         writeData();
+        lcd.setCursor(15, 3);
+        lcd.print("SAVE");
+        lcd.print((char)126);
         updateCounter = 0;
-
-        delay(1000);
       }
 
       updateCounter++;
     } else {
-      displayTime(false);
+      standbyDisplay();
     }
-
 
     lcdUpdateTime = currentTime;
   }
-  
+
 
 
   motionDetected = digitalRead(motionPin);
@@ -114,26 +108,46 @@ void loop() {
   // Serial.println(motionDetected);
   if (motionDetected == 1 && motionDetected != lastMotionDetected && relayOn == false) {
     relayOn = true;
+    lcd.clear();
+    lcd.setCursor(6, 0);
+    lcd.print("Gerakan");
+    lcd.setCursor(5, 1);
+    lcd.print("Terdeteksi");
+    lcd.setCursor(6, 3);
+    lcd.print("POWER ON");
+    delay(2000);
     powerOn();
-    delay(1000);
   }
-  lastMotionDetected = motionDetected;
+
 
   if (relayOn) {
     if (motionDetected == true) {
       motionUpdateTime = currentTime;
+
+      lcd.setCursor(16, 1);
+      lcd.print("MOVE");
+
+
     } else {
       if (currentTime - motionUpdateTime >= motionUpdateTimeOut) {
         relayOn = false;
+
+        updateCounter = 0;
+        lcd.clear();
+        lcd.setCursor(1, 0);
+        lcd.print("Tidak Ada Gerakan");
+        lcd.setCursor(3, 1);
+        lcd.print("Selama ");
+        lcd.print((motionUpdateTimeOut / 1000));
+        lcd.print(" detik");
+        lcd.setCursor(5, 3);
+        lcd.print("POWER OFF!");
         powerOff();
-        delay(1000);
+        delay(2000);
       }
     }
   }
-
-
-
-  
+  lastMotionDetected = motionDetected;
 }
 
 
@@ -162,18 +176,20 @@ void sdCardInit() {
   Serial.println("Card initialized.");
 }
 
-void displayTime(bool savingData) {
+void standbyDisplay() {
   lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("DateTime: ");
-  lcd.setCursor(0, 1);
-  lcd.print(dateTimeStrings[0]);
-  lcd.setCursor(0, 2);
-  lcd.print(dateTimeStrings[1]);
-  if (savingData) {
-    lcd.setCursor(0, 3);
-    lcd.print("Saving Data...");
+  lcd.setCursor(7, 0);
+  lcd.print("Status");
+  lcd.setCursor(4, 1);
+  if (relayOn) {
+    lcd.print("< Power ON >");
+  } else {
+    lcd.print("< Power OFF>");
   }
+  lcd.setCursor(5, 2);
+  lcd.print(dateTimeStrings[0]);
+  lcd.setCursor(6, 3);
+  lcd.print(dateTimeStrings[1]);
 }
 
 
@@ -185,10 +201,10 @@ void updateTime() {
     Serial.println("RTC lost confidence in the DateTime!");
   }
 
-  Serial.print("Date: ");
-  Serial.println(dateTimeStrings[0]);
-  Serial.print("Time: ");
-  Serial.println(dateTimeStrings[1]);
+  // Serial.print("Date: ");
+  // Serial.println(dateTimeStrings[0]);
+  // Serial.print("Time: ");
+  // Serial.println(dateTimeStrings[1]);
 }
 
 void sensorInit() {
@@ -308,8 +324,8 @@ String* getDateTimeStrings(const RtcDateTime& dt) {
   snprintf_P(dateStr,
              sizeof(dateStr),
              PSTR("%02u/%02u/%04u"),
-             dt.Month(),
              dt.Day(),
+             dt.Month(),
              dt.Year());
 
   snprintf_P(timeStr,
