@@ -1,19 +1,30 @@
-const int buttonPin = 2;   // Pin tombol
-unsigned long startMillis; // Variabel untuk menyimpan waktu mulai
-unsigned long currentMillis; // Variabel untuk menyimpan waktu saat ini
-const unsigned long period = 600000; // 10 menit dalam milidetik (600000 ms = 10 menit)
-bool timerRunning = false;  // Status apakah timer sedang berjalan
-bool timerFinished = false; // Status apakah timer sudah selesai
+#include <SPI.h>
+#include <DMD2.h>
+#include <fonts/Arial14.h>
+
+const int buttonPin = 2;              // Pin tombol
+unsigned long startMillis;            // Variabel untuk menyimpan waktu mulai
+unsigned long currentMillis;          // Variabel untuk menyimpan waktu saat ini
+const unsigned long period = 600000;  // 10 menit dalam milidetik (600000 ms = 10 menit)
+bool timerRunning = false;            // Status apakah timer sedang berjalan
+bool timerFinished = false;           // Status apakah timer sudah selesai
+
+SoftDMD dmd(1, 1);  // DMD controls the entire display
+// SPIDMD dmd(1,1);  // DMD controls the entire display
+DMD_TextBox box(dmd, 0, 2);  // "box" provides a text box to automatically write to/scroll the display
 
 void setup() {
-  pinMode(buttonPin, INPUT_PULLUP); // Mengatur pin tombol dengan pull-up internal
-  Serial.begin(9600);  // Memulai komunikasi serial
+  pinMode(buttonPin, INPUT_PULLUP);  // Mengatur pin tombol dengan pull-up internal
+  Serial.begin(9600);                // Memulai komunikasi serial
   Serial.println("Standby, tekan tombol untuk memulai timer.");
+  dmd.setBrightness(255);
+  dmd.selectFont(Arial14);
+  dmd.begin();
 }
 
 void loop() {
   // Membaca status tombol
-  if (digitalRead(buttonPin) == LOW) { // Tombol ditekan (LOW karena pull-up)
+  if (digitalRead(buttonPin) == LOW) {  // Tombol ditekan (LOW karena pull-up)
     if (!timerRunning) {
       startMillis = millis();  // Simpan waktu mulai
       timerRunning = true;     // Mengaktifkan timer
@@ -25,26 +36,33 @@ void loop() {
 
   // Jika timer sedang berjalan
   if (timerRunning) {
-    currentMillis = millis(); // Dapatkan waktu saat ini
+    currentMillis = millis();  // Dapatkan waktu saat ini
 
     if (currentMillis - startMillis < period) {
-      unsigned long remainingTime = period - (currentMillis - startMillis); // Waktu tersisa dalam milidetik
-      unsigned int minutes = remainingTime / 60000;  // Konversi ke menit
-      unsigned int seconds = (remainingTime % 60000) / 1000;  // Konversi ke detik
+      unsigned long remainingTime = period - (currentMillis - startMillis);  // Waktu tersisa dalam milidetik
+      unsigned int minutes = remainingTime / 60000;                          // Konversi ke menit
+      unsigned int seconds = (remainingTime % 60000) / 1000;                 // Konversi ke detik
 
       // Tampilkan waktu dalam format mm:ss
       Serial.print("Sisa waktu: ");
+      box.print(' ');
       if (minutes < 10) {
         Serial.print('0');  // Tambahkan 0 jika menit kurang dari 10
+        box.print('0');     // Tambahkan 0 jika menit kurang dari 10
       }
       Serial.print(minutes);
       Serial.print(':');
+      box.print(minutes);
+      box.print(':');
       if (seconds < 10) {
         Serial.print('0');  // Tambahkan 0 jika detik kurang dari 10
+        box.print('0');     // Tambahkan 0 jika detik kurang dari 10
       }
       Serial.println(seconds);
+      box.print(seconds);
 
       delay(1000);  // Tunggu 1 detik sebelum memperbarui waktu
+      box.clear();
     } else {
       Serial.println("Timer selesai!");
       timerRunning = false;  // Matikan timer setelah selesai
