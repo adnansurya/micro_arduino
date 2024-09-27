@@ -2,8 +2,8 @@
 #include <DMD2.h>
 #include <fonts/Arial14.h>
 #include <fonts/SystemFont5x7.h>
-#include <fonts/Arial_Black_16.h>
-#include <fonts/Droid_Sans_16.h>
+#include <fonts/Calibri10.h>
+#include <fonts/CourierNew14b.h>
 #include <Wire.h>  // must be included here so that Arduino library object file references work
 #include <RtcDS3231.h>
 RtcDS3231<TwoWire> Rtc(Wire);
@@ -14,12 +14,13 @@ unsigned long startMillis;    // Variabel untuk menyimpan waktu mulai
 unsigned long currentMillis;  // Variabel untuk menyimpan waktu saat ini
 unsigned long previousMillis = 0;
 // const unsigned long period = 600000;  // 10 menit dalam milidetik (600000 ms = 10 menit)
-const unsigned long period = 10000;   // 10 menit dalam milidetik (600000 ms = 10 menit)
+const unsigned long period = 30000;   // 10 menit dalam milidetik (600000 ms = 10 menit)
 const unsigned long interval = 1000;  // 10 menit dalam milidetik (600000 ms = 10 menit)
+int coundDownStart = 10;
 bool timerRunning = false;            // Status apakah timer sedang berjalan
 bool timerFinished = false;           // Status apakah timer sudah selesai
 
-const char* MESSAGE = "Waktu Iqomah telah tiba, saatnya melaksanakan sholat";
+const char* MESSAGE = "Timer iqomah selesai, saatnya melaksanakan sholat.";
 String* dateTimeStrings;
 String currentClock = "00:00";
 String lastClock = "00:00";
@@ -152,7 +153,7 @@ void setup() {
   wasError("setup SetSquareWavePin");
 
   dmd.setBrightness(255);
-  dmd.selectFont(Droid_Sans_16);
+  dmd.selectFont(CourierNew14b);
   dmd.begin();
 }
 
@@ -191,36 +192,69 @@ void loop() {
 
 
       if (currentMillis - startMillis < period) {
-        box.clear();
 
-        dmd.selectFont(Droid_Sans_16);
+
+
         unsigned long remainingTime = period - (currentMillis - startMillis);  // Waktu tersisa dalam milidetik
         unsigned int minutes = remainingTime / 60000;                          // Konversi ke menit
         unsigned int seconds = (remainingTime % 60000) / 1000;                 // Konversi ke detik
 
-        // Tampilkan waktu dalam format mm:ss
         Serial.print("Sisa waktu: ");
-        box.print(' ');
+        Serial.print(minutes);
+        Serial.print(':');
+        Serial.println(seconds);
+
+        if (minutes == 0 && seconds <= coundDownStart) {
+          
+          dmd.clearScreen();
+          dmd.selectFont(CourierNew14b);
+         
+
+          char secondStr[6];  // "MM:SS\0" -> 5 characters + 1 null terminator
+
+          snprintf_P(secondStr,
+                     sizeof(secondStr),
+                     PSTR("%u:%02u"),
+                     minutes,
+                     seconds);
+
+          dmd.drawString(6, 2, secondStr);
+           dmd.drawBox( 0,  0,  31, 15);
+         
+
+        } else {
+          dmd.clearScreen();
+
+
+          dmd.selectFont(Calibri10);
+
+          char secondStr[6];  // "MM:SS\0" -> 5 characters + 1 null terminator
+
+          snprintf_P(secondStr,
+                     sizeof(secondStr),
+                     PSTR("%02u:%02u"),
+                     minutes,
+                     seconds);
+          dmd.drawString(3, 8, secondStr);
+
+          dmd.drawString(1, -1, "iqomah ");
+        }
+
+        // Tampilkan waktu dalam format mm:ss
+
+
         // if (minutes < 10) {
         //   Serial.print('0');  // Tambahkan 0 jika menit kurang dari 10
         //   box.print('0');     // Tambahkan 0 jika menit kurang dari 10
         // }
-        Serial.print(minutes);
-        Serial.print(':');
-        box.print(minutes);
-        box.print(':');
-        if (seconds < 10) {
-          Serial.print('0');  // Tambahkan 0 jika detik kurang dari 10
-          box.print('0');     // Tambahkan 0 jika detik kurang dari 10
-        }
-        Serial.println(seconds);
-        box.print(seconds);
+
+
 
 
 
       } else {
         Serial.println("Timer selesai!");
-        box.clear();
+        dmd.clearScreen();
 
         dmd.selectFont(Arial14);
         const char* next = MESSAGE;
@@ -232,12 +266,13 @@ void loop() {
         }
         timerRunning = false;  // Matikan timer setelah selesai
         timerFinished = true;  // Tandai bahwa timer sudah selesai
+        delay(2000);
       }
     } else {
       if (currentClock != lastClock) {
         dmd.clearScreen();
         dmd.selectFont(SystemFont5x7);
-        dmd.drawString(2,5,currentClock.c_str());
+        dmd.drawString(1, 4, currentClock.c_str());        
       }
     }
     lastClock = currentClock;
