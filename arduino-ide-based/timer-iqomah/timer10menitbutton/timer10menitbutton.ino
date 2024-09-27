@@ -9,19 +9,21 @@
 RtcDS3231<TwoWire> Rtc(Wire);
 
 
-const int buttonPin = 2;      // Pin tombol
+#define buttonPin A0  // Pin tombol
+#define buzzerPin 10  // Pin buzzer
+
 unsigned long startMillis;    // Variabel untuk menyimpan waktu mulai
 unsigned long currentMillis;  // Variabel untuk menyimpan waktu saat ini
 unsigned long previousMillis = 0;
 // const unsigned long period = 600000;  // 10 menit dalam milidetik (600000 ms = 10 menit)
 const unsigned long period = 480000;  // 8 menit dalam milidetik (600000 ms = 10 menit)
-// const unsigned long period = 30000;   // 10 menit dalam milidetik (600000 ms = 10 menit)
+// const unsigned long period = 30000;   // 30 detik dalam milidetik (600000 ms = 10 menit)
 const unsigned long interval = 1000;  // 10 menit dalam milidetik (600000 ms = 10 menit)
 int coundDownStart = 10;
-bool timerRunning = false;            // Status apakah timer sedang berjalan
-bool timerFinished = false;           // Status apakah timer sudah selesai
+bool timerRunning = false;   // Status apakah timer sedang berjalan
+bool timerFinished = false;  // Status apakah timer sudah selesai
 
-const char* MESSAGE = "Waktunya melaksanakan sholat.";
+const char* MESSAGE = "Waktunya melaksanakan sholat";
 String* dateTimeStrings;
 String currentClock = "00:00";
 String lastClock = "00:00";
@@ -84,7 +86,9 @@ void updateTime() {
 
 void setup() {
   pinMode(buttonPin, INPUT_PULLUP);  // Mengatur pin tombol dengan pull-up internal
-  Serial.begin(9600);                // Memulai komunikasi serial
+  pinMode(buzzerPin, OUTPUT);
+  bunyi(100, 10);
+  Serial.begin(9600);  // Memulai komunikasi serial
   Serial.println("Standby, tekan tombol untuk memulai timer.");
 
   Serial.print("compiled: ");
@@ -156,14 +160,13 @@ void setup() {
   dmd.setBrightness(255);
   dmd.selectFont(CourierNew14b);
   dmd.begin();
+  delay(2000);
+  beep(2, 0.1);
 }
 
 void loop() {
 
   currentMillis = millis();  // Dapatkan waktu saat ini
-
-
-
 
   // Membaca status tombol
   if (digitalRead(buttonPin) == LOW) {  // Tombol ditekan (LOW karena pull-up)
@@ -172,6 +175,7 @@ void loop() {
       timerRunning = true;          // Mengaktifkan timer
       timerFinished = false;        // Reset status selesai
       Serial.println("Timer dimulai!");
+      bunyi(100, 0);
       delay(200);  // Debouncing tombol
     }
   }
@@ -206,10 +210,11 @@ void loop() {
         Serial.println(seconds);
 
         if (minutes == 0 && seconds <= coundDownStart) {
-          
+          bunyi(100, 0);
+
           dmd.clearScreen();
           dmd.selectFont(CourierNew14b);
-         
+
 
           char secondStr[6];  // "MM:SS\0" -> 5 characters + 1 null terminator
 
@@ -220,8 +225,8 @@ void loop() {
                      seconds);
 
           dmd.drawString(6, 2, secondStr);
-           dmd.drawBox( 0,  0,  31, 15);
-         
+          dmd.drawBox(0, 0, 31, 15);
+
 
         } else {
           dmd.clearScreen();
@@ -241,29 +246,25 @@ void loop() {
           dmd.drawString(1, -1, "iqomah ");
         }
 
-        // Tampilkan waktu dalam format mm:ss
-
-
-        // if (minutes < 10) {
-        //   Serial.print('0');  // Tambahkan 0 jika menit kurang dari 10
-        //   box.print('0');     // Tambahkan 0 jika menit kurang dari 10
-        // }
-
-
-
-
 
       } else {
         Serial.println("Timer selesai!");
+        digitalWrite(buzzerPin, HIGH);
         dmd.clearScreen();
 
         dmd.selectFont(Arial14);
         const char* next = MESSAGE;
+        int toneLimit = 4;
+        int toneCounter = 0;
         while (*next) {
+          if (toneCounter >= toneLimit) {
+            digitalWrite(buzzerPin, LOW);
+          }
           Serial.print(*next);
           box.print(*next);
           delay(200);
           next++;
+          toneCounter++;
         }
         timerRunning = false;  // Matikan timer setelah selesai
         timerFinished = true;  // Tandai bahwa timer sudah selesai
@@ -272,8 +273,20 @@ void loop() {
     } else {
       if (currentClock != lastClock) {
         dmd.clearScreen();
-        dmd.selectFont(SystemFont5x7);
-        dmd.drawString(1, 4, currentClock.c_str());        
+        if (dateTimeStrings[1] == "00:00:00") {
+          dmd.selectFont(Arial14);
+          bunyi(50, 0);
+          const char* next2 = "Memasuki tengah malam....     by: MAKASSAR ROBOTICS ";
+          while (*next2) {
+            Serial.print(*next2);
+            box.print(*next2);
+            delay(200);
+            next2++;
+          }
+        } else {
+          dmd.selectFont(SystemFont5x7);
+          dmd.drawString(1, 4, currentClock.c_str());
+        }
       }
     }
     lastClock = currentClock;
@@ -356,4 +369,17 @@ String* getDateTimeStrings(const RtcDateTime& dt) {
 
 
   return result;
+}
+
+void bunyi(int nyala, int mati) {
+  digitalWrite(buzzerPin, HIGH);
+  delay(nyala);
+  digitalWrite(buzzerPin, LOW);
+  delay(mati);
+}
+
+void beep(int ulang, float detik) {
+  for (int i = 0; i < ulang; i++) {
+    bunyi(detik * 1000, detik * 1000);
+  }
 }
