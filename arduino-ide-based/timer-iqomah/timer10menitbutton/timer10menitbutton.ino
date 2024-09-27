@@ -14,13 +14,14 @@ unsigned long startMillis;    // Variabel untuk menyimpan waktu mulai
 unsigned long currentMillis;  // Variabel untuk menyimpan waktu saat ini
 unsigned long previousMillis = 0;
 // const unsigned long period = 600000;  // 10 menit dalam milidetik (600000 ms = 10 menit)
-const unsigned long period = 30000;   // 10 menit dalam milidetik (600000 ms = 10 menit)
+const unsigned long period = 480000;  // 8 menit dalam milidetik (600000 ms = 10 menit)
+// const unsigned long period = 30000;   // 10 menit dalam milidetik (600000 ms = 10 menit)
 const unsigned long interval = 1000;  // 10 menit dalam milidetik (600000 ms = 10 menit)
 int coundDownStart = 10;
 bool timerRunning = false;            // Status apakah timer sedang berjalan
 bool timerFinished = false;           // Status apakah timer sudah selesai
 
-const char* MESSAGE = "Timer iqomah selesai, saatnya melaksanakan sholat.";
+const char* MESSAGE = "Waktunya melaksanakan sholat.";
 String* dateTimeStrings;
 String currentClock = "00:00";
 String lastClock = "00:00";
@@ -235,7 +236,7 @@ void loop() {
                      PSTR("%02u:%02u"),
                      minutes,
                      seconds);
-          dmd.drawString(3, 8, secondStr);
+          dmd.drawString(4, 8, secondStr);
 
           dmd.drawString(1, -1, "iqomah ");
         }
