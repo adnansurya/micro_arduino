@@ -267,8 +267,8 @@ void resetStepper() {
 
   while (switchVal == 0) {
     switchVal = digitalRead(switchPin);
-    Serial.print("SWITCH : ");
-    Serial.println(switchVal);
+    // Serial.print("SWITCH : ");
+    // Serial.println(switchVal);
     myStepper.step(1);
     delay(1);
   }
