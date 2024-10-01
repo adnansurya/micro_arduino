@@ -23,7 +23,7 @@
 
 SoftwareSerial mySerial(12, 11);  // RX, TX
 
-int motorSpeed = 100;
+int motorSpeed = 80;
 String currentState = "stop";
 char currentChar = ' ';
 char lastChar = ' ';
@@ -52,16 +52,19 @@ void setup() {
 void loop() {
   if (mySerial.available()) {
     char command = mySerial.read();
+
+
+
+    if (currentChar != lastChar && currentChar != '0' && currentChar != BACKWARD && currentChar != FORWARD) {
     currentChar = command;
     Serial.print("CHAR : ");
     Serial.println(currentChar);
-
-    if (currentChar != lastChar && currentChar != 0) {
-      executeCommand(currentChar, motorSpeed);     
-      Serial.println(currentState); 
+    executeCommand(currentChar, motorSpeed);
+    Serial.println(currentState);
+    lastChar = currentChar;
     }
 
-    lastChar = currentChar;
+
 
     // delay(1000);
   }
