@@ -172,9 +172,9 @@ void loop() {
 }
 
 String deteksiCairanPH(float Po) {
-  if (Po > 6.50) {
+  if (Po > 7.50) {
     return "Minyak Telon";
-  } else if (Po >= 4.00 && Po <= 6.50) {
+  } else if (Po <= 6.50) {
     return "Minyak Penyuling";
   } else {
     return "Tidak Dikenal";
