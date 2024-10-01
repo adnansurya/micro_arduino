@@ -10,6 +10,7 @@
 #define SQUARE 'S'
 #define START 'A'
 #define PAUSE 'P'
+#define HALT 'H'
 
 
 #define enA 5
@@ -19,15 +20,17 @@
 #define in4 9
 #define enB 10
 
-
+#define buzzerPin 13
 
 SoftwareSerial mySerial(12, 11);  // RX, TX
 
 int motorSpeed = 80;
+int turningDelta = 40;
 String currentState = "stop";
-char currentChar = ' ';
-char lastChar = ' ';
+
 int actionVal = 25;
+int maxSpeed = 200;
+int minSpeed = 30;
 
 
 void setup() {
@@ -38,6 +41,9 @@ void setup() {
   pinMode(in2, OUTPUT);
   pinMode(in3, OUTPUT);
   pinMode(in4, OUTPUT);
+
+  pinMode(buzzerPin, OUTPUT);
+  digitalWrite(buzzerPin, LOW);
 
   // Turn off motors - Initial state
   stop();
@@ -50,18 +56,19 @@ void setup() {
 }
 
 void loop() {
-  if (mySerial.available()) {
+  if (mySerial.available() > 0) {
     char command = mySerial.read();
 
+    if (command != BACKWARD && command != FORWARD && String(command) != "0") {
+      Serial.print("CHAR : ");
+      Serial.println(String(command));
+      executeCommand(command, motorSpeed);
 
 
-    if (currentChar != lastChar && currentChar != '0' && currentChar != BACKWARD && currentChar != FORWARD) {
-    currentChar = command;
-    Serial.print("CHAR : ");
-    Serial.println(currentChar);
-    executeCommand(currentChar, motorSpeed);
-    Serial.println(currentState);
-    lastChar = currentChar;
+    } else if (command == BACKWARD || command == FORWARD) {
+      tuning(command);
+    }else{
+      stop();
     }
 
 
@@ -78,6 +85,8 @@ void stop() {
   digitalWrite(in2, LOW);
   digitalWrite(in3, LOW);
   digitalWrite(in4, LOW);
+  digitalWrite(buzzerPin, LOW);
+  currentState = "Stop";
 }
 
 
@@ -105,7 +114,7 @@ void forward(int pwm) {
 
 void turnLeft(int pwm) {
   analogWrite(enA, pwm);
-  analogWrite(enB, pwm - 20);
+  analogWrite(enB, pwm - turningDelta);
   digitalWrite(in1, LOW);
   digitalWrite(in2, HIGH);
   digitalWrite(in3, HIGH);
@@ -114,7 +123,7 @@ void turnLeft(int pwm) {
 }
 
 void turnRight(int pwm) {
-  analogWrite(enA, pwm - 20);
+  analogWrite(enA, pwm - turningDelta);
   analogWrite(enB, pwm);
   digitalWrite(in1, LOW);
   digitalWrite(in2, HIGH);
@@ -124,27 +133,33 @@ void turnRight(int pwm) {
 }
 
 void speedDown() {
-  motorSpeed = motorSpeed - actionVal;
+  if (motorSpeed - actionVal >= minSpeed) {
+    motorSpeed = motorSpeed - actionVal;
+  } else {
+    motorSpeed = minSpeed;
+    bunyi(5);
+  }
+
   Serial.print("Speed Down : ");
   Serial.println(motorSpeed);
-  executeCommand(currentChar, motorSpeed);
 }
 
 void speedUp() {
-  motorSpeed = motorSpeed + actionVal;
+  if (motorSpeed + actionVal <= maxSpeed) {
+    motorSpeed = motorSpeed + actionVal;
+
+  } else {
+    motorSpeed = maxSpeed;
+    bunyi(5);
+  }
+
   Serial.print("Speed Up : ");
   Serial.println(motorSpeed);
-  executeCommand(currentChar, motorSpeed);
 }
 
 void executeCommand(char command, int pwm) {
+  Serial.println(currentState);
   switch (command) {
-    case FORWARD:
-      speedUp();
-      break;
-    case BACKWARD:
-      speedDown();
-      break;
     case LEFT:
       turnLeft(pwm);
       break;
@@ -161,7 +176,7 @@ void executeCommand(char command, int pwm) {
       backward(pwm);
       break;
     case SQUARE:
-      stop();
+      digitalWrite(buzzerPin, HIGH);
       break;
     case START:
       // Perform action for starting a process or operation
@@ -169,8 +184,32 @@ void executeCommand(char command, int pwm) {
     case PAUSE:
       // Perform action for pausing a process or operation
       break;
+    case HALT:
+      // Perform action for pausing a process or operation
+      stop();
+      break;
     default:
       // Invalid command received
       break;
   }
+}
+
+void tuning(char command) {
+  switch (command) {
+    case FORWARD:
+      speedUp();
+      break;
+    case BACKWARD:
+      speedDown();
+      break;
+    default:
+      // Invalid command received
+      break;
+  }
+}
+
+void bunyi(int ms) {
+  digitalWrite(buzzerPin, HIGH);
+  delay(ms);
+  digitalWrite(buzzerPin, LOW);
 }
