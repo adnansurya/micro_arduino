@@ -1,4 +1,5 @@
 #include <SoftwareSerial.h>
+#include <NewPing.h>
 
 #define FORWARD 'F'
 #define BACKWARD 'B'
@@ -22,6 +23,9 @@
 
 #define buzzerPin 13
 
+#define trigPin 3
+#define echoPin 4
+
 SoftwareSerial mySerial(12, 11);  // RX, TX
 
 int motorSpeed = 80;
@@ -31,6 +35,12 @@ String currentState = "stop";
 int actionVal = 25;
 int maxSpeed = 200;
 int minSpeed = 30;
+
+
+int brakeDistance = 20;
+int maxDistance = 150;
+
+NewPing sonar(trigPin, echoPin, maxDistance);
 
 
 void setup() {
@@ -63,17 +73,24 @@ void loop() {
       Serial.print("CHAR : ");
       Serial.println(String(command));
       executeCommand(command, motorSpeed);
+      Serial.println(currentState);
 
 
-    } else if (command == BACKWARD || command == FORWARD) {
+    } else if ((command == BACKWARD || command == FORWARD) && String(command) != "0") {
       tuning(command);
-    }else{
+    } else {
       stop();
     }
+  }
 
-
-
-    // delay(1000);
+  if(currentState != "Stop"){
+    int distance = sonar.ping_cm();
+    Serial.println(distance);
+    if(distance <= brakeDistance && distance != 0 && currentState.indexOf("backward") == -1){
+      stop();
+      Serial.println("FORCED STOP");
+    }
+    delay(29);
   }
 }
 
@@ -158,7 +175,7 @@ void speedUp() {
 }
 
 void executeCommand(char command, int pwm) {
-  Serial.println(currentState);
+
   switch (command) {
     case LEFT:
       turnLeft(pwm);
