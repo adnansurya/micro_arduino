@@ -90,15 +90,15 @@ void loop() {
   if (tinggiAir > batasTinggi && tinggiAir < (tinggiMax - jarakDeteksi)) {
     Serial.println("PERINGATAN!");
     SerialBT.println("PERINGATAN!");
-    beep(3, 0.2);
+    // beep(3, 0.2);
     mp3.play(2);
     delay(3000);
   } else if (tinggiAir > batasTinggi && tinggiAir >= (tinggiMax - jarakDeteksi)) {
     Serial.println("BAHAYA!");
     SerialBT.println("BAHAYA!");
-    beep(5, 0.2);
+    // beep(5, 0.2);
     mp3.play(1);
-    delay(16000);
+    delay(3000);
   }
 
   Serial.print("Jarak Ukur: ");
