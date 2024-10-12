@@ -9,10 +9,10 @@
 
 BluetoothSerial SerialBT;
 DFRobotDFPlayerMini mp3;
-HardwareSerial dfSD(1); // Use UART channel 1
+HardwareSerial dfSD(1);  // Use UART channel 1
 
-#define RXD2 16 // Connects to module's RX 
-#define TXD2 17 // Connects to module's TX 
+#define RXD2 16  // Connects to module's RX
+#define TXD2 17  // Connects to module's TX
 
 #define buzzerPin 14
 
@@ -20,15 +20,14 @@ HardwareSerial dfSD(1); // Use UART channel 1
 #define ECHO_PIN 22
 #define MAX_DISTANCE 200
 
-long tinggiMax = 80;
-long jarakDeteksi = 5;
-long jarakUkur, tinggiAir;
-long batasTinggi = 60;
+long jarakUkur;
+long batasPeringatan = 45;
+long batasBahaya = 20;
 
 int perintahInt;
 
 
-NewPing sonar(TRIGGER_PIN, ECHO_PIN, tinggiMax);
+NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE);
 
 
 void setup() {
@@ -47,7 +46,7 @@ void setup() {
   SerialBT.println(F("DFRobot DFPlayer Mini Demo"));
   SerialBT.println(F("Initializing DFPlayer ... (May take 3~5 seconds)"));
 
-  if (!mp3.begin(dfSD))  { //Use softwareSerial to communicate with mp3.
+  if (!mp3.begin(dfSD)) {  //Use softwareSerial to communicate with mp3.
     Serial.println(F("Unable to begin:"));
     Serial.println(F("1.Please recheck the connection!"));
     Serial.println(F("2.Please insert the SD card!"));
@@ -57,7 +56,6 @@ void setup() {
     SerialBT.println(F("2.Please insert the SD card!"));
     while (true)
       beep(1, 0.5);
-      
   }
 
   SerialBT.println(F("DFPlayer Mini online."));
@@ -85,36 +83,38 @@ void loop() {
 
   jarakUkur = sonar.ping_cm();
 
-  tinggiAir = tinggiMax - jarakUkur;
+  delay(500);
 
-  if (tinggiAir > batasTinggi && tinggiAir < (tinggiMax - jarakDeteksi)) {
+  if (jarakUkur <= batasPeringatan && jarakUkur > batasBahaya && jarakUkur != 0) {
     Serial.println("PERINGATAN!");
     SerialBT.println("PERINGATAN!");
+    mp3.volume(30);
+    delay(500);
     // beep(3, 0.2);
+
     mp3.play(2);
-    delay(3000);
-  } else if (tinggiAir > batasTinggi && tinggiAir >= (tinggiMax - jarakDeteksi)) {
+    delay(2500);
+  
+  
+  } else if (jarakUkur <= batasBahaya && jarakUkur != 0) {
     Serial.println("BAHAYA!");
     SerialBT.println("BAHAYA!");
+    mp3.volume(30);
     // beep(5, 0.2);
+    delay(500);
+
     mp3.play(1);
-    delay(3000);
+    delay(2500);
   }
 
   Serial.print("Jarak Ukur: ");
   Serial.print(jarakUkur);
-  Serial.print(" cm\t");
-  Serial.print("Tinggi Air : ");
-  Serial.print(tinggiAir);
-  Serial.println("cm");
+  Serial.println(" cm\t");
 
 
   SerialBT.print("Jarak Ukur: ");
   SerialBT.print(jarakUkur);
   SerialBT.println(" cm\t");
-  SerialBT.print("Tinggi Air : ");
-  SerialBT.print(tinggiAir);
-  SerialBT.println("cm");
 }
 
 void beep(int ulang, float detik) {
