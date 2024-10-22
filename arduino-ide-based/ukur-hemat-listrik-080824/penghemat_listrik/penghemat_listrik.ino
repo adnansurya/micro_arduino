@@ -1,6 +1,7 @@
 #include <SPI.h>
 #include <SD.h>
-#include <RtcDS1302.h>
+#include <Wire.h>  // must be included here so that Arduino library object file references work
+#include <RtcDS3231.h>
 #include <LiquidCrystal_I2C.h>
 #include "ACS712.h"
 
@@ -18,15 +19,14 @@
 #define relay3Pin 10
 #define relay4Pin 11
 
-ACS712 acs1(ACS712_05B, current1Pin);
+ACS712 acs1(ACS712_30A, current1Pin);
 ACS712 acs2(ACS712_05B, current2Pin);
 ACS712 acs3(ACS712_05B, current3Pin);
 ACS712 acs4(ACS712_05B, current4Pin);
 
 float current1, current2, current3, current4;
 
-ThreeWire myWire(3, 2, 4);  // DAT, CLK, RST
-RtcDS1302<ThreeWire> Rtc(myWire);
+RtcDS3231<TwoWire> Rtc(Wire);
 
 LiquidCrystal_I2C lcd(0x27, 20, 4);  // set the LCD address to 0x27 for a 20 chars and 4 line display
 
@@ -47,6 +47,43 @@ int lastMotionDetected = 0;
 bool relayOn = false;
 unsigned long motionUpdateTime = 0;
 unsigned long motionUpdateTimeOut = 10000;
+
+bool wasError(const char* errorTopic = "") {
+  uint8_t error = Rtc.LastError();
+  if (error != 0) {
+    // we have a communications error
+    // see https://www.arduino.cc/reference/en/language/functions/communication/wire/endtransmission/
+    // for what the number means
+    Serial.print("[");
+    Serial.print(errorTopic);
+    Serial.print("] WIRE communications error (");
+    Serial.print(error);
+    Serial.print(") : ");
+
+    switch (error) {
+      case Rtc_Wire_Error_None:
+        Serial.println("(none?!)");
+        break;
+      case Rtc_Wire_Error_TxBufferOverflow:
+        Serial.println("transmit buffer overflow");
+        break;
+      case Rtc_Wire_Error_NoAddressableDevice:
+        Serial.println("no device responded");
+        break;
+      case Rtc_Wire_Error_UnsupportedRequest:
+        Serial.println("device doesn't support request");
+        break;
+      case Rtc_Wire_Error_Unspecific:
+        Serial.println("unspecified error");
+        break;
+      case Rtc_Wire_Error_CommunicationTimeout:
+        Serial.println("communications timed out");
+        break;
+    }
+    return true;
+  }
+  return false;
+}
 
 
 void setup() {
@@ -279,10 +316,6 @@ void rtcInit() {
     Rtc.SetDateTime(compiled);
   }
 
-  if (Rtc.GetIsWriteProtected()) {
-    Serial.println("RTC was write protected, enabling writing now");
-    Rtc.SetIsWriteProtected(false);
-  }
 
   if (!Rtc.GetIsRunning()) {
     Serial.println("RTC was not actively running, starting now");
@@ -300,11 +333,20 @@ void rtcInit() {
     Serial.println("RTC is the same as compile time! (not expected but all is fine)");
   }
 
+  Rtc.Enable32kHzPin(false);
+  wasError("setup Enable32kHzPin");
+  Rtc.SetSquareWavePin(DS3231SquareWavePin_ModeNone);
+  wasError("setup SetSquareWavePin");
+
 
   Serial.print("compiled: ");
   Serial.print(__DATE__);
   Serial.println(__TIME__);
 }
+
+
+
+
 
 void lcdInit() {
 
