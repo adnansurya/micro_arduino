@@ -297,15 +297,15 @@ void getCurrentData() {
 void rtcInit() {
   Rtc.Begin();
 
-  RtcDateTime compiled = RtcDateTime(__DATE__, __TIME__);
-  String* compDateTimeStrings = getDateTimeStrings(compiled);
+  // RtcDateTime compiled = RtcDateTime(__DATE__, __TIME__);
+  // String* compDateTimeStrings = getDateTimeStrings(compiled);
 
-  Serial.print("Date: ");
-  Serial.println(compDateTimeStrings[0]);
-  Serial.print("Time: ");
-  Serial.println(compDateTimeStrings[1]);
-  Serial.println();
-  Serial.println();
+  // Serial.print("Date: ");
+  // Serial.println(compDateTimeStrings[0]);
+  // Serial.print("Time: ");
+  // Serial.println(compDateTimeStrings[1]);
+  // Serial.println();
+  // Serial.println();
 
   if (!Rtc.IsDateTimeValid()) {
     // Common Causes:
@@ -313,7 +313,7 @@ void rtcInit() {
     //    2) the battery on the device is low or even missing
 
     Serial.println("RTC lost confidence in the DateTime!");
-    Rtc.SetDateTime(compiled);
+    // Rtc.SetDateTime(compiled);
   }
 
 
@@ -323,15 +323,15 @@ void rtcInit() {
   }
 
   RtcDateTime now = Rtc.GetDateTime();
-  if (now < compiled) {
-    Serial.println("RTC is older than compile time!  (Updating DateTime)");
-    Rtc.SetDateTime(compiled);
-  } else if (now > compiled) {
-    Serial.println("RTC is newer than compile time. (this is expected)");
-    //  Rtc.SetDateTime(compiled);
-  } else if (now == compiled) {
-    Serial.println("RTC is the same as compile time! (not expected but all is fine)");
-  }
+  // if (now < compiled) {
+  //   Serial.println("RTC is older than compile time!  (Updating DateTime)");
+  //   Rtc.SetDateTime(compiled);
+  // } else if (now > compiled) {
+  //   Serial.println("RTC is newer than compile time. (this is expected)");
+  //   //  Rtc.SetDateTime(compiled);
+  // } else if (now == compiled) {
+  //   Serial.println("RTC is the same as compile time! (not expected but all is fine)");
+  // }
 
   Rtc.Enable32kHzPin(false);
   wasError("setup Enable32kHzPin");
