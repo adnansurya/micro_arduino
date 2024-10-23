@@ -1,6 +1,10 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <UniversalTelegramBot.h>
+#include <dimmable_light.h>
+
+const int syncPin = 13;
+const int thyristorPin = 14;
 
 // Wifi network station credentials
 #define WIFI_SSID "MIKRO"
@@ -10,6 +14,8 @@
 #define TELEGRAM_ID "108488036"
 
 #define ldrPin 34
+#define syncPin 13
+#define thyristorPin 14
 
 const unsigned long BOT_MTBS = 1000;  // mean time between scan messages
 
@@ -17,17 +23,32 @@ WiFiClientSecure secured_client;
 UniversalTelegramBot bot(BOT_TOKEN, secured_client);
 unsigned long bot_lasttime;  // last time messages' scan has been done
 
+DimmableLight light(thyristorPin);
+
 const int batasBawah = 1400;
 const int batasAtas = 3000;
 
 String status = "-";
 String lastStatus = "-";
 
+int terangOut = 250;
+int redupOut = 128;
+int gelapOut = 0;
+
+int lampuOut = 0;
+
+int ldrVal = 0;
+
 
 
 void handleNewMessages(int numNewMessages) {
   for (int i = 0; i < numNewMessages; i++) {
-    bot.sendMessage(bot.messages[i].chat_id, bot.messages[i].text, "");
+    String command = bot.messages[i].text;
+    if (command == "/status") {
+      String msg = "Status : " + status + "\nLdr Value : " + ldrVal;
+
+      bot.sendMessage(bot.messages[i].chat_id, msg, "");
+    }
   }
 }
 
@@ -56,6 +77,12 @@ void setup() {
     now = time(nullptr);
   }
   Serial.println(now);
+
+  Serial.print("Initializing DimmableLight library... ");
+  DimmableLight::setSyncPin(syncPin);
+  // VERY IMPORTANT: Call this method to activate the library
+  DimmableLight::begin();
+  Serial.println("Done!");
 }
 
 void loop() {
@@ -70,14 +97,17 @@ void loop() {
 
     bot_lasttime = millis();
   }
-  int ldrVal = 4095 - analogRead(ldrPin);
+  ldrVal = 4095 - analogRead(ldrPin);
 
   if (ldrVal <= batasBawah) {
     status = "Gelap";
+    lampuOut = terangOut;
   } else if (ldrVal > batasBawah && ldrVal <= batasAtas) {
     status = "Redup";
+    lampuOut = redupOut;
   } else if (ldrVal > batasAtas) {
     status = "Terang";
+    lampuOut = gelapOut;
   } else {
     status = "Error";
   }
@@ -88,7 +118,7 @@ void loop() {
   Serial.print("\tlastStatus: ");
   Serial.println(lastStatus);
 
-
+  light.setBrightness(lampuOut);
 
   if (status != lastStatus) {
     String message = "Kondisi " + status;
