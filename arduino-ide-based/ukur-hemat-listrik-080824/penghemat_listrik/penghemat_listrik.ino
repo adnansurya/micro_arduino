@@ -19,12 +19,15 @@
 #define relay3Pin 10
 #define relay4Pin 11
 
+#define acVoltage 220
+
 ACS712 acs1(ACS712_30A, current1Pin);
 ACS712 acs2(ACS712_05B, current2Pin);
 ACS712 acs3(ACS712_05B, current3Pin);
 ACS712 acs4(ACS712_05B, current4Pin);
 
 float current1, current2, current3, current4;
+float power1, power2, power3, power4;
 
 RtcDS3231<TwoWire> Rtc(Wire);
 
@@ -190,7 +193,7 @@ void loop() {
 
 void writeData() {
   // Buat string data dalam format CSV
-  String dataString = dateTimeStrings[0] + separator + dateTimeStrings[1] + separator + String(current1) + separator + String(current2) + separator + String(current3) + separator + String(current4);
+  String dataString = dateTimeStrings[0] + separator + dateTimeStrings[1] + separator + String(current1) + separator + String(current2) + separator + String(current3) + separator + String(current4)+ separator + String(power1) + separator + String(power2) + separator + String(power3) + separator + String(power4);
 
   // Tulis data ke file CSV
   myFile = SD.open("log.csv", FILE_WRITE);
@@ -277,6 +280,11 @@ void getCurrentData() {
   current2 = acs2.getCurrentAC();
   current3 = acs3.getCurrentAC();
   current4 = acs4.getCurrentAC();
+
+  power1 = current1 * acVoltage;
+  power2 = current2 * acVoltage;
+  power3 = current3 * acVoltage;
+  power4 = current4 * acVoltage;
 
   // Send it to serial
   Serial.print("I_1 = ");
