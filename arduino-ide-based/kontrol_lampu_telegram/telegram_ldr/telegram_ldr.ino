@@ -69,30 +69,33 @@ void loop() {
     }
 
     bot_lasttime = millis();
-  } else {
-    int ldrVal = analogRead(ldrPin);
-
-    if (ldrVal <= batasBawah) {
-      status = "Gelap";
-    } else if (ldrVal > batasBawah && ldrVal <= batasAtas) {
-      status = "Redup";
-    } else if (ldrVal > batasAtas) {
-      status = "Terang";
-    } else {
-      status = "Error";
-    }
-    Serial.print("ldrVal: ");
-    Serial.print(ldrVal);
-    Serial.print("\tStatus: ");
-    Serial.println(status);
-    delay(1000);
-
-    if (status != lastStatus) {
-      String message = "Kondisi " + status;
-      bot.sendMessage(TELEGRAM_ID, message, "");
-      delay(5000);
-    }
-
-    status = lastStatus;
   }
+  int ldrVal = 4095 - analogRead(ldrPin);
+
+  if (ldrVal <= batasBawah) {
+    status = "Gelap";
+  } else if (ldrVal > batasBawah && ldrVal <= batasAtas) {
+    status = "Redup";
+  } else if (ldrVal > batasAtas) {
+    status = "Terang";
+  } else {
+    status = "Error";
+  }
+  Serial.print("ldrVal: ");
+  Serial.print(ldrVal);
+  Serial.print("\tStatus: ");
+  Serial.print(status);
+  Serial.print("\tlastStatus: ");
+  Serial.println(lastStatus);
+
+
+
+  if (status != lastStatus) {
+    String message = "Kondisi " + status;
+    bot.sendMessage(TELEGRAM_ID, message, "");
+    delay(1000);
+  }
+
+  lastStatus = status;
+  delay(1000);
 }
