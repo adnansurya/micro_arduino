@@ -1,6 +1,8 @@
 #define BLYNK_TEMPLATE_ID "TMPL6Sok9WCeT"
 #define BLYNK_TEMPLATE_NAME "Quickstart Device"
 #define BLYNK_AUTH_TOKEN "dfqiV11jtkwE1Z5WbqAiEXZRnvhL51C5"
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
 
 /* Comment this out to disable prints and save space */
 #define BLYNK_PRINT Serial
@@ -28,14 +30,26 @@ float sensorVoltage = 0.0;
 float rs = 0.0;  // Resistance of the sensor
 float ppm = 0.0;
 
+int displayIter = 0;
+String status = "-";
+
 
 // Your WiFi credentials.
 // Set password to "" for open networks.
-char ssid[] = "Ninnie";
-char pass[] = "nininini";
+// char ssid[] = "Ninnie";
+// char pass[] = "nininini";
+
+char ssid[] = "MIKRO";
+char pass[] = "1DEAlist";
+
+float h, t, lastH, lastT;
+int mapH;
+
+int badPoints = 0;
 
 BlynkTimer timer;
 DHT dht(DHTPIN, DHTTYPE);
+LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 // This function is called every time the Virtual Pin 0 state changes
 BLYNK_WRITE(V0) {
@@ -47,21 +61,10 @@ BLYNK_WRITE(V0) {
   Blynk.virtualWrite(V1, value);
 }
 
-// This function is called every time the device is connected to the Blynk.Cloud
-BLYNK_CONNECTED() {
-  // Change Web Link Button message to "Congratulations!"
-  Blynk.setProperty(V3, "offImageUrl", "https://static-image.nyc3.cdn.digitaloceanspaces.com/general/fte/congratulations.png");
-  Blynk.setProperty(V3, "onImageUrl", "https://static-image.nyc3.cdn.digitaloceanspaces.com/general/fte/congratulations_pressed.png");
-  Blynk.setProperty(V3, "url", "https://docs.blynk.io/en/getting-started/what-do-i-need-to-blynk/how-quickstart-device-was-made");
-}
 
-// This function sends Arduino's uptime every second to Virtual Pin 2.
-void myTimerEvent() {
-  // You can send any value at any time.
-  // Please don't send more that 10 values per second.
-   // Read the analog value from the MQ-7 sensor
+void updateData() {
   rawValue = analogRead(mq7Pin);
-  
+
   // Convert the raw value to voltage (for 12-bit resolution, 0-4095 = 0-3.3V)
   sensorVoltage = rawValue * (3.3 / 4095.0);
 
@@ -83,17 +86,17 @@ void myTimerEvent() {
   Serial.print(ppm);
   Serial.println(" PPM");
 
+  h = dht.readHumidity();
 
+  mapH = map(h, 50, 100, 0, 100);
 
-  float h = dht.readHumidity();
-  // Read temperature as Celsius (the default)
-  float t = dht.readTemperature();
-  // Read temperature as Fahrenheit (isFahrenheit = true)
-  float f = dht.readTemperature(true);
+  t = dht.readTemperature() - 5.0;
 
   // Check if any reads failed and exit early (to try again).
-  if (isnan(h) || isnan(t) || isnan(f)) {
+  if (isnan(h) || isnan(t) || mapH > 100 || mapH < 0) {
     Serial.println(F("Failed to read from DHT sensor!"));
+    h = lastH;
+    t = lastT;
     return;
   }
 
@@ -103,6 +106,76 @@ void myTimerEvent() {
   Serial.print(t);
   Serial.println(F("°C "));
 
+
+  lastH = h;
+  lastT = t;
+}
+
+
+
+
+// This function sends Arduino's uptime every second to Virtual Pin 2.
+void myTimerEvent() {
+
+
+  lcd.clear();
+  if (displayIter == 0) {
+
+    lcd.setCursor(0, 0);
+    lcd.print("Suhu: ");
+    lcd.print(t);
+    lcd.print(" ");
+    lcd.print((char)223);
+    lcd.print("C");
+
+    lcd.setCursor(0, 1);
+    lcd.print("CO : ");
+    lcd.print(ppm);
+    lcd.print(" ppm");
+
+
+  } else if (displayIter == 1) {
+    lcd.setCursor(0, 0);
+    lcd.print("Lembab : ");
+    lcd.print(mapH);
+    lcd.print(" %");
+  } else {
+    lcd.setCursor(1, 0);
+    lcd.print("Kualitas Udara");
+    lcd.setCursor(5, 1);
+
+    if (ppm >= 35.0) {
+      badPoints++;
+    }
+    if (h > 70 || h < 30) {
+      badPoints++;
+    }
+
+    if (t < 18 || t > 30) {
+      badPoints++;
+    }
+
+
+    if (badPoints == 0) {
+      lcd.print("Ideal");
+    } else if (badPoints == 1) {
+      lcd.print("Sedang");
+    } else {
+      lcd.print("Buruk");
+    }
+
+    badPoints = 0;
+  }
+
+
+
+  if (displayIter >= 2) {
+    displayIter = 0;
+  } else {
+    displayIter++;
+  }
+
+
   Blynk.virtualWrite(V4, h);
   Blynk.virtualWrite(V1, t);
   Blynk.virtualWrite(V2, ppm);
@@ -111,8 +184,32 @@ void myTimerEvent() {
 void setup() {
   // Debug console
   Serial.begin(115200);
+  lcd.init();
 
+  lcd.backlight();
+  lcd.setCursor(1, 0);
+  lcd.print("Water Quality");
+  lcd.setCursor(4, 1);
+  lcd.print("Monitor");
+
+  delay(4000);
+
+  lcd.clear();
+  lcd.setCursor(1, 0);
+  lcd.print("Components by");
+  lcd.setCursor(0, 1);
+  lcd.print("MakassarRobotics");
+
+  delay(1500);
+
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Connecting to...");
+  lcd.setCursor(0, 1);
+  lcd.print(ssid);
   Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
+  delay(1000);
   // You can also specify server:
   //Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass, "blynk.cloud", 80);
   //Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass, IPAddress(192,168,1,100), 8080);
@@ -121,7 +218,16 @@ void setup() {
   analogReadResolution(12);        // Set ADC resolution to 12-bit (0-4095)
   analogSetAttenuation(ADC_11db);  // Set attenuation to measure higher voltage (up to 3.6V)
 
-  timer.setInterval(1000L, myTimerEvent);
+
+  timer.setInterval(1000L, updateData);
+  timer.setInterval(2000L, myTimerEvent);
+
+  lcd.clear();
+  lcd.setCursor(1, 0);
+  lcd.print("Blynk IoT App");
+  lcd.setCursor(3, 1);
+  lcd.print("Connected!");
+  delay(2000);
 }
 
 void loop() {
