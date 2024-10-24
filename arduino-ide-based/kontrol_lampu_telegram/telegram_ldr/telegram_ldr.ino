@@ -2,6 +2,8 @@
 #include <WiFiClientSecure.h>
 #include <UniversalTelegramBot.h>
 #include <dimmable_light.h>
+#include <NTPClient.h>
+#include <WiFiUdp.h>
 
 const int syncPin = 13;
 const int thyristorPin = 14;
@@ -12,6 +14,8 @@ const int thyristorPin = 14;
 // Telegram BOT Token (Get from Botfather)
 #define BOT_TOKEN "1115765927:AAFW2T18s1AcQf7SGgrVChC6mSjhN4YsAgo"
 #define TELEGRAM_ID "108488036"
+
+#define GMT_OFFSET 8
 
 #define ldrPin 34
 #define syncPin 13
@@ -25,19 +29,32 @@ unsigned long bot_lasttime;  // last time messages' scan has been done
 
 DimmableLight light(thyristorPin);
 
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP);
+
 const int batasBawah = 1400;
 const int batasAtas = 3000;
 
+const int jamMalam[] = { 21, 45 };
+const int jamPagi[] = { 6, 0 };
+
 String status = "-";
 String lastStatus = "-";
+String statLampu = "-";
+String lastLampu = "-";
 
-int terangOut = 250;
-int redupOut = 128;
-int gelapOut = 0;
+int lampuTerang = 250;
+int lampuRedup = 128;
+int lampuMati = 0;
 
 int lampuOut = 0;
 
 int ldrVal = 0;
+
+bool isMalam = false;
+
+
+int currentMinute, currentHour, currentSecond;
 
 
 
@@ -45,7 +62,7 @@ void handleNewMessages(int numNewMessages) {
   for (int i = 0; i < numNewMessages; i++) {
     String command = bot.messages[i].text;
     if (command == "/status") {
-      String msg = "Status : " + status + "\nLdr Value : " + ldrVal;
+      String msg = "Status : " + status + "\nLdr Value : " + ldrVal + "\nLampu " + statLampu;
 
       bot.sendMessage(bot.messages[i].chat_id, msg, "");
     }
@@ -83,10 +100,25 @@ void setup() {
   // VERY IMPORTANT: Call this method to activate the library
   DimmableLight::begin();
   Serial.println("Done!");
+
+  timeClient.begin();
+  timeClient.setTimeOffset(GMT_OFFSET * 3600);
 }
 
 void loop() {
   if (millis() - bot_lasttime > BOT_MTBS) {
+    timeClient.update();
+    currentHour = timeClient.getHours();
+    currentMinute = timeClient.getMinutes();
+    currentSecond = timeClient.getSeconds();
+
+    Serial.print(currentHour);
+    Serial.print(":");
+    Serial.print(currentMinute);
+    Serial.print(":");
+    Serial.println(currentSecond);
+
+
     int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
 
     while (numNewMessages) {
@@ -101,13 +133,16 @@ void loop() {
 
   if (ldrVal <= batasBawah) {
     status = "Gelap";
-    lampuOut = terangOut;
+    statLampu = "Terang";
+    lampuOut = lampuTerang;
   } else if (ldrVal > batasBawah && ldrVal <= batasAtas) {
     status = "Redup";
-    lampuOut = redupOut;
+    statLampu = "Redup";
+    lampuOut = lampuRedup;
   } else if (ldrVal > batasAtas) {
     status = "Terang";
-    lampuOut = gelapOut;
+    statLampu = "Mati";
+    lampuOut = lampuMati;
   } else {
     status = "Error";
   }
@@ -118,14 +153,41 @@ void loop() {
   Serial.print("\tlastStatus: ");
   Serial.println(lastStatus);
 
+
+  if (currentHour == jamMalam[0] && currentMinute >= jamMalam[1]) {
+    lampuOut = lampuTerang;
+    statLampu = "Terang";
+
+    if (isMalam == false) {
+
+      String message = "Memasuki Waktu Malam";
+      bot.sendMessage(TELEGRAM_ID, message, "");
+      delay(1000);
+      isMalam = true;
+    }
+  }
+
+  if (currentHour == jamPagi[0] && currentMinute >= jamPagi[1]) {
+    lampuOut = lampuMati;
+    statLampu = "Mati";
+
+    if (isMalam == true) {
+      String message = "Memasuki Waktu Pagi";
+      bot.sendMessage(TELEGRAM_ID, message, "");
+      delay(1000);
+      isMalam = false;
+    }
+  }
+
   light.setBrightness(lampuOut);
 
-  if (status != lastStatus) {
-    String message = "Kondisi " + status;
+  if (status != lastStatus || statLampu != lastLampu) {
+    String message = "Kondisi " + status + "\nLampu " + statLampu;
     bot.sendMessage(TELEGRAM_ID, message, "");
     delay(1000);
   }
 
   lastStatus = status;
+  lastLampu = statLampu;
   delay(1000);
 }
