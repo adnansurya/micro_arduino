@@ -19,10 +19,10 @@
 #include <ArduinoJson.h>
 
 const char* ssid = "MIKRO";
-const char* password = "IDEAlist";
+const char* password = "1DEAlist";
 
 // Initialize Telegram BOT
-String BOTtoken = "1115765927:AAFgDI003Xn41tererJRuoU543tBsg8CBpE";  // your Bot Token (Get from Botfather)
+String BOTtoken = "1115765927:AAFW2T18s1AcQf7SGgrVChC6mSjhN4YsAgo";  // your Bot Token (Get from Botfather)
 
 // Use @myidbot to find out the chat ID of an individual or a group
 // Also note that you need to click "start" on a bot before it can
