@@ -36,16 +36,17 @@ String status = "-";
 
 // Your WiFi credentials.
 // Set password to "" for open networks.
-// char ssid[] = "Ninnie";
-// char pass[] = "nininini";
+char ssid[] = "Ninnie";
+char pass[] = "nininini";
 
-char ssid[] = "MIKRO";
-char pass[] = "1DEAlist";
+// char ssid[] = "MIKRO";
+// char pass[] = "1DEAlist";
 
 float h, t, lastH, lastT;
 int mapH;
 
 int badPoints = 0;
+int lastBadPoints = 0;
 
 BlynkTimer timer;
 DHT dht(DHTPIN, DHTTYPE);
@@ -90,12 +91,12 @@ void updateData() {
 
   mapH = map(h, 50, 100, 0, 100);
 
-  t = dht.readTemperature() - 5.0;
+  t = dht.readTemperature() - 3.0;
 
   // Check if any reads failed and exit early (to try again).
   if (isnan(h) || isnan(t) || mapH > 100 || mapH < 0) {
     Serial.println(F("Failed to read from DHT sensor!"));
-    h = lastH;
+    mapH = lastH;
     t = lastT;
     return;
   }
@@ -107,7 +108,7 @@ void updateData() {
   Serial.println(F("°C "));
 
 
-  lastH = h;
+  lastH = mapH;
   lastT = t;
 }
 
@@ -129,7 +130,7 @@ void myTimerEvent() {
     lcd.print("C");
 
     lcd.setCursor(0, 1);
-    lcd.print("CO : ");
+    lcd.print("CO  : ");
     lcd.print(ppm);
     lcd.print(" ppm");
 
@@ -147,7 +148,7 @@ void myTimerEvent() {
     if (ppm >= 35.0) {
       badPoints++;
     }
-    if (h > 70 || h < 30) {
+    if (mapH > 70 || mapH < 30) {
       badPoints++;
     }
 
@@ -158,12 +159,19 @@ void myTimerEvent() {
 
     if (badPoints == 0) {
       lcd.print("Ideal");
+      status = "Ideal";
     } else if (badPoints == 1) {
       lcd.print("Sedang");
+      status = "Sedang";
     } else {
       lcd.print("Buruk");
+      status = "Buruk";
+      if(badPoints != lastBadPoints){
+        Blynk.logEvent("Peringatan!", "Kualitas Udara Buruk!") ;
+      }
     }
 
+    lastBadPoints = badPoints;
     badPoints = 0;
   }
 
@@ -176,9 +184,10 @@ void myTimerEvent() {
   }
 
 
-  Blynk.virtualWrite(V4, h);
+  Blynk.virtualWrite(V4, mapH);
   Blynk.virtualWrite(V1, t);
   Blynk.virtualWrite(V2, ppm);
+  Blynk.virtualWrite(V3, "Kualitas Udara " + status );
 }
 
 void setup() {
