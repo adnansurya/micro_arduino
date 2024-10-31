@@ -24,7 +24,7 @@ NewPing sonar[SONAR_NUM] = {
 };
 
 void setup() {
-  Serial.begin(115200);  // Open serial monitor at 115200 baud to see ping results.
+  Serial.begin(9600);  // Open serial monitor at 115200 baud to see ping results.
 
   servo1.attach(9);
   // servo2.attach(10);
