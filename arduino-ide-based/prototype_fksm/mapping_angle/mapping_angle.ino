@@ -13,6 +13,8 @@ const int echoPins[NUM_SENSORS] = { 3, 5, 7, 9, 11, 31, 33 };  // Echo pins untu
 #define SERVO_MAX 600  // Pulse width maximum (180°)
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 
+int delaySpeed = 30;
+
 // Objek sensor ultrasonic
 NewPing sonar[NUM_SENSORS] = {
   NewPing(trigPins[0], echoPins[0], MAX_DISTANCE),
@@ -26,13 +28,13 @@ NewPing sonar[NUM_SENSORS] = {
 
 // Set sudut target untuk setiap sensor (7 set sudut untuk setiap kemungkinan hasil)
 int targetAnglesSet[NUM_SENSORS][NUM_SENSORS] = {
-  { 0, 0, 0, 0, 0, 0, 0 },
-  { 30, 30, 30, 30, 30, 30, 30 },
-  { 60, 60, 60, 60, 60, 60, 60 },
-  { 90, 90, 90, 90, 90, 90, 90 },
-  {120, 120, 120, 120, 120, 120, 120},
-  {150, 150, 150, 150, 150, 150, 150},
-  {180, 180, 180, 180, 180, 180, 180}
+  { 90, 45, 30, 45, 70, 75, 50 },
+  { 135, 90, 50, 80, 75, 65, 45 },
+  { 145, 135, 90, 85, 80, 55, 40 },
+  { 135, 130, 95, 90, 85, 50, 45 },
+  { 140, 125, 100, 95, 90, 45, 35 },
+  { 135, 115, 105, 100, 130, 90, 45 },
+  { 130, 105, 110, 120, 135, 135, 90 }
 };
 
 // Array untuk menyimpan sudut saat ini dari setiap servo
@@ -51,12 +53,12 @@ void moveServoSlowly(int servoChannel, int targetAngle) {
   if (targetAngle > currentAngle) {
     for (int pos = currentAngle; pos <= targetAngle; pos++) {
       setServoAngle(servoChannel, pos);
-      delay(50);
+      delay(delaySpeed);
     }
   } else {
     for (int pos = currentAngle; pos >= targetAngle; pos--) {
       setServoAngle(servoChannel, pos);
-      delay(50);
+      delay(delaySpeed);
     }
   }
 
@@ -74,7 +76,7 @@ void setup() {
   for (int i = 0; i < NUM_SENSORS; i++) {
     setServoAngle(i, 0);  // Semua servo mulai dari sudut 0 derajat
   }
-  delay(500);
+  delay(1000);
 }
 
 // Fungsi loop utama
@@ -85,7 +87,7 @@ void loop() {
   // Membaca jarak dari setiap sensor ultrasonic
   for (int i = 0; i < NUM_SENSORS; i++) {
     int distance = sonar[i].ping_cm();
-    if(distance <= 0){
+    if (distance <= 0) {
       distance = MAX_DISTANCE;
     }
     Serial.print("Sensor ");
@@ -99,6 +101,7 @@ void loop() {
       minDistance = distance;
       closestSensor = i;  // Menyimpan indeks sensor dengan jarak terpendek
     }
+    delay(10);
   }
 
   // Jika ada sensor yang terdeteksi sebagai yang terdekat, gerakkan semua servo ke sudut yang sesuai
