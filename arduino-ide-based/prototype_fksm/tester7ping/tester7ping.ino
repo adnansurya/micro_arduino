@@ -29,5 +29,6 @@ void loop() {
     Serial.print(sonar[i].ping_cm());
     Serial.print("cm ");
   }
+  delay(1000);
   Serial.println();
 }

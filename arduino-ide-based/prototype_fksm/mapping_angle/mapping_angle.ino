@@ -101,7 +101,7 @@ void loop() {
       minDistance = distance;
       closestSensor = i;  // Menyimpan indeks sensor dengan jarak terpendek
     }
-    delay(10);
+    delay(50);
   }
 
   // Jika ada sensor yang terdeteksi sebagai yang terdekat, gerakkan semua servo ke sudut yang sesuai
