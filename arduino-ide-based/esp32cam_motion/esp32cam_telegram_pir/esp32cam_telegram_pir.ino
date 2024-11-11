@@ -43,7 +43,7 @@ bool flashState = LOW;
 int botRequestDelay = 1000;
 unsigned long lastTimeBotRan;
 
-int v, lastV ;
+int v, lastV;
 
 //CAMERA_MODEL_AI_THINKER
 #define PWDN_GPIO_NUM 32
@@ -151,6 +151,9 @@ void handleNewMessages(int numNewMessages) {
 }
 
 String sendPhotoTelegram() {
+  flashState = HIGH;
+  digitalWrite(FLASH_LED_PIN, flashState);
+
   const char* myDomain = "api.telegram.org";
   String getAll = "";
   String getBody = "";
@@ -169,6 +172,10 @@ String sendPhotoTelegram() {
     ESP.restart();
     return "Camera capture failed";
   }
+
+  delay(500);
+  flashState = LOW;
+  digitalWrite(FLASH_LED_PIN, flashState);
 
   Serial.println("Connect to " + String(myDomain));
 
@@ -231,6 +238,7 @@ String sendPhotoTelegram() {
     getBody = "Connected to api.telegram.org failed.";
     Serial.println("Connected to api.telegram.org failed.");
   }
+
   return getBody;
 }
 
@@ -257,24 +265,20 @@ void setup() {
     Serial.print(".");
     delay(500);
   }
+  ledBlink(2, 100);
   Serial.println();
-  Serial.print("ESP32-CAM IP Address: ");
-  Serial.println(WiFi.localIP());
+  // Serial.print("ESP32-CAM IP Address: ");
+  // Serial.println(WiFi.localIP());
+  bot.sendMessage(CHAT_ID, "Connected!", "");
+  ledBlink(3, 250);
 }
 
 void loop() {
 
-
-
-
   if (sendPhoto) {
-    // flashState = HIGH;
-    // digitalWrite(FLASH_LED_PIN, flashState);
     Serial.println("Preparing photo");
     sendPhotoTelegram();
     sendPhoto = false;
-    // flashState = LOW;
-    // digitalWrite(FLASH_LED_PIN, flashState);
   }
   if (millis() > lastTimeBotRan + botRequestDelay) {
     int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
@@ -284,14 +288,23 @@ void loop() {
       numNewMessages = bot.getUpdates(bot.last_message_received + 1);
     }
     lastTimeBotRan = millis();
-  } else {
-    pinMode(gpioPIR, INPUT_PULLUP);
-    v = digitalRead(gpioPIR);
-    Serial.println(v);
-    if (v == 1 && lastV != v) {
-      sendPhoto = true;
-    }
-
-    lastV = v;
   }
+  pinMode(gpioPIR, INPUT_PULLUP);
+  v = digitalRead(gpioPIR);
+  Serial.println(v);
+  if (v == 1 && lastV != v) {
+    sendPhoto = true;
+  }
+
+  lastV = v;
+}
+
+void ledBlink(int freq, int delayInterval) {
+  for (int i = 0; i < freq; i++) {
+    digitalWrite(FLASH_LED_PIN, HIGH);
+    delay(delayInterval);
+    digitalWrite(FLASH_LED_PIN, LOW);
+    delay(delayInterval);
+  }
+  flashState = LOW;
 }
