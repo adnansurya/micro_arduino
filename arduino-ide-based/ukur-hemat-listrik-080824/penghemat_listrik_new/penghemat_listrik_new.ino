@@ -135,7 +135,10 @@ void loop() {
         displaySensorData();
 
       } else {
-        writeData();
+        // Buat string data dalam format CSV
+        String dataString = dateTimeStrings[0] + separator + dateTimeStrings[1] + separator + String(current1) + separator + String(current2) + separator + String(current3) + separator + String(current4) + 
+        separator + String(power1) + separator + String(power2) + separator + String(power3) + separator + String(power4);
+        writeData(dataString);
         lcd.setCursor(15, 3);
         lcd.print("SAVE");
         lcd.print((char)126);
@@ -207,19 +210,16 @@ void loop() {
 }
 
 
-void writeData() {
-  // Buat string data dalam format CSV
-  String dataString = dateTimeStrings[0] + separator + dateTimeStrings[1] + separator + String(current1) + separator + String(current2) + separator + String(current3) + separator + String(current4) + separator + String(power1) + separator + String(power2) + separator + String(power3) + separator + String(power4);
-
+void writeData(String text) {
   // Tulis data ke file CSV
   myFile = SD.open("log.csv", FILE_WRITE);
   if (myFile) {
-    myFile.println(dataString);
+    myFile.println(text);
     myFile.close();
-    Serial.println("Data written to SD: " + dataString);
+    Serial.println("Data written to SD: " + text);
   } else {
     displayError("Write Data Error");
-    Serial.println("Error opening current_log.csv");
+    Serial.println("Error opening log.csv");
   }
 }
 
