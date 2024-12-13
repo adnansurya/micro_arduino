@@ -7,8 +7,8 @@
 
 #define current1Pin A0
 #define current2Pin A1
-#define current3Pin A2
-#define current4Pin A3
+#define current3Pin A3
+#define current4Pin A5
 
 #define csPin 53
 
@@ -19,7 +19,6 @@
 #define relay3Pin 10
 #define relay4Pin 11
 
-const float acVoltage = 220.0;
 
 ACS712 acs1(ACS712_30A, current1Pin);
 ACS712 acs2(ACS712_05B, current2Pin);
@@ -28,6 +27,10 @@ ACS712 acs4(ACS712_05B, current4Pin);
 
 float current1, current2, current3, current4;
 float power1, power2, power3, power4;
+
+float cal1, cal2, cal3, cal4;
+
+bool calibrate = false;
 
 RtcDS3231<TwoWire> Rtc(Wire);
 
@@ -56,6 +59,7 @@ unsigned long motionUpdateTimeOut = 20 * 1000;
 
 unsigned long switchOnTimeSecond = 0;
 unsigned long switchOffTimeSecond = 0;
+unsigned long onDurationTimeSecond = 0;
 
 bool wasError(const char* errorTopic = "") {
   uint8_t error = Rtc.LastError();
@@ -115,6 +119,10 @@ void setup() {
   rtcInit();
 
   sensorInit();
+
+  callibrateACS(20);
+
+  calibrate = true;
 }
 
 void loop() {
@@ -128,24 +136,14 @@ void loop() {
     updateTime();
 
     if (relayOn) {
-      getCurrentData();
-      lcdUpdateInterval = 3000;
-
-      if (updateCounter < savingTimer) {
-        displaySensorData();
-
-      } else {
-        // Buat string data dalam format CSV
-        String dataString = dateTimeStrings[0] + separator + dateTimeStrings[1] + separator + String(current1) + separator + String(current2) + separator + String(current3) + separator + String(current4) + 
-        separator + String(power1) + separator + String(power2) + separator + String(power3) + separator + String(power4);
-        writeData(dataString);
-        lcd.setCursor(15, 3);
-        lcd.print("SAVE");
-        lcd.print((char)126);
-        updateCounter = 0;
+      if (!displayPower) {
+        getCurrentData();
       }
 
-      updateCounter++;
+      lcdUpdateInterval = 3000;
+
+      displaySensorData();
+
     } else {
       standbyDisplay();
       lcdUpdateInterval = 1000;
@@ -173,6 +171,10 @@ void loop() {
     powerOn();
     switchOnTimeSecond = millis() / 1000;
     Serial.println(switchOnTimeSecond);
+    String dataString = dateTimeStrings[0] + separator + dateTimeStrings[1] + separator
+                        + "SWITCH ON" + separator + "-" + separator + "-" + separator + "-" + separator
+                        + "-" + separator + "-" + separator + "-" + separator + "-";
+    writeData(dataString);
   }
 
 
@@ -188,21 +190,33 @@ void loop() {
       if (currentTime - motionUpdateTime >= motionUpdateTimeOut) {
         relayOn = false;
 
-        updateCounter = 0;
-        lcd.clear();
-        lcd.setCursor(1, 0);
-        lcd.print("Tidak Ada Gerakan");
-        lcd.setCursor(3, 1);
-        lcd.print("Selama ");
-        lcd.print((motionUpdateTimeOut / 1000));
-        lcd.print(" detik");
-        lcd.setCursor(5, 3);
-        lcd.print("POWER OFF!");
         powerOff();
         switchOffTimeSecond = millis() / 1000;
         Serial.println(switchOffTimeSecond);
-        Serial.println(switchOffTimeSecond - switchOnTimeSecond);
-        delay(2000);
+        onDurationTimeSecond = switchOffTimeSecond - switchOnTimeSecond;
+        Serial.println(onDurationTimeSecond);
+
+        float durationHours = (float)onDurationTimeSecond / 3600.0;
+        String dataString = dateTimeStrings[0] + separator + dateTimeStrings[1] + separator
+                            + String(current1) + separator + String(current2) + separator + String(current3) + separator + String(current4) + separator
+                            + String(power1) + separator + String(power2) + separator + String(power3) + separator + String(power4) + separator
+                            + String(onDurationTimeSecond) + separator + String(durationHours);
+
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Active Duration: ");
+        lcd.setCursor(1, 1);
+        lcd.print(onDurationTimeSecond);
+        lcd.print(" sec (");
+        lcd.print(durationHours);
+        lcd.print(" h)");
+        lcd.setCursor(0, 3);
+        lcd.print("POWER OFF! (");
+        lcd.print((motionUpdateTimeOut / 1000));
+        lcd.print(" sec)");
+
+        writeData(dataString);
+        delay(4000);
       }
     }
   }
@@ -317,17 +331,40 @@ void displaySensorData() {
 }
 
 void getCurrentData() {
-  current1 = acs1.getCurrentAC();
-  current2 = acs2.getCurrentAC();
-  current3 = acs3.getCurrentAC();
-  current4 = acs4.getCurrentAC();
 
-  power1 = current1 * acVoltage;
-  power2 = current2 * acVoltage;
-  power3 = current3 * acVoltage;
-  power4 = current4 * acVoltage;
 
-  // Send it to serial
+  current1 = String(acs1.getCurrentAC()).toFloat();
+  current2 = String(acs2.getCurrentAC()).toFloat();
+  current3 = String(acs3.getCurrentAC()).toFloat();
+  current4 = String(acs4.getCurrentAC()).toFloat();
+
+
+
+  if (calibrate) {
+    current1 = current1 - cal1;
+    current2 = current2 - cal2;
+    current3 = current3 - cal3;
+    current4 = current4 - cal4;
+
+    if (current1 < 0.0) {
+      current1 = 0.0;
+    }
+    if (current2 < 0.0) {
+      current2 = 0.0;
+    }
+    if (current3 < 0.0) {
+      current3 = 0.0;
+    }
+    if (current4 < 0.0) {
+      current4 = 0.0;
+    }
+
+    power1 = current1 * 220.0;
+    power2 = current2 * 220.0;
+    power3 = current3 * 220.0;
+    power4 = current4 * 220.0;
+  }
+
   Serial.print("I_1 = ");
   Serial.print(current1);
   Serial.print(" A\t");
@@ -341,20 +378,22 @@ void getCurrentData() {
   Serial.print(current4);
   Serial.println(" A");
 
-
-  Serial.print("P_1 = ");
-  Serial.print(power1);
-  Serial.print(" W\t");
-  Serial.print("P_2 = ");
-  Serial.print(power2);
-  Serial.print(" W\t");
-  Serial.print("P_3 = ");
-  Serial.print(power3);
-  Serial.print(" W\t");
-  Serial.print("P_4 = ");
-  Serial.print(power4);
-  Serial.println(" W");
-  Serial.println();
+  if (calibrate) {
+    // Send it to serial
+    Serial.print("P_1 = ");
+    Serial.print(power1);
+    Serial.print(" W\t");
+    Serial.print("P_2 = ");
+    Serial.print(power2);
+    Serial.print(" W\t");
+    Serial.print("P_3 = ");
+    Serial.print(power3);
+    Serial.print(" W\t");
+    Serial.print("P_4 = ");
+    Serial.print(power4);
+    Serial.println(" W");
+    Serial.println();
+  }
 }
 
 
@@ -471,4 +510,28 @@ void displayError(String text) {
   lcd.setCursor(0, 1);
   lcd.print(text);
   delay(2500);
+}
+
+void callibrateACS(int sample) {
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Callibrating..");
+
+  for (int i = 0; i < sample; i++) {
+    getCurrentData();
+    if (current1 > cal1) {
+      cal1 = current1;
+    }
+    if (current2 > cal2) {
+      cal2 = current2;
+    }
+    if (current3 > cal3) {
+      cal3 = current3;
+    }
+    if (current4 > cal4) {
+      cal4 = current4;
+    }
+    delay(100);
+  }
 }
