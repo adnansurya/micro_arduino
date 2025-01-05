@@ -1,11 +1,13 @@
 #include <Wire.h>
 #include <MAX30100_PulseOximeter.h>
 #include <Adafruit_MPU6050.h>
+#include <SoftwareSerial.h>
 
 #define REPORTING_PERIOD_MS 1000
 
 PulseOximeter pox;     // MAX30100
 Adafruit_MPU6050 mpu;  // MPU6050
+SoftwareSerial mySerial(10, 11); // RX, TX
 
 // Variabel untuk menyimpan data
 float heartRate, spO2;
@@ -21,7 +23,12 @@ void onPulseOximeterData() {
 void setup() {
   // Inisialisasi Serial Monitor
   Serial.begin(115200);
+  while (!Serial) {
+    ; // wait for serial port to connect. Needed for native USB port only
+  }
   Serial.println("Inisialisasi sensor...");
+
+  mySerial.begin(9600);
 
   // Inisialisasi MPU6050
   if (!mpu.begin()) {
@@ -60,7 +67,6 @@ void loop() {
     Serial.println(" %");
 
     
-
     // Membaca data dari MPU6050 (Akselerasi)
     sensors_event_t accel, gyro, temp;
     mpu.getEvent(&accel, &gyro, &temp);
@@ -77,6 +83,17 @@ void loop() {
     Serial.println(accelZ);
 
     Serial.println("----------------------------");
+
+    mySerial.print(heartRate);
+    mySerial.print("/");
+    mySerial.print(spO2);
+    mySerial.print("/");
+    mySerial.print(accelX);
+    mySerial.print("/");
+    mySerial.print(accelY);
+    mySerial.print("/");
+    mySerial.print(accelZ);
+    mySerial.print("\n");
 
     tsLastReport = millis();
   }
