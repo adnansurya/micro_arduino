@@ -5,9 +5,9 @@
 
 #define REPORTING_PERIOD_MS 1000
 
-PulseOximeter pox;     // MAX30100
-Adafruit_MPU6050 mpu;  // MPU6050
-SoftwareSerial mySerial(10, 11); // RX, TX
+PulseOximeter pox;                // MAX30100
+Adafruit_MPU6050 mpu;             // MPU6050
+SoftwareSerial mySerial(10, 11);  // RX, TX
 
 // Variabel untuk menyimpan data
 float heartRate, spO2;
@@ -24,7 +24,7 @@ void setup() {
   // Inisialisasi Serial Monitor
   Serial.begin(115200);
   while (!Serial) {
-    ; // wait for serial port to connect. Needed for native USB port only
+    ;  // wait for serial port to connect. Needed for native USB port only
   }
   Serial.println("Inisialisasi sensor...");
 
@@ -66,7 +66,7 @@ void loop() {
     Serial.print(spO2);
     Serial.println(" %");
 
-    
+
     // Membaca data dari MPU6050 (Akselerasi)
     sensors_event_t accel, gyro, temp;
     mpu.getEvent(&accel, &gyro, &temp);
@@ -82,6 +82,16 @@ void loop() {
     Serial.print(", Z: ");
     Serial.println(accelZ);
 
+    Serial.println("----------------------------");
+    Serial.print(heartRate);
+    Serial.print("/");
+    Serial.print(spO2);
+    Serial.print("/");
+    Serial.print(accelX);
+    Serial.print("/");
+    Serial.print(accelY);
+    Serial.print("/");
+    Serial.println(accelZ);
     Serial.println("----------------------------");
 
     mySerial.print(heartRate);
