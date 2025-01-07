@@ -38,14 +38,23 @@ void loop() {
   float rs = readSensor();
   float ratio = rs / R0;
   float ppm = pow(10, ((log10(ratio) - (-0.45)) / (-0.32))); // m dan b dari datasheet
-  ppm = 9.12;
+
+  // Membaca persentase ADC
+  int adcValue = analogRead(analogPin);        // Baca nilai analog
+  float adcPercentage = (adcValue / 4095.0) * 100.0; // Hitung persentase ADC
 
   // Kirim data melalui LoRa
   Serial.print("Mengirim PPM CO: ");
-  Serial.println(ppm);
+  Serial.print(ppm);
+  Serial.print(" ppm, Persen ADC: ");
+  Serial.print(adcPercentage);
+  Serial.println("%");
 
   LoRa.beginPacket();
-  LoRa.print(ppm); // Kirim data PPM sebagai string
+  LoRa.print("PPM: ");
+  LoRa.print(ppm);
+  LoRa.print(", Persen ADC: ");
+  LoRa.print(adcPercentage);
   LoRa.endPacket();
 
   delay(2000); // Delay 2 detik sebelum pengukuran berikutnya
