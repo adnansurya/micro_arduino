@@ -17,8 +17,8 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);           // LCD I2C
 #define TX_PIN 17                             // Pin TX ESP32 (tidak digunakan)
 
 // Blynk Auth Token
-char ssid[] = "MIKRO";     // Ganti dengan nama WiFi Anda
-char pass[] = "1DEAlist";  // Ganti dengan password WiFi Anda
+char ssid[] = "vivo Y12s 2021";     // Ganti dengan nama WiFi Anda
+char pass[] = "nurikaputri";  // Ganti dengan password WiFi Anda
 
 // Variabel Data
 float heartRate = 0; // Detak jantung (bpm)
@@ -157,8 +157,8 @@ void checkHealthConditions() {
   }
 
   // MLX90614: Suhu Tubuh
-  if (suhuTubuh < 36.0) {
-    kondisi += "Hipotermia (<36.0°C)\n";
+  if (suhuTubuh < 35.0) {
+    kondisi += "Hipotermia (<35.0°C)\n";
   } else if (suhuTubuh > 37.5) {
     kondisi += "Demam ringan (>37.5°C)\n";
   }
