@@ -10,6 +10,8 @@ const int analogPinVoltage = 35;        // Pin analog untuk sensor tegangan
 const float voltageDividerRatio = 5.0;  // Rasio pembagi tegangan (sesuaikan dengan sensor Anda)
 const float VCC = 3.3;  
 
+float batt2_percent;
+
 void setup() {
   Serial.begin(115200);
   while (!Serial);
@@ -29,15 +31,18 @@ void setup() {
 void loop() {
 
   // Konversi nilai ADC ke tegangan dalam volt (asumsikan input ADC 3.3V dan 12-bit resolusi)
-  float voltage = readVoltage();
+  float voltage2 = readVoltage();
+  batt2_percent = voltage2 / 4.2 * 100.0;
 
   Serial.print("Tegangan yang diukur: ");
-  Serial.print(voltage);
-  Serial.println(" V");
+  Serial.print(voltage2);
+  Serial.print(" V\t");
+  Serial.print(batt2_percent);
+  Serial.print(" %");
 
   // Kirim data tegangan melalui LoRa
   LoRa.beginPacket();
-  LoRa.print(voltage, 2); // Kirim dengan 2 desimal
+  LoRa.print(batt2_percent, 2); // Kirim dengan 2 desimal
   LoRa.endPacket();
 
   delay(1000); // Interval 1 detik

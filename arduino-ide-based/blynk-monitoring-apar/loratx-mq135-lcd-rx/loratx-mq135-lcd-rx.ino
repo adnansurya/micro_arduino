@@ -32,8 +32,8 @@ const float voltageDividerRatio = 5.0;  // Rasio pembagi tegangan (sesuaikan den
 LiquidCrystal_I2C lcd(0x27, 16, 2);  // Alamat I2C LCD biasanya 0x27
 
 BlynkTimer mainTimer;
-char ssid[] = "MIKRO";   // Ganti dengan nama WiFi Anda
-char pass[] = "1DEAlist";  // Ganti dengan password WiFi Anda
+char ssid[] = "kontras";   // Ganti dengan nama WiFi Anda
+char pass[] = "12345678";  // Ganti dengan password WiFi Anda
 
 float batt_percent, batt2_percent;
 float ppm;
@@ -106,7 +106,7 @@ void mainEvent() {
   batt_percent = voltage / 4.2 * 100.0;
 
   // Tampilkan data pada LCD
-  displayOnLCD(ppm, batt_percent);
+  displayOnLCD(ppm, batt_percent, batt2_percent);
 }
 
 float readSensorMQ135() {
@@ -132,7 +132,7 @@ float readVoltage() {
   return sensorVoltage * voltageDividerRatio;       // Hitung tegangan aktual
 }
 
-void displayOnLCD(float ppm, float percentage) {
+void displayOnLCD(float ppm, float percentage, float percentage2) {
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("CO : ");
@@ -140,9 +140,13 @@ void displayOnLCD(float ppm, float percentage) {
   lcd.print(" ppm");
 
   lcd.setCursor(0, 1);
-  lcd.print("Bat: ");
-  lcd.print(percentage, 2);  // Tampilkan tegangan dengan 2 desimal
-  lcd.print(" %");
+  lcd.print("B1: ");
+  lcd.print(percentage, 0);  // Tampilkan tegangan dengan 2 desimal
+  lcd.print("%");
+  lcd.setCursor(8, 1);
+  lcd.print("B2: ");
+  lcd.print(percentage2, 0);  // Tampilkan tegangan dengan 2 desimal
+  lcd.print("%");
 }
 
 void sendData() {
@@ -154,9 +158,8 @@ void sendData() {
   } else {
     Serial.println("Koneksi Blynk tidak tersedia, mengirim data melalui LoRa...");
     LoRa.beginPacket();
-    LoRa.print("PPM: ");
     LoRa.print(ppm);
-    LoRa.print(", Tegangan: ");
+    LoRa.print(",");
     LoRa.print(batt_percent);
     LoRa.endPacket();
   }
@@ -172,15 +175,7 @@ void receiveLoRaData() {
     Serial.print("Data diterima melalui LoRa: ");
     Serial.println(receivedData);
 
-    float voltage2 = receivedData.toFloat();
-    batt2_percent = voltage2 / 4.2 * 100.0;
-
-    // Proses data yang diterima (sesuaikan dengan kebutuhan)
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("LoRa Data:");
-    lcd.setCursor(0, 1);
-    lcd.print(receivedData);
+    batt2_percent = receivedData.toFloat();     
   }
 }
 
