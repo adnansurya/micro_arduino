@@ -5,8 +5,10 @@
 #define RST 14
 #define DIO0 26
 
-// Konfigurasi pin voltage sensor
-#define VOLTAGE_SENSOR_PIN 35
+// Konfigurasi sensor tegangan
+const int analogPinVoltage = 35;        // Pin analog untuk sensor tegangan
+const float voltageDividerRatio = 5.0;  // Rasio pembagi tegangan (sesuaikan dengan sensor Anda)
+const float VCC = 3.3;  
 
 void setup() {
   Serial.begin(115200);
@@ -21,16 +23,13 @@ void setup() {
   }
   Serial.println("LoRa berhasil diinisialisasi!");
 
-  // Inisialisasi pin voltage sensor
-  pinMode(VOLTAGE_SENSOR_PIN, INPUT);
+
 }
 
 void loop() {
-  // Membaca tegangan dari sensor
-  int sensorValue = analogRead(VOLTAGE_SENSOR_PIN);
 
   // Konversi nilai ADC ke tegangan dalam volt (asumsikan input ADC 3.3V dan 12-bit resolusi)
-  float voltage = (sensorValue / 4095.0) * 3.3; // Sesuaikan faktor pembagi jika menggunakan divider pada sensor
+  float voltage = readVoltage();
 
   Serial.print("Tegangan yang diukur: ");
   Serial.print(voltage);
@@ -58,4 +57,10 @@ void loop() {
     Serial.print("Nilai PPM CO: ");
     Serial.println(ppm);
   }
+}
+
+float readVoltage() {
+  int adcValue = analogRead(analogPinVoltage);      // Baca nilai analog
+  float sensorVoltage = (adcValue / 4095.0) * VCC;  // Tegangan pada pin ADC
+  return sensorVoltage * voltageDividerRatio;       // Hitung tegangan aktual
 }

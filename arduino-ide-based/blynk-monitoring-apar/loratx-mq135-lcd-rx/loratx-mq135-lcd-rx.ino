@@ -32,10 +32,10 @@ const float voltageDividerRatio = 5.0;  // Rasio pembagi tegangan (sesuaikan den
 LiquidCrystal_I2C lcd(0x27, 16, 2);  // Alamat I2C LCD biasanya 0x27
 
 BlynkTimer mainTimer;
-char ssid[] = "Anafora";   // Ganti dengan nama WiFi Anda
-char pass[] = "12345678";  // Ganti dengan password WiFi Anda
+char ssid[] = "MIKRO";   // Ganti dengan nama WiFi Anda
+char pass[] = "1DEAlist";  // Ganti dengan password WiFi Anda
 
-float batt_percent;
+float batt_percent, batt2_percent;
 float ppm;
 
 void setup() {
@@ -150,6 +150,7 @@ void sendData() {
     Serial.println("Koneksi Blynk tersedia, mengirim data ke Blynk...");
     Blynk.virtualWrite(V0, ppm);
     Blynk.virtualWrite(V1, batt_percent);
+    Blynk.virtualWrite(V2, batt2_percent);
   } else {
     Serial.println("Koneksi Blynk tidak tersedia, mengirim data melalui LoRa...");
     LoRa.beginPacket();
@@ -170,6 +171,9 @@ void receiveLoRaData() {
     }
     Serial.print("Data diterima melalui LoRa: ");
     Serial.println(receivedData);
+
+    float voltage2 = receivedData.toFloat();
+    batt2_percent = voltage2 / 4.2 * 100.0;
 
     // Proses data yang diterima (sesuaikan dengan kebutuhan)
     lcd.clear();
