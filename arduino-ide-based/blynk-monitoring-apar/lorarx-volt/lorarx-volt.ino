@@ -1,4 +1,15 @@
+#define BLYNK_TEMPLATE_ID "TMPL6GsHGgMf0"
+#define BLYNK_TEMPLATE_NAME "Quickstart Template"
+#define BLYNK_AUTH_TOKEN "c_cy-OkIWySgf4IXc60_Zt0U65naFriQ"
+
 #include <LoRa.h>
+#include "esp_system.h"  // Library untuk esp_restart()
+#include <WiFi.h>
+#include <BlynkSimpleEsp32.h>
+
+#define BLYNK_PRINT Serial
+#define OUT_PIN 2
+
 
 // Konfigurasi pin LoRa
 #define SS 5
@@ -8,64 +19,155 @@
 // Konfigurasi sensor tegangan
 const int analogPinVoltage = 35;        // Pin analog untuk sensor tegangan
 const float voltageDividerRatio = 5.0;  // Rasio pembagi tegangan (sesuaikan dengan sensor Anda)
-const float VCC = 3.3;  
+const float VCC = 3.3;
 
-float batt2_percent;
+float voltage2, ppm, batt_percent, batt2_percent;
+int statCheckSeconds = 20;
+bool backupMode = false;
+
+BlynkTimer mainTimer;
+char ssid[] = "MIKRO";     // Ganti dengan nama WiFi Anda
+char pass[] = "1DEAlist";  // Ganti dengan password WiFi Anda
 
 void setup() {
+  pinMode(OUT_PIN, OUTPUT);
+  blinkOut(1);
   Serial.begin(115200);
-  while (!Serial);
+  while (!Serial)
+    ;
 
   // Inisialisasi LoRa
   Serial.println("Menginisialisasi LoRa...");
   LoRa.setPins(SS, RST, DIO0);
-  if (!LoRa.begin(915E6)) { // Frekuensi default 915 MHz
+  if (!LoRa.begin(915E6)) {  // Frekuensi default 915 MHz
     Serial.println("Gagal menginisialisasi LoRa!");
-    while (1);
+    while (1)
+      ;
   }
   Serial.println("LoRa berhasil diinisialisasi!");
 
 
+
+  Serial.print("Menunggu paket dari LoRa");
+  // delay(100);
+  for (int i = 0; i < statCheckSeconds*10; i++) {
+    if (i % 10 == 0) {
+      Serial.print(".");
+    }
+    int packetSize = LoRa.parsePacket();
+    if (packetSize) {
+      Serial.print("Paket diterima: ");
+      String received = "";
+      while (LoRa.available()) {
+        received += (char)LoRa.read();
+      }
+      Serial.println(received);
+      backupMode = true;
+      break;
+    }
+    delay(100);
+  }
+
+  if (backupMode) {
+    Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
+    mainTimer.setInterval(10000L, sendData);
+    Serial.println("Blynk berhasil diinisialisasi.");
+  }
+
+  mainTimer.setInterval(1000L, mainEvent);
+  mainTimer.setInterval(100L, receiveLoRaData);  // Cek data masuk dari LoRa
+
+  blinkOut(2);
 }
 
 void loop() {
 
-  // Konversi nilai ADC ke tegangan dalam volt (asumsikan input ADC 3.3V dan 12-bit resolusi)
-  float voltage2 = readVoltage();
-  batt2_percent = voltage2 / 4.2 * 100.0;
 
-  Serial.print("Tegangan yang diukur: ");
-  Serial.print(voltage2);
-  Serial.print(" V\t");
-  Serial.print(batt2_percent);
-  Serial.print(" %");
-
-  // Kirim data tegangan melalui LoRa
-  LoRa.beginPacket();
-  LoRa.print(batt2_percent, 2); // Kirim dengan 2 desimal
-  LoRa.endPacket();
-
-  delay(1000); // Interval 1 detik
-
-  // Cek apakah ada data yang diterima
-  int packetSize = LoRa.parsePacket();
-  if (packetSize) {
-    Serial.print("Paket diterima: ");
-    String received = "";
-    while (LoRa.available()) {
-      received += (char)LoRa.read();
-    }
-    Serial.println(received);
-
-    // Konversi string ke float jika diperlukan
-    float ppm = received.toFloat();
-    Serial.print("Nilai PPM CO: ");
-    Serial.println(ppm);
+  if (backupMode) {
+    Blynk.run();
   }
+  mainTimer.run();
 }
 
 float readVoltage() {
   int adcValue = analogRead(analogPinVoltage);      // Baca nilai analog
   float sensorVoltage = (adcValue / 4095.0) * VCC;  // Tegangan pada pin ADC
   return sensorVoltage * voltageDividerRatio;       // Hitung tegangan aktual
+}
+
+void blinkOut(int rep) {
+  for (int i = 0; i < rep; i++) {
+    digitalWrite(OUT_PIN, HIGH);
+    delay(200);
+    digitalWrite(OUT_PIN, LOW);
+    delay(200);
+  }
+}
+
+String getValue(String data, char separator, int index) {
+  int found = 0;
+  int strIndex[] = { 0, -1 };
+  int maxIndex = data.length() - 1;
+
+  for (int i = 0; i <= maxIndex && found <= index; i++) {
+    if (data.charAt(i) == separator || i == maxIndex) {
+      found++;
+      strIndex[0] = strIndex[1] + 1;
+      strIndex[1] = (i == maxIndex) ? i + 1 : i;
+    }
+  }
+  return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
+}
+
+void mainEvent() {
+  voltage2 = readVoltage();
+  batt2_percent = voltage2 / 4.2 * 100.0;
+
+  Serial.print("Tegangan yang diukur: ");
+  Serial.print(voltage2);
+  Serial.print(" V\t");
+  Serial.print(batt2_percent);
+  Serial.println(" %");
+
+  // Kirim data tegangan melalui LoRa
+  // if (!backupMode) {
+    LoRa.beginPacket();
+    LoRa.print(batt2_percent, 2);  // Kirim dengan 2 desimal
+    LoRa.endPacket();
+  // }
+}
+
+void receiveLoRaData() {
+  // Cek apakah ada data yang diterima
+  int packetSize = LoRa.parsePacket();
+  if (packetSize) {
+    if (backupMode) {
+      Serial.print("Paket diterima: ");
+      String received = "";
+      while (LoRa.available()) {
+        received += (char)LoRa.read();
+      }
+      Serial.println(received);
+
+      // Konversi string ke float jika diperlukan
+      ppm = getValue(received, '|', 0).toFloat();
+      batt_percent = getValue(received, '|', 1).toFloat();
+      Serial.print("Nilai PPM CO: ");
+      Serial.println(ppm);
+      Serial.print("Batt Percent: ");
+      Serial.println(batt_percent);
+      blinkOut(1);
+    } else {
+      Serial.println("RESTART");
+      delay(2000);
+      esp_restart();
+    }
+  }
+}
+
+
+void sendData() {
+  Blynk.virtualWrite(V0, ppm);
+  Blynk.virtualWrite(V1, batt_percent);
+  Blynk.virtualWrite(V2, batt2_percent);
 }

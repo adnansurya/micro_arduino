@@ -38,6 +38,8 @@ char pass[] = "12345678";  // Ganti dengan password WiFi Anda
 float batt_percent, batt2_percent;
 float ppm;
 
+bool isOffline = false;
+
 void setup() {
   pinMode(OUT_PIN, OUTPUT);
   blinkOut(1);
@@ -80,18 +82,44 @@ void setup() {
   lcd.setCursor(5, 0);
   lcd.print(R0, 2);  // Tampilkan nilai R0 dengan 2 desimal
 
-  Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
   Serial.println("Semua sensor berhasil diinisialisasi.");
+
+  // Mulai koneksi WiFi
+  WiFi.begin(ssid, pass);
+  Serial.println("Menghubungkan ke WiFi...");
+
+  // Tunggu hingga koneksi berhasil
+  unsigned long startAttemptTime = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 10000) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nWiFi Tersambung!");
+    Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
+    isOffline = false;
+  } else {
+    Serial.println("\nGagal terhubung ke WiFi. Masuk ke mode offline.");
+    isOffline = true;
+  }
+
+
 
   mainTimer.setInterval(1000L, mainEvent);
   mainTimer.setInterval(10000L, sendData);
   mainTimer.setInterval(500L, receiveLoRaData);  // Cek data masuk dari LoRa
+  mainTimer.setInterval(1000L, sendBackup);
 
   blinkOut(2);
 }
 
 void loop() {
-  Blynk.run();
+
+  if(!isOffline){
+     Blynk.run();
+  }
+ 
   mainTimer.run();
 }
 
@@ -155,13 +183,18 @@ void sendData() {
     Blynk.virtualWrite(V0, ppm);
     Blynk.virtualWrite(V1, batt_percent);
     Blynk.virtualWrite(V2, batt2_percent);
-  } else {
+  } 
+}
+
+void sendBackup(){
+  if(!Blynk.connected()) {
     Serial.println("Koneksi Blynk tidak tersedia, mengirim data melalui LoRa...");
     LoRa.beginPacket();
     LoRa.print(ppm);
-    LoRa.print(",");
+    LoRa.print("|");
     LoRa.print(batt_percent);
     LoRa.endPacket();
+    blinkOut(1);
   }
 }
 
@@ -175,7 +208,7 @@ void receiveLoRaData() {
     Serial.print("Data diterima melalui LoRa: ");
     Serial.println(receivedData);
 
-    batt2_percent = receivedData.toFloat();     
+    batt2_percent = receivedData.toFloat();
   }
 }
 
