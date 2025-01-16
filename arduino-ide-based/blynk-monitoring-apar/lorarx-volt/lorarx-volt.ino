@@ -29,6 +29,9 @@ BlynkTimer mainTimer;
 char ssid[] = "MIKRO";     // Ganti dengan nama WiFi Anda
 char pass[] = "1DEAlist";  // Ganti dengan password WiFi Anda
 
+unsigned long loraTimeout = 30000;    // Waktu tunggu dalam milidetik (5 detik)
+unsigned long lastLoraInputTime = 0;  // Waktu terakhir input diterima
+
 void setup() {
   pinMode(OUT_PIN, OUTPUT);
   blinkOut(1);
@@ -50,7 +53,7 @@ void setup() {
 
   Serial.print("Menunggu paket dari LoRa");
   // delay(100);
-  for (int i = 0; i < statCheckSeconds*10; i++) {
+  for (int i = 0; i < statCheckSeconds * 10; i++) {
     if (i % 10 == 0) {
       Serial.print(".");
     }
@@ -130,11 +133,11 @@ void mainEvent() {
   Serial.println(" %");
 
   // Kirim data tegangan melalui LoRa
-  // if (!backupMode) {
+  if (!backupMode) {
     LoRa.beginPacket();
     LoRa.print(batt2_percent, 2);  // Kirim dengan 2 desimal
     LoRa.endPacket();
-  // }
+  }
 }
 
 void receiveLoRaData() {
@@ -156,10 +159,18 @@ void receiveLoRaData() {
       Serial.println(ppm);
       Serial.print("Batt Percent: ");
       Serial.println(batt_percent);
+      lastLoraInputTime = millis();
       blinkOut(1);
     } else {
+      Serial.println("Data dari LoRa diterima. Masuk ke mode Backup");
       Serial.println("RESTART");
       delay(2000);
+      esp_restart();
+    }
+  } else {
+    if (backupMode && millis() - lastLoraInputTime > loraTimeout) {
+      Serial.println("Timeout mode backup tercapai. Kembali ke mode Normal");
+      Serial.println("RESTART");
       esp_restart();
     }
   }
@@ -170,4 +181,5 @@ void sendData() {
   Blynk.virtualWrite(V0, ppm);
   Blynk.virtualWrite(V1, batt_percent);
   Blynk.virtualWrite(V2, batt2_percent);
+  Blynk.virtualWrite(V3, "Backup");
 }

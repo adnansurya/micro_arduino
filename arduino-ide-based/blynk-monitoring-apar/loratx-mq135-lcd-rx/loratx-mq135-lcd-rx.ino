@@ -7,6 +7,7 @@
 #include <LiquidCrystal_I2C.h>
 #include <WiFi.h>
 #include <BlynkSimpleEsp32.h>
+#include "CustomChars.h"  // Header karakter kustom
 
 #define BLYNK_PRINT Serial
 #define OUT_PIN 2
@@ -53,6 +54,9 @@ void setup() {
   lcd.backlight();
   lcd.setCursor(0, 0);
   lcd.print("Init...");
+
+  // Inisialisasi karakter kustom
+  initializeCustomChars(lcd);
 
   // Inisialisasi LoRa
   Serial.println("Menginisialisasi LoRa...");
@@ -108,7 +112,7 @@ void setup() {
 
   mainTimer.setInterval(1000L, mainEvent);
   mainTimer.setInterval(10000L, sendData);
-  mainTimer.setInterval(500L, receiveLoRaData);  // Cek data masuk dari LoRa
+  mainTimer.setInterval(100L, receiveLoRaData);  // Cek data masuk dari LoRa
   mainTimer.setInterval(1000L, sendBackup);
 
   blinkOut(2);
@@ -116,10 +120,10 @@ void setup() {
 
 void loop() {
 
-  if(!isOffline){
-     Blynk.run();
+  if (!isOffline) {
+    Blynk.run();
   }
- 
+
   mainTimer.run();
 }
 
@@ -183,17 +187,22 @@ void sendData() {
     Blynk.virtualWrite(V0, ppm);
     Blynk.virtualWrite(V1, batt_percent);
     Blynk.virtualWrite(V2, batt2_percent);
-  } 
+    Blynk.virtualWrite(V3, "Normal");
+    lcd.setCursor(15, 0);
+    lcd.write(byte(0));  // Panah atas
+  }
 }
 
-void sendBackup(){
-  if(!Blynk.connected()) {
+void sendBackup() {
+  if (!Blynk.connected()) {
     Serial.println("Koneksi Blynk tidak tersedia, mengirim data melalui LoRa...");
     LoRa.beginPacket();
     LoRa.print(ppm);
     LoRa.print("|");
     LoRa.print(batt_percent);
     LoRa.endPacket();
+    lcd.setCursor(15, 0);
+    lcd.write(byte(3));  // Panah kanan
     blinkOut(1);
   }
 }
@@ -201,6 +210,8 @@ void sendBackup(){
 void receiveLoRaData() {
   int packetSize = LoRa.parsePacket();
   if (packetSize) {
+    lcd.setCursor(15, 0);
+    lcd.write(byte(2));  // Panah kiri
     String receivedData = "";
     while (LoRa.available()) {
       receivedData += (char)LoRa.read();
