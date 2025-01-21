@@ -9,6 +9,7 @@
 
 #define BLYNK_PRINT Serial
 #define OUT_PIN 2
+#define BUZZER_PIN 15
 
 
 // Konfigurasi pin LoRa
@@ -21,19 +22,23 @@ const int analogPinVoltage = 35;        // Pin analog untuk sensor tegangan
 const float voltageDividerRatio = 5.0;  // Rasio pembagi tegangan (sesuaikan dengan sensor Anda)
 const float VCC = 3.3;
 
-float voltage2, ppm, batt_percent, batt2_percent;
+float voltage2, batt_percent, batt2_percent;
+int adcValue;
+String status;
 int statCheckSeconds = 20;
 bool backupMode = false;
 
 BlynkTimer mainTimer;
-char ssid[] = "MIKRO";     // Ganti dengan nama WiFi Anda
-char pass[] = "1DEAlist";  // Ganti dengan password WiFi Anda
+char ssid[] = "apar_backup";  // Ganti dengan nama WiFi Anda
+char pass[] = "12345678";     // Ganti dengan password WiFi Anda
 
 unsigned long loraTimeout = 30000;    // Waktu tunggu dalam milidetik (5 detik)
 unsigned long lastLoraInputTime = 0;  // Waktu terakhir input diterima
 
 void setup() {
   pinMode(OUT_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(BUZZER_PIN, LOW);
   blinkOut(1);
   Serial.begin(115200);
   while (!Serial)
@@ -132,6 +137,12 @@ void mainEvent() {
   Serial.print(batt2_percent);
   Serial.println(" %");
 
+  if (status == "Bocor") {
+    digitalWrite(BUZZER_PIN, HIGH);
+  } else {
+    digitalWrite(BUZZER_PIN, LOW);
+  }
+
   // Kirim data tegangan melalui LoRa
   if (!backupMode) {
     LoRa.beginPacket();
@@ -153,12 +164,15 @@ void receiveLoRaData() {
       Serial.println(received);
 
       // Konversi string ke float jika diperlukan
-      ppm = getValue(received, '|', 0).toFloat();
+      adcValue = getValue(received, '|', 0).toInt();
       batt_percent = getValue(received, '|', 1).toFloat();
-      Serial.print("Nilai PPM CO: ");
-      Serial.println(ppm);
+      status = getValue(received, '|', 2);
+      Serial.print("ADC: ");
+      Serial.println(adcValue);
       Serial.print("Batt Percent: ");
       Serial.println(batt_percent);
+      Serial.print("Status: ");
+      Serial.println(status);
       lastLoraInputTime = millis();
       blinkOut(1);
     } else {
@@ -178,8 +192,9 @@ void receiveLoRaData() {
 
 
 void sendData() {
-  Blynk.virtualWrite(V0, ppm);
+  Blynk.virtualWrite(V0, adcValue);
   Blynk.virtualWrite(V1, batt_percent);
   Blynk.virtualWrite(V2, batt2_percent);
   Blynk.virtualWrite(V3, "Backup");
+  Blynk.virtualWrite(V4, status);
 }

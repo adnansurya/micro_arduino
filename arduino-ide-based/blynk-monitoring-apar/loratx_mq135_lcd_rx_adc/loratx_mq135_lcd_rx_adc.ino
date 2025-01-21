@@ -11,6 +11,7 @@
 
 #define BLYNK_PRINT Serial
 #define OUT_PIN 2
+#define BUZZER_PIN 15
 
 // Konfigurasi pin LoRa
 #define SS 5
@@ -18,7 +19,7 @@
 #define DIO0 26
 
 // Konfigurasi pin MQ135
-const int analogPinMQ135 = 34;     // Pin analog untuk MQ135
+const int analogPinMQ135 = 34;  // Pin analog untuk MQ135
 
 // Konfigurasi sensor tegangan
 const int analogPinVoltage = 35;        // Pin analog untuk sensor tegangan
@@ -28,16 +29,26 @@ const float voltageDividerRatio = 5.0;  // Rasio pembagi tegangan (sesuaikan den
 LiquidCrystal_I2C lcd(0x27, 16, 2);  // Alamat I2C LCD biasanya 0x27
 
 BlynkTimer mainTimer;
-char ssid[] = "kontras";   // Ganti dengan nama WiFi Anda
-char pass[] = "12345678";  // Ganti dengan password WiFi Anda
+char ssid[] = "apar_utama";  // Ganti dengan nama WiFi Anda
+char pass[] = "12345678";    // Ganti dengan password WiFi Anda
 
 float batt_percent, batt2_percent;
 int adcValue;
 
 bool isOffline = false;
 
+int normalADC = 0;
+int offsetADC = 50;
+
+String status;
+
+bool adcReverse = false;
+
 void setup() {
+  status = "Start...";
   pinMode(OUT_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(BUZZER_PIN, LOW);
   blinkOut(1);
 
   Serial.begin(115200);
@@ -68,17 +79,28 @@ void setup() {
 
   // Mulai koneksi WiFi
   WiFi.begin(ssid, pass);
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Mencari ");
+  lcd.print(ssid);
   Serial.println("Menghubungkan ke WiFi...");
 
   // Tunggu hingga koneksi berhasil
   unsigned long startAttemptTime = millis();
+  lcd.setCursor(0, 1);
   while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 10000) {
     delay(500);
     Serial.print(".");
+    lcd.print(".");
   }
 
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("\nWiFi Tersambung!");
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("WIFI Terhubung:");
+    lcd.setCursor(0, 1);
+    lcd.print(ssid);
     Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
     isOffline = false;
   } else {
@@ -90,6 +112,20 @@ void setup() {
   mainTimer.setInterval(10000L, sendData);
   mainTimer.setInterval(100L, receiveLoRaData);  // Cek data masuk dari LoRa
   mainTimer.setInterval(1000L, sendBackup);
+
+  delay(2000);
+
+  // Kalibrasi sensor MQ135
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Kalibrasi...");
+  Serial.println("Kalibrasi sensor...");
+  normalADC = calibrateSensor(100);
+  Serial.print("Normal ADC: ");
+  Serial.println(normalADC);
+  lcd.setCursor(0, 1);
+  lcd.print("Normal ADC: ");
+  lcd.print(normalADC);  // Tampilkan nilai R0 dengan 2 desimal
 
   blinkOut(2);
 }
@@ -104,14 +140,49 @@ void loop() {
 
 void mainEvent() {
   // Membaca nilai ADC dari MQ135
-  adcValue = analogRead(analogPinMQ135);
+  adcValue = getAdcValue(analogPinMQ135);
+
+  if (adcValue < normalADC - offsetADC) {
+    status = "Bocor";
+    digitalWrite(BUZZER_PIN, HIGH);
+  } else {
+    status = "Aman";
+    digitalWrite(BUZZER_PIN, LOW);
+  }
 
   // Membaca tegangan dari sensor tegangan
   float voltage = readVoltage();
   batt_percent = voltage / 4.2 * 100.0;
 
   // Tampilkan data pada LCD
-  displayOnLCD(adcValue, batt_percent, batt2_percent);
+  displayOnLCD(status, adcValue, batt_percent, batt2_percent);
+}
+
+int calibrateSensor(int sample) {
+  int totalADC = 0;
+  for (int i = 0; i < sample; i++) {  // Ambil rata-rata dari 100 pembacaan
+    totalADC += getAdcValue(analogPinMQ135);
+    delay(50);
+  }
+  float avgADC = (float)totalADC / (float)sample;
+  Serial.print("Average ADC : ");
+  Serial.println(avgADC);
+  return (int)avgADC;
+}
+
+int getAdcValue(int adcPin) {
+  int realAdc = analogRead(adcPin);
+  Serial.print("Real Adc: ");
+  Serial.println(realAdc);
+  int adcVal = 0;
+  if (adcReverse) {
+    adcVal = 4096 - realAdc;
+  } else {
+    adcVal = realAdc;
+  }
+  Serial.print("ADC: ");
+  Serial.println(adcVal);
+  return adcVal;
 }
 
 float readVoltage() {
@@ -120,11 +191,13 @@ float readVoltage() {
   return sensorVoltage * voltageDividerRatio;       // Hitung tegangan aktual
 }
 
-void displayOnLCD(int adcValue, float percentage, float percentage2) {
+void displayOnLCD(String stat, int adcValue, float percentage, float percentage2) {
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("ADC: ");
+  lcd.print(stat);
+  lcd.print(" (");
   lcd.print(adcValue);  // Tampilkan nilai ADC
+  lcd.print(")");
 
   lcd.setCursor(0, 1);
   lcd.print("B1: ");
@@ -139,10 +212,12 @@ void displayOnLCD(int adcValue, float percentage, float percentage2) {
 void sendData() {
   if (Blynk.connected()) {
     Serial.println("Koneksi Blynk tersedia, mengirim data ke Blynk...");
+
     Blynk.virtualWrite(V0, adcValue);
     Blynk.virtualWrite(V1, batt_percent);
     Blynk.virtualWrite(V2, batt2_percent);
     Blynk.virtualWrite(V3, "Normal");
+    Blynk.virtualWrite(V4, status);
     lcd.setCursor(15, 0);
     lcd.write(byte(0));  // Panah atas
   }
@@ -155,6 +230,8 @@ void sendBackup() {
     LoRa.print(adcValue);
     LoRa.print("|");
     LoRa.print(batt_percent);
+    LoRa.print("|");
+    LoRa.print(status);
     LoRa.endPacket();
     lcd.setCursor(15, 0);
     lcd.write(byte(3));  // Panah kanan
