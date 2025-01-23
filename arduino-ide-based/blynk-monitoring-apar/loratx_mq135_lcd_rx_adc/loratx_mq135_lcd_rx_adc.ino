@@ -40,7 +40,7 @@ bool isOffline = false;
 int normalADC = 0;
 int offsetADC = 50;
 
-String status;
+String status, lastStatus;
 
 bool adcReverse = false;
 
@@ -156,6 +156,12 @@ void mainEvent() {
 
   // Tampilkan data pada LCD
   displayOnLCD(status, adcValue, batt_percent, batt2_percent);
+
+  if (Blynk.connected() && status != lastStatus && status == "Bocor") {
+    Blynk.logEvent("peringatan", "Terjadi Kebocoran!");
+  }
+
+  lastStatus = status;
 }
 
 int calibrateSensor(int sample) {
@@ -212,7 +218,6 @@ void displayOnLCD(String stat, int adcValue, float percentage, float percentage2
 void sendData() {
   if (Blynk.connected()) {
     Serial.println("Koneksi Blynk tersedia, mengirim data ke Blynk...");
-
     Blynk.virtualWrite(V0, adcValue);
     Blynk.virtualWrite(V1, batt_percent);
     Blynk.virtualWrite(V2, batt2_percent);

@@ -24,7 +24,7 @@ const float VCC = 3.3;
 
 float voltage2, batt_percent, batt2_percent;
 int adcValue;
-String status;
+String status, lastStatus;
 int statCheckSeconds = 20;
 bool backupMode = false;
 
@@ -149,6 +149,13 @@ void mainEvent() {
     LoRa.print(batt2_percent, 2);  // Kirim dengan 2 desimal
     LoRa.endPacket();
   }
+
+  if (Blynk.connected() && status != lastStatus && status == "Bocor") {
+    Blynk.logEvent("peringatan", "Terjadi Kebocoran!");
+  }
+
+
+  lastStatus = status
 }
 
 void receiveLoRaData() {
