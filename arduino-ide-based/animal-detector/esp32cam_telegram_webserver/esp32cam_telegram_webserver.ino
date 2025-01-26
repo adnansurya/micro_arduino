@@ -1,14 +1,3 @@
-/*
-  Rui Santos
-  Complete project details at https://RandomNerdTutorials.com/telegram-esp32-cam-photo-arduino/
-  
-  Permission is hereby granted, free of charge, to any person obtaining a copy
-  of this software and associated documentation files.
-  
-  The above copyright notice and this permission notice shall be included in all
-  copies or substantial portions of the Software.
-*/
-
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
@@ -17,6 +6,11 @@
 #include "esp_camera.h"
 #include <UniversalTelegramBot.h>
 #include <ArduinoJson.h>
+
+#include <WebServer.h>
+#include <ESPmDNS.h>
+
+WebServer server(80);
 
 const char* ssid = "MIKRO";
 const char* password = "1DEAlist";
@@ -269,19 +263,43 @@ void setup() {
   Serial.println();
 
   Serial.print("Retrieving time: ");
-  configTime(0, 0, "pool.ntp.org"); // get UTC time via NTP
+  configTime(0, 0, "pool.ntp.org");  // get UTC time via NTP
   time_t now = time(nullptr);
-  while (now < 24 * 3600)
-  {
+  while (now < 24 * 3600) {
     Serial.print(".");
     delay(100);
     now = time(nullptr);
   }
   Serial.println(now);
-  // Serial.print("ESP32-CAM IP Address: ");
-  // Serial.println(WiFi.localIP());
-  bot.sendMessage(CHAT_ID, "Connected!", "");
+
+  if (MDNS.begin("esp32")) {
+    Serial.println("MDNS responder started");
+  }
+  server.on("/", handleRoot);
+  server.on("/on_pir", onPir);
+  server.on("/on_ping", onPing);
+  server.begin();
+
+  String ipNotif = "ESP32 Cam IP Server : " + WiFi.localIP().toString();
+  bot.sendMessage(CHAT_ID, ipNotif, "");
+
   ledBlink(3, 250);
+}
+
+void handleRoot() {
+  server.send(200, "text/plain", "esp32cam_connected");
+}
+
+void onPir() {
+  sendPhoto = true;
+  server.send(200, "text/plain", "Sensor PIR mendeteksi gerakan!");
+  bot.sendMessage(CHAT_ID, "Sensor PIR mendeteksi gerakan!", "");
+}
+
+void onPing() {
+  sendPhoto = true;
+  server.send(200, "text/plain", "Sensor Ultrasonic mendeteksi gerakan!");
+  bot.sendMessage(CHAT_ID, "Sensor Ultrasonic mendeteksi gerakan!", "");
 }
 
 void loop() {
@@ -299,15 +317,10 @@ void loop() {
       numNewMessages = bot.getUpdates(bot.last_message_received + 1);
     }
     lastTimeBotRan = millis();
+    
+  } else {
+    server.handleClient();
   }
-  // pinMode(gpioPIR, INPUT_PULLUP);
-  // v = digitalRead(gpioPIR);
-  // Serial.println(v);
-  // if (v == 1 && lastV != v) {
-  //   sendPhoto = true;
-  // }
-
-  // lastV = v;
 }
 
 void ledBlink(int freq, int delayInterval) {

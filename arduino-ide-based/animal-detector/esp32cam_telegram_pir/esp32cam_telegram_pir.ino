@@ -300,14 +300,6 @@ void loop() {
     }
     lastTimeBotRan = millis();
   }
-  // pinMode(gpioPIR, INPUT_PULLUP);
-  // v = digitalRead(gpioPIR);
-  // Serial.println(v);
-  // if (v == 1 && lastV != v) {
-  //   sendPhoto = true;
-  // }
-
-  // lastV = v;
 }
 
 void ledBlink(int freq, int delayInterval) {
