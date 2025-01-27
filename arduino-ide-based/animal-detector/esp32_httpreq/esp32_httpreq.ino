@@ -8,7 +8,7 @@
 
 #define MAX_DISTANCE 200
 
-NewPing sonar(trigPin, echoPin, MAX_DISTANCE); 
+NewPing sonar(trigPin, echoPin, MAX_DISTANCE);
 
 
 
@@ -16,7 +16,7 @@ NewPing sonar(trigPin, echoPin, MAX_DISTANCE);
 const char* ssid = "MIKRO";
 const char* password = "1DEAlist";
 
-String esp32CamIP = "http://192.168.68.79";
+String esp32CamIP = "http://192.168.8.41";
 
 String ESP32IP;
 
@@ -42,43 +42,43 @@ void setup() {
     delay(500);
     Serial.print(".");
   }
-  ESP32IP = WiFi.localIP().toString();  
+  ESP32IP = WiFi.localIP().toString();
   Serial.println("\nWiFi Terhubung!");
   Serial.print("IP Address ESP32: ");
   Serial.println(ESP32IP);
-
-
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
-  jarak = (int) sonar.ping_cm();
+  jarak = (int)sonar.ping_cm();
   delay(50);
   deteksiPir = digitalRead(pirPin);
 
-  Serial.print("Jarak: ");
+  Serial.print("PIR: ");
+  Serial.print(deteksiPir);
+  Serial.print("\tJarak: ");
   Serial.println(jarak);
 
-  if(jarak < batasJarak){
+  if (jarak < batasJarak) {
     deteksiPing = 1;
-  }else{
+  } else {
     deteksiPing = 0;
   }
 
- 
 
-
-  if(deteksiPir == 1 && lastPir == 0){
+  if (deteksiPir == 1 && lastPir == 0) {
     openURL(esp32CamIP + "/on_pir");
+    delay(3000);
   }
 
-  if(deteksiPing == 1 && lastPing == 0){
-     openURL(esp32CamIP + "/on_ping");
+  if (deteksiPing == 1 && lastPing == 0) {
+    openURL(esp32CamIP + "/on_ping");
+    delay(3000);
   }
 
   lastPir = deteksiPir;
   lastPing = deteksiPing;
-
+  delay(100);
 }
 
 
