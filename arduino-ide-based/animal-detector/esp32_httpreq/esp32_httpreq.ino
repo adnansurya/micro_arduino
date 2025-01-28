@@ -5,12 +5,11 @@
 #define pirPin 34
 #define trigPin 32
 #define echoPin 33
+#define buzzerPin 12
 
 #define MAX_DISTANCE 200
 
 NewPing sonar(trigPin, echoPin, MAX_DISTANCE);
-
-
 
 // SSID dan password jaringan Wi-Fi
 const char* ssid = "MIKRO";
@@ -21,7 +20,7 @@ String esp32CamIP = "http://192.168.8.41";
 String ESP32IP;
 
 int jarak = 0;
-const int batasJarak = 15;
+const int batasJarak = 70;
 
 int deteksiPir = 0;
 int deteksiPing = 0;
@@ -31,21 +30,24 @@ int lastPing = 0;
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
-  Serial.println("Memulai IP Scan dengan ESP32");
 
   pinMode(pirPin, INPUT);
+  pinMode(buzzerPin, OUTPUT);
+  digitalWrite(buzzerPin, LOW);
 
   // Connect ke WiFi
   WiFi.begin(ssid, password);
-  Serial.print("Menghubungkan ke WiFi");
+  Serial.print(F("Menghubungkan ke WiFi"));
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
   ESP32IP = WiFi.localIP().toString();
-  Serial.println("\nWiFi Terhubung!");
-  Serial.print("IP Address ESP32: ");
+  Serial.println(F("\nWiFi Terhubung!"));
+  Serial.print(F("IP Address ESP32: "));
   Serial.println(ESP32IP);
+
+  blinkOut(buzzerPin, 2, 1000);
 }
 
 void loop() {
@@ -54,12 +56,12 @@ void loop() {
   delay(50);
   deteksiPir = digitalRead(pirPin);
 
-  Serial.print("PIR: ");
+  Serial.print(F("PIR: "));
   Serial.print(deteksiPir);
-  Serial.print("\tJarak: ");
+  Serial.print(F("\tJarak: "));
   Serial.println(jarak);
 
-  if (jarak < batasJarak) {
+  if (jarak <= batasJarak && jarak > 0) {
     deteksiPing = 1;
   } else {
     deteksiPing = 0;
@@ -67,11 +69,13 @@ void loop() {
 
 
   if (deteksiPir == 1 && lastPir == 0) {
+    blinkOut(buzzerPin, 2, 250);
     openURL(esp32CamIP + "/on_pir");
     delay(3000);
   }
 
   if (deteksiPing == 1 && lastPing == 0) {
+    blinkOut(buzzerPin, 2, 100);
     openURL(esp32CamIP + "/on_ping");
     delay(3000);
   }
@@ -93,10 +97,20 @@ void openURL(String urlLink) {
       Serial.println("Response: " + payload);
       // Lakukan sesuatu dengan data yang diterima (misalnya, kendalikan perangkat berdasarkan respons)
     } else {
-      Serial.println("Error on HTTP request");
+      Serial.println(F("Error on HTTP request"));
+      blinkOut(buzzerPin, 3, 1500);
     }
 
     http.end();
     // delay(5000);  // Tunggu 5 detik sebelum mengirim permintaan berikutnya
+  }
+}
+
+void blinkOut(int ledpin, int freq, int delayms) {
+  for (int i = 0; i < freq; i++) {
+    digitalWrite(ledpin, HIGH);
+    delay(delayms);
+    digitalWrite(ledpin, LOW);
+    delay(delayms);
   }
 }
