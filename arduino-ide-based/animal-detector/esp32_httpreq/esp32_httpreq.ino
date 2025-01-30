@@ -12,15 +12,15 @@
 NewPing sonar(trigPin, echoPin, MAX_DISTANCE);
 
 // SSID dan password jaringan Wi-Fi
-const char* ssid = "MIKRO";
-const char* password = "1DEAlist";
+const char* ssid = "Wenzzz";
+const char* password = "12345678";
 
-String esp32CamIP = "http://192.168.8.41";
+String esp32CamIP = "http://192.168.177.79";
 
 String ESP32IP;
 
 int jarak = 0;
-const int batasJarak = 70;
+const int batasJarak = 20;
 
 int deteksiPir = 0;
 int deteksiPing = 0;
@@ -98,7 +98,7 @@ void openURL(String urlLink) {
       // Lakukan sesuatu dengan data yang diterima (misalnya, kendalikan perangkat berdasarkan respons)
     } else {
       Serial.println(F("Error on HTTP request"));
-      blinkOut(buzzerPin, 3, 1500);
+      // blinkOut(buzzerPin, 3, 1500);
     }
 
     http.end();

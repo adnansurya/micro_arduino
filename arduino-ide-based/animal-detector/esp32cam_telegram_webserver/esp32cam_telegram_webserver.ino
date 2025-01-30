@@ -12,16 +12,16 @@
 
 WebServer server(80);
 
-const char* ssid = "MIKRO";
-const char* password = "1DEAlist";
+const char* ssid = "Wenzzz";
+const char* password = "12345678";
 
 // Initialize Telegram BOT
-String BOTtoken = "1389983359:AAFHP98mYOaRo17aMb0tlgpZ-J74BV1MluY";  // your Bot Token (Get from Botfather)
+String BOTtoken = "7550006510:AAHC43wp04xEzIF4zE0bVhG77VGTD0FCuAU";  // your Bot Token (Get from Botfather)
 
 // Use @myidbot to find out the chat ID of an individual or a group
 // Also note that you need to click "start" on a bot before it can
 // message you
-String CHAT_ID = "108488036";
+String CHAT_ID = "2002759147";
 
 int gpioPIR = 13;  //PIR Motion Sensor
 
