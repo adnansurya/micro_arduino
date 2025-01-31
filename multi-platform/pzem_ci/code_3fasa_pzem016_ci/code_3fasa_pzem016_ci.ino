@@ -14,8 +14,8 @@
 SoftwareSerial pzemSerial(23, 19);  //rx, tx
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
-String serverAddress = "http://192.168.8.14";
-String serverUrl = serverAddress + "/save-data";
+String serverAddress = "192.168.8.14";
+String serverUrl = "http://" + serverAddress + "/save-data";
 
 int batas_arus = 2;
 ModbusMaster node;
