@@ -6,12 +6,13 @@
 #include "esp_camera.h"
 #include <UniversalTelegramBot.h>
 #include <ArduinoJson.h>
+#include <base64.h>
 #include <FirebaseClient.h>
 #include <WiFiClientSecure.h>
 
 // Konfigurasi WiFi
-#define WIFI_SSID "MIKRO"       // Ganti dengan SSID WiFi Anda
-#define WIFI_PASSWORD "1DEAlist" // Ganti dengan password WiFi Anda
+#define WIFI_SSID "MIKRO"         // Ganti dengan SSID WiFi Anda
+#define WIFI_PASSWORD "1DEAlist"  // Ganti dengan password WiFi Anda
 
 #define DATABASE_URL "https://skripsi-c7455-default-rtdb.asia-southeast1.firebasedatabase.app/"
 
@@ -27,7 +28,7 @@ int gpioPIR = 13;  //PIR Motion Sensor
 
 bool sendPhoto = false;
 
-WiFiClientSecure clientTCP;
+WiFiClientSecure clientTCP, ssl;
 UniversalTelegramBot bot(BOTtoken, clientTCP);
 
 
@@ -39,7 +40,7 @@ int botRequestDelay = 1000;
 unsigned long lastTimeBotRan;
 
 DefaultNetwork network;
-AsyncClientClass client(clientTCP, getNetwork(network));
+AsyncClientClass client(ssl, getNetwork(network));
 
 FirebaseApp app;
 RealtimeDatabase Database;
@@ -93,15 +94,19 @@ void configInitCamera() {
   config.grab_mode = CAMERA_GRAB_LATEST;
 
   //init with high specs to pre-allocate larger buffers
-  if (psramFound()) {
-    config.frame_size = FRAMESIZE_UXGA;
-    config.jpeg_quality = 10;  //0-63 lower number means higher quality
-    config.fb_count = 1;
-  } else {
-    config.frame_size = FRAMESIZE_SVGA;
-    config.jpeg_quality = 12;  //0-63 lower number means higher quality
-    config.fb_count = 1;
-  }
+  // if (psramFound()) {
+  //   config.frame_size = FRAMESIZE_UXGA;
+  //   config.jpeg_quality = 10;  //0-63 lower number means higher quality
+  //   config.fb_count = 1;
+  // } else {
+  //   config.frame_size = FRAMESIZE_SVGA;
+  //   config.jpeg_quality = 12;  //0-63 lower number means higher quality
+  //   config.fb_count = 1;
+  // }
+
+  config.frame_size = FRAMESIZE_VGA;
+  config.jpeg_quality = 20;  //0-63 lower number means higher quality
+  config.fb_count = 1;
 
   // camera init
   esp_err_t err = esp_camera_init(&config);
@@ -174,6 +179,21 @@ String sendPhotoTelegram() {
     return "Camera capture failed";
   }
 
+  // Konversi gambar ke Base64
+  String imageBase64 = base64::encode((uint8_t*)fb->buf, fb->len);
+  // Serial.println(imageBase64);
+  Serial.print("Push String... ");
+  String name = Database.push<String>(client, "/test/push", imageBase64);
+  if (client.lastError().code() == 0)
+    Firebase.printf("ok, name: %s\n", name.c_str());
+
+  // Serial.print("Push JSON... ");
+  // String name = Database.push<object_t>(client, "/test/push", object_t("{\"test\":{\"data\":" + imageBase64 + "}}"));
+  // if (client.lastError().code() == 0)
+  //   Firebase.printf("ok, name: %s\n", name.c_str());
+  else
+    printError(client.lastError().code(), client.lastError().message());
+
   delay(500);
 
   Serial.println("Connect to " + String(myDomain));
@@ -210,12 +230,7 @@ String sendPhotoTelegram() {
 
     clientTCP.print(tail);
 
-    // Konversi gambar ke Base64
-    String imageBase64 = base64::encode((uint8_t *)fb->buf, fb->len);
-    Serial.print("Push String... ");
-    String name = Database.push<String>(client, "/test/push", imageBase64);
-    if (client.lastError().code() == 0)
-        Firebase.printf("ok, name: %s\n", name.c_str());
+
 
     esp_camera_fb_return(fb);
 
@@ -324,8 +339,7 @@ void loop() {
       numNewMessages = bot.getUpdates(bot.last_message_received + 1);
     }
     lastTimeBotRan = millis();
-    
-  } 
+  }
 }
 
 void ledBlink(int freq, int delayInterval) {
@@ -336,4 +350,8 @@ void ledBlink(int freq, int delayInterval) {
     delay(delayInterval);
   }
   flashState = LOW;
+}
+
+void printError(int code, const String& msg) {
+  Firebase.printf("Error, msg: %s, code: %d\n", msg.c_str(), code);
 }
