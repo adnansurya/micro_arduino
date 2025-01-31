@@ -1,9 +1,12 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 
-const char* ssid = "Warkop SELO";
+const char* ssid = "MIKRO";
 const char* password = "kopisusu";
-const char* serverUrl = "http://192.168.1.96/save-data";
+#define serverAddress "http://192.168.8.14"
+
+
+String serverUrl = serverAddress + "/save-data";
 
 void setup() {
   Serial.begin(115200);
