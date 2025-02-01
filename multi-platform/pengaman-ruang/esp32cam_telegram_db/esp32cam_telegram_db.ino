@@ -17,7 +17,7 @@
 #define WIFI_SSID "MIKRO"         // Ganti dengan SSID WiFi Anda
 #define WIFI_PASSWORD "1DEAlist"  // Ganti dengan password WiFi Anda
 
-#define GMT_OFFSET_HOUR 8
+#define GMT_OFFSET_HOUR 0
 
 String BOTtoken = "1389983359:AAH9kWOMCYhD15psuYa14Ci5KOhBXHzEGCM";  // your Bot Token (Get from Botfather)
 String CHAT_ID = "108488036";
