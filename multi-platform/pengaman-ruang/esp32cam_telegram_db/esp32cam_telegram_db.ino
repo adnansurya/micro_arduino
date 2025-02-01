@@ -10,34 +10,32 @@
 #include <FirebaseClient.h>
 #include <WiFiClientSecure.h>
 
+#define PIR_PIN 13
+#define FLASH_LED_PIN 4
+
 // Konfigurasi WiFi
 #define WIFI_SSID "MIKRO"         // Ganti dengan SSID WiFi Anda
 #define WIFI_PASSWORD "1DEAlist"  // Ganti dengan password WiFi Anda
 
-#define DATABASE_URL "https://skripsi-c7455-default-rtdb.asia-southeast1.firebasedatabase.app/"
+#define GMT_OFFSET_HOUR 8
 
-// Initialize Telegram BOT
 String BOTtoken = "1389983359:AAH9kWOMCYhD15psuYa14Ci5KOhBXHzEGCM";  // your Bot Token (Get from Botfather)
-
-// Use @myidbot to find out the chat ID of an individual or a group
-// Also note that you need to click "start" on a bot before it can
-// message you
 String CHAT_ID = "108488036";
-
-int gpioPIR = 13;  //PIR Motion Sensor
-
-bool sendPhoto = false;
 
 WiFiClientSecure clientTCP, ssl;
 UniversalTelegramBot bot(BOTtoken, clientTCP);
 
-
-#define FLASH_LED_PIN 4
-bool flashState = LOW;
-
 //Checks for new messages every 1 second.
 int botRequestDelay = 1000;
 unsigned long lastTimeBotRan;
+
+bool sendPhoto = false;
+bool flashState = LOW;
+
+#define DATABASE_URL "https://skripsi-c7455-default-rtdb.asia-southeast1.firebasedatabase.app/"
+
+String dirPath = "/logs";
+time_t tstamp;
 
 DefaultNetwork network;
 AsyncClientClass client(ssl, getNetwork(network));
@@ -68,6 +66,138 @@ int v, lastV;
 #define HREF_GPIO_NUM 23
 #define PCLK_GPIO_NUM 22
 
+void setup() {
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+  // Init Serial Monitor
+  Serial.begin(115200);
+
+  // Set LED Flash as output
+  pinMode(FLASH_LED_PIN, OUTPUT);
+  digitalWrite(FLASH_LED_PIN, flashState);
+
+  // Config and init the camera
+  configInitCamera();
+
+  // Connect to Wi-Fi
+  WiFi.mode(WIFI_STA);
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(WIFI_SSID);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  clientTCP.setCACert(TELEGRAM_CERTIFICATE_ROOT);  // Add root certificate for api.telegram.org
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print(".");
+    delay(500);
+  }
+  // ledBlink(2, 100);
+  Serial.println();
+
+  Serial.print("Retrieving time: ");
+  configTime(0, 0, "pool.ntp.org");  // get UTC time via NTP
+  tstamp = getTimestamp();
+
+  String ipNotif = "ESP32 Cam IP Server : " + WiFi.localIP().toString();
+  bot.sendMessage(CHAT_ID, ipNotif, "");
+
+  Firebase.printf("Firebase Client v%s\n", FIREBASE_CLIENT_VERSION);
+
+  ssl.setInsecure();
+#if defined(ESP8266)
+  ssl.setBufferSizes(1024, 1024);
+#endif
+
+  // Initialize the authentication handler.
+  initializeApp(client, app, getAuth(noAuth));
+
+  // Binding the authentication handler with your Database class object.
+  app.getApp<RealtimeDatabase>(Database);
+
+  // Set your database URL
+  Database.url(DATABASE_URL);
+
+  // In sync functions, we have to set the operating result for the client that works with the function.
+  client.setAsyncResult(result);
+}
+
+
+time_t getTimestamp() {
+  time_t now = time(nullptr);
+  while (now < 24 * 3600) {
+    Serial.print(".");
+    delay(100);
+    now = time(nullptr);
+  }
+  Serial.println(now);
+  return now;
+}
+
+
+
+void loop() {
+
+  if (sendPhoto) {
+    digitalWrite(FLASH_LED_PIN, HIGH);
+    Serial.println("Preparing photo");
+    sendPhotoTelegram();
+    sendPhoto = false;
+    digitalWrite(FLASH_LED_PIN, LOW);
+  }
+  if (millis() > lastTimeBotRan + botRequestDelay) {
+    int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+    while (numNewMessages) {
+      Serial.println("got response");
+      handleNewMessages(numNewMessages);
+      numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+    }
+    lastTimeBotRan = millis();
+  }
+}
+
+
+void sendToFirebase(camera_fb_t* fb) {
+
+  // Konversi gambar ke Base64
+  String imageBase64 = base64::encode((uint8_t*)fb->buf, fb->len);
+  // Serial.println(imageBase64);
+
+  String pushId = getPushID(dirPath);
+
+  String imageDir = dirPath + "/" + pushId + "/photo";
+  Serial.print("Set string... ");
+  bool status = Database.set<String>(client, imageDir, imageBase64);
+  if (status)
+    Serial.println("ok");
+  else
+    printError(client.lastError().code(), client.lastError().message());
+
+  tstamp = getTimestamp();
+  int timeInt = (int) tstamp + (GMT_OFFSET_HOUR * 3600);
+
+  String timeDir = dirPath + "/" + pushId + "/timestamp";
+  Serial.print("Set int... ");
+  status = Database.set<int>(client, timeDir, timeInt);
+  if (status)
+    Serial.println("ok");
+  else
+    printError(client.lastError().code(), client.lastError().message());
+}
+
+String getPushID(String path) {
+
+  String pID = "";
+
+  Serial.print("getPushId... ");
+  String name = Database.push<int>(client, path, 0);
+  if (client.lastError().code() == 0) {
+    Firebase.printf("ok, name: %s\n", name.c_str());
+    pID = name;
+  } else {
+    printError(client.lastError().code(), client.lastError().message());
+  }
+
+  return pID;
+}
+
 
 void configInitCamera() {
   camera_config_t config;
@@ -92,17 +222,6 @@ void configInitCamera() {
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
   config.grab_mode = CAMERA_GRAB_LATEST;
-
-  //init with high specs to pre-allocate larger buffers
-  // if (psramFound()) {
-  //   config.frame_size = FRAMESIZE_UXGA;
-  //   config.jpeg_quality = 10;  //0-63 lower number means higher quality
-  //   config.fb_count = 1;
-  // } else {
-  //   config.frame_size = FRAMESIZE_SVGA;
-  //   config.jpeg_quality = 12;  //0-63 lower number means higher quality
-  //   config.fb_count = 1;
-  // }
 
   config.frame_size = FRAMESIZE_VGA;
   config.jpeg_quality = 20;  //0-63 lower number means higher quality
@@ -179,20 +298,7 @@ String sendPhotoTelegram() {
     return "Camera capture failed";
   }
 
-  // Konversi gambar ke Base64
-  String imageBase64 = base64::encode((uint8_t*)fb->buf, fb->len);
-  // Serial.println(imageBase64);
-  Serial.print("Push String... ");
-  String name = Database.push<String>(client, "/test/push", imageBase64);
-  if (client.lastError().code() == 0)
-    Firebase.printf("ok, name: %s\n", name.c_str());
-
-  // Serial.print("Push JSON... ");
-  // String name = Database.push<object_t>(client, "/test/push", object_t("{\"test\":{\"data\":" + imageBase64 + "}}"));
-  // if (client.lastError().code() == 0)
-  //   Firebase.printf("ok, name: %s\n", name.c_str());
-  else
-    printError(client.lastError().code(), client.lastError().message());
+  sendToFirebase(fb);
 
   delay(500);
 
@@ -230,8 +336,6 @@ String sendPhotoTelegram() {
 
     clientTCP.print(tail);
 
-
-
     esp_camera_fb_return(fb);
 
     int waitTime = 10000;  // timeout 10 seconds
@@ -261,85 +365,6 @@ String sendPhotoTelegram() {
   }
 
   return getBody;
-}
-
-void setup() {
-  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
-  // Init Serial Monitor
-  Serial.begin(115200);
-
-  // Set LED Flash as output
-  pinMode(FLASH_LED_PIN, OUTPUT);
-  digitalWrite(FLASH_LED_PIN, flashState);
-
-  // Config and init the camera
-  configInitCamera();
-
-  // Connect to Wi-Fi
-  WiFi.mode(WIFI_STA);
-  Serial.println();
-  Serial.print("Connecting to ");
-  Serial.println(WIFI_SSID);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  clientTCP.setCACert(TELEGRAM_CERTIFICATE_ROOT);  // Add root certificate for api.telegram.org
-  while (WiFi.status() != WL_CONNECTED) {
-    Serial.print(".");
-    delay(500);
-  }
-  // ledBlink(2, 100);
-  Serial.println();
-
-  Serial.print("Retrieving time: ");
-  configTime(0, 0, "pool.ntp.org");  // get UTC time via NTP
-  time_t now = time(nullptr);
-  while (now < 24 * 3600) {
-    Serial.print(".");
-    delay(100);
-    now = time(nullptr);
-  }
-  Serial.println(now);
-
-  String ipNotif = "ESP32 Cam IP Server : " + WiFi.localIP().toString();
-  bot.sendMessage(CHAT_ID, ipNotif, "");
-
-  Firebase.printf("Firebase Client v%s\n", FIREBASE_CLIENT_VERSION);
-
-  ssl.setInsecure();
-#if defined(ESP8266)
-  ssl.setBufferSizes(1024, 1024);
-#endif
-
-  // Initialize the authentication handler.
-  initializeApp(client, app, getAuth(noAuth));
-
-  // Binding the authentication handler with your Database class object.
-  app.getApp<RealtimeDatabase>(Database);
-
-  // Set your database URL
-  Database.url(DATABASE_URL);
-
-  // In sync functions, we have to set the operating result for the client that works with the function.
-  client.setAsyncResult(result);
-}
-
-
-
-void loop() {
-
-  if (sendPhoto) {
-    Serial.println("Preparing photo");
-    sendPhotoTelegram();
-    sendPhoto = false;
-  }
-  if (millis() > lastTimeBotRan + botRequestDelay) {
-    int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
-    while (numNewMessages) {
-      Serial.println("got response");
-      handleNewMessages(numNewMessages);
-      numNewMessages = bot.getUpdates(bot.last_message_received + 1);
-    }
-    lastTimeBotRan = millis();
-  }
 }
 
 void ledBlink(int freq, int delayInterval) {
