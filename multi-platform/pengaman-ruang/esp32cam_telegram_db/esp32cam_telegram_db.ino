@@ -9,6 +9,7 @@
 #include <base64.h>
 #include <FirebaseClient.h>
 #include <WiFiClientSecure.h>
+#include <time.h>
 
 #define PIR_PIN 13
 #define FLASH_LED_PIN 4
@@ -196,7 +197,7 @@ void sendToFirebase(camera_fb_t* fb) {
   String datetime = convertTimestampToDateTime(timeInt, GMT_OFFSET_HOUR);
   String datetimeDir = dirPath + "/" + pushId + "/datetime";
   Serial.print("Set string... ");
-  bool status = Database.set<String>(client, datetimeDir, datetime);
+  status = Database.set<String>(client, datetimeDir, datetime);
   if (status)
     Serial.println("ok");
   else
