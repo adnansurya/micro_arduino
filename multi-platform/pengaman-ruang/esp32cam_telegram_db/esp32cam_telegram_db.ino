@@ -415,7 +415,7 @@ String convertTimestampToDateTime(unsigned long timestamp, long offsetHour) {
 
     // Format hasil menjadi string (YYYY-MM-DD HH:MM:SS)
     char buffer[30];
-    strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &timeinfo);
+    strftime(buffer, sizeof(buffer), "%d/%m/%Y %H:%M:%S", &timeinfo);
     
     return String(buffer);
 }
