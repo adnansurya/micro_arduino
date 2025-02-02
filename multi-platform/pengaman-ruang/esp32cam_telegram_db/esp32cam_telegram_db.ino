@@ -17,7 +17,7 @@
 #define WIFI_SSID "MIKRO"         // Ganti dengan SSID WiFi Anda
 #define WIFI_PASSWORD "1DEAlist"  // Ganti dengan password WiFi Anda
 
-#define GMT_OFFSET_HOUR 0
+#define GMT_OFFSET_HOUR 8
 
 String BOTtoken = "1389983359:AAH9kWOMCYhD15psuYa14Ci5KOhBXHzEGCM";  // your Bot Token (Get from Botfather)
 String CHAT_ID = "108488036";
@@ -117,6 +117,8 @@ void setup() {
 
   // In sync functions, we have to set the operating result for the client that works with the function.
   client.setAsyncResult(result);
+
+  ledBlink(2, 200);
 }
 
 
@@ -136,7 +138,7 @@ time_t getTimestamp() {
 void loop() {
 
   if (sendPhoto) {
-    digitalWrite(FLASH_LED_PIN, HIGH);
+
     Serial.println("Preparing photo");
     sendPhotoTelegram();
     sendPhoto = false;
@@ -151,6 +153,16 @@ void loop() {
     }
     lastTimeBotRan = millis();
   }
+
+  pinMode(PIR_PIN, INPUT_PULLUP);
+  v = digitalRead(PIR_PIN);
+  Serial.println(v);
+  if (v == 1 && lastV != v) {
+    sendPhoto = true;
+  }
+
+  lastV = v;
+  delay(20);
 }
 
 
@@ -171,7 +183,7 @@ void sendToFirebase(camera_fb_t* fb) {
     printError(client.lastError().code(), client.lastError().message());
 
   tstamp = getTimestamp();
-  int timeInt = (int) tstamp + (GMT_OFFSET_HOUR * 3600);
+  long timeInt = (long)tstamp;
 
   String timeDir = dirPath + "/" + pushId + "/timestamp";
   Serial.print("Set int... ");
@@ -180,6 +192,16 @@ void sendToFirebase(camera_fb_t* fb) {
     Serial.println("ok");
   else
     printError(client.lastError().code(), client.lastError().message());
+
+  String datetime = convertTimestampToDateTime(timeInt, GMT_OFFSET_HOUR);
+  String datetimeDir = dirPath + "/" + pushId + "/datetime";
+  Serial.print("Set string... ");
+  bool status = Database.set<String>(client, datetimeDir, datetime);
+  if (status)
+    Serial.println("ok");
+  else
+    printError(client.lastError().code(), client.lastError().message());
+  
 }
 
 String getPushID(String path) {
@@ -224,7 +246,7 @@ void configInitCamera() {
   config.grab_mode = CAMERA_GRAB_LATEST;
 
   config.frame_size = FRAMESIZE_VGA;
-  config.jpeg_quality = 20;  //0-63 lower number means higher quality
+  config.jpeg_quality = 12;  //0-63 lower number means higher quality
   config.fb_count = 1;
 
   // camera init
@@ -239,7 +261,7 @@ void configInitCamera() {
 
   // Mengubah orientasi gambar
   // s->set_hmirror(s, 1);  // Mengaktifkan horizontal mirror
-  s->set_vflip(s, 1);  // Mengaktifkan vertical flip
+  // s->set_vflip(s, 1);  // Mengaktifkan vertical flip
 }
 
 void handleNewMessages(int numNewMessages) {
@@ -279,6 +301,8 @@ void handleNewMessages(int numNewMessages) {
 
 String sendPhotoTelegram() {
 
+  digitalWrite(FLASH_LED_PIN, HIGH);
+
   const char* myDomain = "api.telegram.org";
   String getAll = "";
   String getBody = "";
@@ -297,6 +321,9 @@ String sendPhotoTelegram() {
     ESP.restart();
     return "Camera capture failed";
   }
+
+  digitalWrite(FLASH_LED_PIN, LOW);
+  flashState = LOW;
 
   sendToFirebase(fb);
 
@@ -375,6 +402,21 @@ void ledBlink(int freq, int delayInterval) {
     delay(delayInterval);
   }
   flashState = LOW;
+}
+
+// Fungsi untuk mengonversi timestamp ke format tanggal dan waktu
+String convertTimestampToDateTime(unsigned long timestamp, long offsetHour) {
+    struct tm timeinfo;
+    time_t rawtime = (time_t) (timestamp + (offsetHour * 3600));
+
+    // Konversi timestamp ke struct tm
+    localtime_r(&rawtime, &timeinfo);
+
+    // Format hasil menjadi string (YYYY-MM-DD HH:MM:SS)
+    char buffer[30];
+    strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &timeinfo);
+    
+    return String(buffer);
 }
 
 void printError(int code, const String& msg) {
