@@ -97,9 +97,6 @@ void setup() {
   configTime(0, 0, "pool.ntp.org");  // get UTC time via NTP
   tstamp = getTimestamp();
 
-  String ipNotif = "ESP32 Cam IP Server : " + WiFi.localIP().toString();
-  bot.sendMessage(CHAT_ID, ipNotif, "");
-
   Firebase.printf("Firebase Client v%s\n", FIREBASE_CLIENT_VERSION);
 
   ssl.setInsecure();
@@ -118,6 +115,9 @@ void setup() {
 
   // In sync functions, we have to set the operating result for the client that works with the function.
   client.setAsyncResult(result);
+
+  String ipNotif = "ESP32 Cam Ready!";
+  bot.sendMessage(CHAT_ID, ipNotif, "");
 
   ledBlink(2, 200);
 }
@@ -143,7 +143,7 @@ void loop() {
     Serial.println("Preparing photo");
     sendPhotoTelegram();
     sendPhoto = false;
-    digitalWrite(FLASH_LED_PIN, LOW);
+    delay(3000);
   }
   if (millis() > lastTimeBotRan + botRequestDelay) {
     int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
@@ -158,12 +158,12 @@ void loop() {
   pinMode(PIR_PIN, INPUT_PULLUP);
   v = digitalRead(PIR_PIN);
   Serial.println(v);
-  if (v == 1 && lastV != v) {
+  if (v == 1 & v != lastV) {
     sendPhoto = true;
   }
 
   lastV = v;
-  delay(20);
+  delay(10);
 }
 
 
@@ -323,8 +323,13 @@ String sendPhotoTelegram() {
     return "Camera capture failed";
   }
 
+  delay(100);
+
   digitalWrite(FLASH_LED_PIN, LOW);
   flashState = LOW;
+
+  String notif = "Gerakan Terdeteksi! \nMengirim Gambar...";
+  bot.sendMessage(CHAT_ID, notif, "");
 
   sendToFirebase(fb);
 
