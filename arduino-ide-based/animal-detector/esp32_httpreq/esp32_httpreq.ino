@@ -2,7 +2,7 @@
 #include <HTTPClient.h>
 #include <NewPing.h>
 
-#define pirPin 34
+#define pirPin 35
 #define trigPin 32
 #define echoPin 33
 #define buzzerPin 12
@@ -13,14 +13,14 @@ NewPing sonar(trigPin, echoPin, MAX_DISTANCE);
 
 // SSID dan password jaringan Wi-Fi
 const char* ssid = "Wenzzz";
-const char* password = "12345678";
+const char* password = "87654321";
 
-String esp32CamIP = "http://192.168.177.79";
+String esp32CamIP = "http://192.168.53.79";
 
 String ESP32IP;
 
 int jarak = 0;
-const int batasJarak = 20;
+const int batasJarak = 180;
 
 int deteksiPir = 0;
 int deteksiPing = 0;
@@ -71,7 +71,7 @@ void loop() {
   if (deteksiPir == 1 && lastPir == 0) {
     blinkOut(buzzerPin, 2, 250);
     openURL(esp32CamIP + "/on_pir");
-    delay(3000);
+    // delay(3000);
   }
 
   if (deteksiPing == 1 && lastPing == 0) {

@@ -13,7 +13,7 @@
 WebServer server(80);
 
 const char* ssid = "Wenzzz";
-const char* password = "12345678";
+const char* password = "87654321";
 
 // Initialize Telegram BOT
 String BOTtoken = "7550006510:AAHC43wp04xEzIF4zE0bVhG77VGTD0FCuAU";  // your Bot Token (Get from Botfather)
@@ -263,7 +263,7 @@ void setup() {
   Serial.println();
 
   Serial.print("Retrieving time: ");
-  configTime(0, 0, "pool.ntp.org");  // get UTC time via NTP
+  configTime(0, 0, "0.id.pool.ntp.org", "pool.ntp.org" );  // get UTC time via NTP
   time_t now = time(nullptr);
   while (now < 24 * 3600) {
     Serial.print(".");
