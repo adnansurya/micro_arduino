@@ -7,8 +7,8 @@
 #define LED_PIN 2
 
 // Konfigurasi WiFi
-const char* ssid = "Warkop SELO";
-const char* password = "kopisusu";
+const char* ssid = "Anafora";
+const char* password = "12345678";
 
 // Konfigurasi MQTT
 const char* mqtt_server = "a02f84a8d83a48e7ae7b064d12537308.s1.eu.hivemq.cloud";
