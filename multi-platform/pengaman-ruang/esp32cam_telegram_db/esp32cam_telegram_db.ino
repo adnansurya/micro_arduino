@@ -94,7 +94,7 @@ void setup() {
   Serial.println();
 
   Serial.print("Retrieving time: ");
-  configTime(0, 0, "pool.ntp.org");  // get UTC time via NTP
+  configTime(0, 0, "id.pool.ntp.org", "pool.ntp.org" );  // get UTC time via NTP
   tstamp = getTimestamp();
 
   Firebase.printf("Firebase Client v%s\n", FIREBASE_CLIENT_VERSION);
