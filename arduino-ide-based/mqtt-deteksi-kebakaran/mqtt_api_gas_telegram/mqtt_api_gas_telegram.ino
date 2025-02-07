@@ -42,10 +42,12 @@ char num_msg[NUM_BUFFER_SIZE];
 int value = 0;
 
 #define limitGas 1500
+#define limitApi 1500
 
 int adaGas = 0;
 int adaApi = 0;
 int gasValue = 0;
+int apiValue = 0;
 
 String pesan = "";
 String lastPesan = "";
@@ -145,9 +147,9 @@ void loop() {
 
   if (millis() - lastSensor > sensorTimeout) {
     // Membaca status Flame Sensor
-    adaApi = !digitalRead(FLAME_PIN);
-    Serial.print("Deteksi Api: ");
-    Serial.println(adaApi);
+    apiValue = map(analogRead(FLAME_PIN), 0, 4095, 4095, 0);
+    Serial.print("Intensitas Api: ");
+    Serial.println(apiValue);
 
     // Membaca nilai MQ-2 (Gas LPG)
     gasValue = analogRead(MQ2_PIN);
@@ -163,6 +165,9 @@ void loop() {
     snprintf(num_msg, NUM_BUFFER_SIZE, "%d", gasValue);
     client.publish("sensor/gas_value", num_msg);
 
+    snprintf(num_msg, NUM_BUFFER_SIZE, "%d", apiValue);
+    client.publish("sensor/api_value", num_msg);
+
     Serial.println("Data sensor telah dikirim ke MQTT.");
     lastPublishTime = millis();
   }
@@ -171,6 +176,12 @@ void loop() {
     adaGas = 1;
   } else {
     adaGas = 0;
+  }
+
+  if (apiValue > limitApi) {
+    adaApi = 1;
+  } else {
+    adaApi = 0;
   }
 
   if (adaGas == 0 && adaApi == 0) {
