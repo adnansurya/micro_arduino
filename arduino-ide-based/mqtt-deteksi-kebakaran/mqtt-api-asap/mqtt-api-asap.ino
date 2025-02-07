@@ -5,6 +5,7 @@
 #include <WiFiClientSecure.h>
 
 #define LED_PIN 2
+#define BUZZER_PIN 32
 #define MQ2_PIN 34    // Pin analog untuk sensor MQ-2
 #define FLAME_PIN 35  // Pin digital untuk sensor api
 
@@ -31,7 +32,7 @@ unsigned long publishTimeout = 5000;
 char num_msg[NUM_BUFFER_SIZE];
 int value = 0;
 
-#define limitGas 3000
+#define limitGas 1500
 
 int adaGas = 0;
 int adaApi = 0;
@@ -100,9 +101,13 @@ void reconnect() {
 
 void setup() {
   Serial.begin(115200);
+  pinMode(BUZZER_PIN, OUTPUT);
   pinMode(LED_PIN, OUTPUT);
   pinMode(MQ2_PIN, INPUT);
   pinMode(FLAME_PIN, INPUT);
+
+  digitalWrite(BUZZER_PIN, LOW);
+  digitalWrite(LED_PIN, LOW);
 
   setup_wifi();
   setDateTime();
@@ -152,18 +157,27 @@ void loop() {
 
   if (adaGas == 0 && adaApi == 0) {
     pesan = "Safe Condition";
+    digitalWrite(BUZZER_PIN, LOW);
+    digitalWrite(LED_PIN, LOW);
   } else if (adaGas == 1 && adaApi == 0) {
     pesan = "LPG Gas Leaked!";
+    digitalWrite(BUZZER_PIN, HIGH);
+    digitalWrite(LED_PIN, HIGH);
   } else if (adaGas == 0 && adaApi == 1) {
     pesan = "Fire Detected!";
+    digitalWrite(BUZZER_PIN, HIGH);
+    digitalWrite(LED_PIN, HIGH);
   } else if (adaGas == 1 && adaApi == 1) {
     pesan = "Emergency! This Building is on Fire!";
+    digitalWrite(BUZZER_PIN, HIGH);
+    digitalWrite(LED_PIN, HIGH);
   }
 
-  Serial.println(pesan);
+  
 
   if (pesan != lastPesan) {
     sendTextMqtt("sensor/pesan", pesan);
+    Serial.println(pesan);
   }
 
 
