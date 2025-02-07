@@ -3,6 +3,7 @@
 #include <time.h>
 #include <SPIFFS.h>
 #include <WiFiClientSecure.h>
+#include <UniversalTelegramBot.h>
 
 #define LED_PIN 2
 #define BUZZER_PIN 32
@@ -13,20 +14,28 @@
 const char* ssid = "MIKRO";
 const char* password = "1DEAlist";
 
+// Initialize Telegram BOT
+String BOTtoken = "1837465469:AAHGQzX5EzMhAGCKkHS8IiBvEJJ5t1e6O8c";  // your Bot Token (Get from Botfather)
+String CHAT_ID = "108488036";
+
 // Konfigurasi MQTT
 const char* mqtt_server = "a02f84a8d83a48e7ae7b064d12537308.s1.eu.hivemq.cloud";
 const int mqtt_port = 8883;  // MQTT dengan SSL/TLS
 const char* mqtt_user = "MIKRO";
 const char* mqtt_password = "1DEAlist";
 
-WiFiClientSecure espClient;
+WiFiClientSecure espClient, clientTCP;
 PubSubClient client(espClient);
+UniversalTelegramBot bot(BOTtoken, clientTCP);
 
 unsigned long lastSensor = 0;
 unsigned long sensorTimeout = 1000;
 
 unsigned long lastPublishTime = 0;
-unsigned long publishTimeout = 5000;
+unsigned long publishTimeout = 10000;
+
+int botRequestDelay = 1000;
+unsigned long lastTimeBotRan;
 
 #define NUM_BUFFER_SIZE 10
 char num_msg[NUM_BUFFER_SIZE];
@@ -40,6 +49,10 @@ int gasValue = 0;
 
 String pesan = "";
 String lastPesan = "";
+
+time_t tstamp;
+
+
 
 void setup_wifi() {
   Serial.println("Menghubungkan ke WiFi...");
@@ -55,19 +68,17 @@ void setup_wifi() {
   Serial.println(WiFi.localIP());
 }
 
-void setDateTime() {
-  Serial.print("Menunggu sinkronisasi waktu NTP...");
-  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-
+time_t getTimestamp() {
   time_t now = time(nullptr);
-  while (now < 8 * 3600 * 2) {
-    delay(100);
+  while (now < 24 * 3600) {
     Serial.print(".");
+    delay(100);
     now = time(nullptr);
   }
-
-  Serial.println("\nWaktu telah disinkronkan.");
+  Serial.println(now);
+  return now;
 }
+
 
 void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print("Pesan diterima dari topik: ");
@@ -109,13 +120,20 @@ void setup() {
   digitalWrite(BUZZER_PIN, LOW);
   digitalWrite(LED_PIN, LOW);
 
+  clientTCP.setCACert(TELEGRAM_CERTIFICATE_ROOT);
   setup_wifi();
-  setDateTime();
+
+  Serial.print("Retrieving time: ");
+  configTime(0, 0, "id.pool.ntp.org", "pool.ntp.org");  // get UTC time via NTP
+  tstamp = getTimestamp();
 
   espClient.setInsecure();  // Gunakan koneksi tanpa sertifikat (opsional)
 
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(callback);
+
+  String ipNotif = "ESP32 Ready!";
+  bot.sendMessage(CHAT_ID, ipNotif, "");
 }
 
 void loop() {
@@ -173,11 +191,12 @@ void loop() {
     digitalWrite(LED_PIN, HIGH);
   }
 
-  
 
   if (pesan != lastPesan) {
-    sendTextMqtt("sensor/pesan", pesan);
+
     Serial.println(pesan);
+    sendTextMqtt("sensor/pesan", pesan);
+    bot.sendMessage(CHAT_ID, pesan, "");
   }
 
 
