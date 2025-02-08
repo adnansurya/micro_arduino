@@ -4,14 +4,14 @@
 #define PIN_ATAS 10
 #define PIN_KIRI 11
 
-#define idleKanan 120
+#define idleKanan 180
 #define idleAtas 0
 #define idleKiri 0
 
 
-#define lipatKanan 0
-#define lipatAtas 180
-#define lipatKiri 120
+#define lipatKanan 130
+#define lipatAtas 90
+#define lipatKiri 150
 
 Servo servoKanan, servoAtas, servoKiri;  // create Servo object to control a servo
 
@@ -35,7 +35,7 @@ void loop() {
     String perintah = Serial.readStringUntil('\n');
     perintah.trim();
     if (perintah == "lipat") {
-      lipat(2500);
+      lipat(1000);
     }
   }
   delay(10);
