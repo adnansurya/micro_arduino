@@ -1,30 +1,44 @@
 #include <Servo.h>
+#include <Wire.h>
+#include <Adafruit_PWMServoDriver.h>
 
 #define PIN_KANAN 9
 #define PIN_ATAS 10
 #define PIN_KIRI 11
 
 #define idleKanan 180
-#define idleAtas 0
+#define idleAtas 30
 #define idleKiri 0
 
 
-#define lipatKanan 130
-#define lipatAtas 90
-#define lipatKiri 150
+#define lipatKanan 90
+#define lipatAtas 110
+#define lipatKiri 90
 
 Servo servoKanan, servoAtas, servoKiri;  // create Servo object to control a servo
 
+// Servo PCA9685
+#define SERVO_MIN 150  // Pulse width minimum (0°)
+#define SERVO_MAX 600  // Pulse width maximum (180°)
+Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 
 void setup() {
-  // put your setup code here, to run once:
-  servoKanan.attach(PIN_KANAN);
-  servoKiri.attach(PIN_KIRI);
-  servoAtas.attach(PIN_ATAS);
 
-  servoKanan.write(idleKanan);
-  servoAtas.write(idleAtas);
-  servoKiri.write(idleKiri);
+  pwm.begin();
+  pwm.setPWMFreq(60);
+  // put your setup code here, to run once:
+  // servoKanan.attach(PIN_KANAN);
+  // servoKiri.attach(PIN_KIRI);
+  // servoAtas.attach(PIN_ATAS);
+
+  // servoKanan.write(idleKanan);
+  // servoAtas.write(idleAtas);
+  // servoKiri.write(idleKiri);
+
+  setServoAngle(0, idleKanan);
+  setServoAngle(1, idleAtas);
+  setServoAngle(2, idleKiri);
+  
 
   Serial.begin(9600);
   Serial.println("Ready");
@@ -35,7 +49,7 @@ void loop() {
     String perintah = Serial.readStringUntil('\n');
     perintah.trim();
     if (perintah == "lipat") {
-      lipat(1000);
+      lipat(1000);      
     }
   }
   delay(10);
@@ -45,18 +59,23 @@ void loop() {
 
 void lipat(int delayLipat) {
   Serial.println("Mulai");
-  servoKanan.write(lipatKanan);
+  setServoAngle(0, lipatKanan);
   delay(delayLipat);
-  servoKanan.write(idleKanan);
+  setServoAngle(0, idleKanan);
   delay(delayLipat);
-  servoKiri.write(lipatKiri);
+  setServoAngle(2, lipatKiri);
   delay(delayLipat);
-  servoKiri.write(idleKiri);
+  setServoAngle(2, idleKiri);
   delay(delayLipat);
-  servoAtas.write(lipatAtas);
+  setServoAngle(1, lipatAtas);
   delay(delayLipat);
-  servoAtas.write(idleAtas);
+  setServoAngle(1, idleAtas);
   delay(delayLipat);
 
   Serial.println("Selesai");
+}
+
+void setServoAngle(int servoChannel, int angle) {
+  int pulse = map(angle, 0, 180, SERVO_MIN, SERVO_MAX);
+  pwm.setPWM(servoChannel, 0, pulse);
 }
