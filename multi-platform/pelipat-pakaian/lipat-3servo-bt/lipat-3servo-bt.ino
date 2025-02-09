@@ -38,7 +38,7 @@ void setup() {
   setServoAngle(0, idleKanan);
   setServoAngle(1, idleAtas);
   setServoAngle(2, idleKiri);
-  
+
 
   Serial.begin(9600);
   Serial.println("Ready");
@@ -48,8 +48,17 @@ void loop() {
   if (Serial.available() > 0) {
     String perintah = Serial.readStringUntil('\n');
     perintah.trim();
-    if (perintah == "lipat") {
-      lipat(1000);      
+    if (perintah.indexOf("lipat") == 0) {
+      int ulang = perintah.substring(5).toInt();
+      for (int i = 0; i < ulang; i++) {
+        Serial.println("Lipatan ke " + String(i+1));
+        lipat(1000);
+        if(i == ulang-1){
+          break;
+        }
+        delay(7000);
+      }
+      Serial.println("Standby");
     }
   }
   delay(10);
@@ -57,8 +66,7 @@ void loop() {
 
 
 
-void lipat(int delayLipat) {
-  Serial.println("Mulai");
+void lipat(int delayLipat) {  
   setServoAngle(0, lipatKanan);
   delay(delayLipat);
   setServoAngle(0, idleKanan);
