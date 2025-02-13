@@ -119,7 +119,7 @@ void setup() {
   String ipNotif = "ESP32 Cam Ready!";
   bot.sendMessage(CHAT_ID, ipNotif, "");
 
-  ledBlink(2, 200);
+  // ledBlink(2, 200);
 }
 
 
@@ -145,20 +145,20 @@ void loop() {
     sendPhoto = false;
     delay(3000);
   }
-  if (millis() > lastTimeBotRan + botRequestDelay) {
-    int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
-    while (numNewMessages) {
-      Serial.println("got response");
-      handleNewMessages(numNewMessages);
-      numNewMessages = bot.getUpdates(bot.last_message_received + 1);
-    }
-    lastTimeBotRan = millis();
-  }
+  // if (millis() > lastTimeBotRan + botRequestDelay) {
+  //   int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+  //   while (numNewMessages) {
+  //     Serial.println("got response");
+  //     handleNewMessages(numNewMessages);
+  //     numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+  //   }
+  //   lastTimeBotRan = millis();
+  // }
 
   pinMode(PIR_PIN, INPUT_PULLUP);
   v = digitalRead(PIR_PIN);
   Serial.println(v);
-  if (v == 1 & v != lastV) {
+  if (v == 1 ) {
     sendPhoto = true;
   }
 
@@ -302,7 +302,7 @@ void handleNewMessages(int numNewMessages) {
 
 String sendPhotoTelegram() {
 
-  digitalWrite(FLASH_LED_PIN, HIGH);
+  // digitalWrite(FLASH_LED_PIN, HIGH);
 
   const char* myDomain = "api.telegram.org";
   String getAll = "";
@@ -325,11 +325,11 @@ String sendPhotoTelegram() {
 
   delay(100);
 
-  digitalWrite(FLASH_LED_PIN, LOW);
-  flashState = LOW;
+  // digitalWrite(FLASH_LED_PIN, LOW);
+  // flashState = LOW;
 
-  String notif = "Gerakan Terdeteksi! \nMengirim Gambar...";
-  bot.sendMessage(CHAT_ID, notif, "");
+  // String notif = "Gerakan Terdeteksi! \nMengirim Gambar...";
+  // bot.sendMessage(CHAT_ID, notif, "");
 
   sendToFirebase(fb);
 

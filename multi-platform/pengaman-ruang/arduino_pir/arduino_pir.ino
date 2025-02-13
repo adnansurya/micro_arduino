@@ -32,5 +32,5 @@ void loop() {
     digitalWrite(ESP32_PIN, LOW);
   }
 
-  delay(200);
+  delay(100);
 }
