@@ -28,9 +28,10 @@ NoAuth noAuth;
 const int lightLimitUpper = 3000;
 const int lightLimitLower = 1500;
 
-String statKunci, lastStatKunci;
+String statKunci, statCommand;
 String commandDir = "/speech_result";
 String statDir = "/kunci";
+String debugDir = "/debug";
 
 int lightState = 0;
 
@@ -42,9 +43,6 @@ void setup() {
   pinMode(FLASH_LED_PIN, OUTPUT);
   pinMode(RELAY_PIN, OUTPUT);
   pinMode(LDR_PIN, INPUT);
-
-  digitalWrite(FLASH_LED_PIN, LOW);
-  digitalWrite(RELAY_PIN, HIGH);
 
   // Connect to Wi-Fi
   WiFi.mode(WIFI_STA);
@@ -81,6 +79,12 @@ void setup() {
 
   // In sync functions, we have to set the operating result for the client that works with the function.
   client.setAsyncResult(result);
+
+  digitalWrite(FLASH_LED_PIN, LOW);
+  digitalWrite(RELAY_PIN, LOW);
+  Serial.println("Kunci Solenoid");
+  setStringFb(debugDir, "Kunci Solenoid");
+  delay(1000);
 }
 
 time_t getTimestamp() {
@@ -103,9 +107,19 @@ void loop() {
   Serial.println(statKunci);
   delay(1000);
 
+  statCommand = getStringFb(commandDir);
   Serial.print("Command(Fb): ");
-  Serial.println(getStringFb(commandDir));
+  Serial.println(statCommand);
   delay(1000);
+
+  if (statKunci == "terkunci" && statCommand == "terbuka") {
+    Serial.println("Solenoid dibuka");
+    digitalWrite(RELAY_PIN, HIGH);  //solenoid dibuka
+    setStringFb(statDir, "terbuka");
+    delay(1000);
+    setStringFb(debugDir, "Solenoid Dibuka");
+    delay(1000);
+  }
 
   int adcLdr = analogRead(LDR_PIN);
   // Serial.print("LDR: ");
@@ -114,8 +128,25 @@ void loop() {
   Serial.print("Light State: ");
   Serial.println(lightState);
 
+  if (lightState == 2) {  //pintu terbuka
+    Serial.println("Pintu dibuka");
+    setStringFb(debugDir, "Pintu Dibuka");
+    delay(1000);
+    digitalWrite(RELAY_PIN, LOW);  //solenoid dikunci
+    Serial.println("KUNCI SOLENOID");
+    setStringFb(debugDir, "Kunci Solenoid");
+    delay(1000);
+  } else if (lightState == 1) {  //pintu ditutup
+    Serial.println("Pintu ditutup");
+    setStringFb(debugDir, "Pintu Ditutup");
+    delay(1000);
+    setStringFb(statDir, "terkunci");
+    delay(1000);
+    setStringFb(commandDir, "terkunci");
+    delay(1000);
+  }
 
-  lastStatKunci = statKunci;
+
 
 
   delay(10);
