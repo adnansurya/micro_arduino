@@ -4,8 +4,8 @@
 #include "ACS712.h"
 
 #define FLASH_LED_PIN 2
-#define SOLENOID_PIN 12
-#define LAMP_PIN 13
+#define SOLENOID_PIN 26
+#define LAMP_PIN 27
 #define LDR_PIN 34
 #define ARUS_PIN 35
 
@@ -31,7 +31,7 @@ NoAuth noAuth;
 ACS712 sensor(ACS712_05B, ARUS_PIN);
 
 const int lightLimitUpper = 3500;
-const int lightLimitLower = 1300;
+const int lightLimitLower = 1000;
 
 
 
@@ -59,6 +59,7 @@ void setup() {
 
   digitalWrite(SOLENOID_PIN, HIGH);
   digitalWrite(LAMP_PIN, HIGH);
+  digitalWrite(FLASH_LED_PIN, LOW);
 
   // Connect to Wi-Fi
   WiFi.mode(WIFI_STA);
@@ -96,9 +97,11 @@ void setup() {
   // In sync functions, we have to set the operating result for the client that works with the function.
   client.setAsyncResult(result);
 
-  digitalWrite(FLASH_LED_PIN, LOW);
+
 
   sensor.calibrate();
+
+  digitalWrite(FLASH_LED_PIN, HIGH);
 }
 
 time_t getTimestamp() {
@@ -135,14 +138,15 @@ void loop() {
   }
 
   statCommand = getStringFb(commandDir);
+  statCommand.toLowerCase();
 
   statStep = getStringFb(stepDir);
 
 
 
-  if (statStep == "locked" && statCommand == "terbuka") {
+  if (statStep == "locked" && statCommand.indexOf("buka") > -1) {
+    digitalWrite(FLASH_LED_PIN, HIGH);
     Serial.println("Solenoid dibuka");
-    delay(2000);
 
     setStringFb(lockDir, "terbuka");
     setStringFb(stepDir, "unlocked");
@@ -158,12 +162,14 @@ void loop() {
   lightState = getLightState(adcLdr);
 
   if (lightState == 2 && statStep == "unlocked" && lightState != lastLightState) {  //pintu terbuka
+    digitalWrite(FLASH_LED_PIN, HIGH);
     Serial.println("Pintu dibuka");
     // delay(2000);
     setStringFb(stepDir, "open");
     setStringFb(lampDir, "on");
 
   } else if (lightState == 3 && statKunci == "terbuka" && statStep == "open" && lightState != lastLightState) {  //pintu ditutup
+    digitalWrite(FLASH_LED_PIN, HIGH);
     Serial.println("Pintu ditutup");
     // delay(2000);
     setStringFb(lampDir, "off");
@@ -186,6 +192,7 @@ void loop() {
 
 
   delay(1000);
+  digitalWrite(FLASH_LED_PIN, LOW);
 }
 
 
