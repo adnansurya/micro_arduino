@@ -1,10 +1,13 @@
 #include <FirebaseClient.h>
 #include <WiFiClientSecure.h>
 #include <time.h>
+#include "ACS712.h"
 
 #define FLASH_LED_PIN 2
-#define RELAY_PIN 5
-#define LDR_PIN 35
+#define SOLENOID_PIN 12
+#define LAMP_PIN 13
+#define LDR_PIN 34
+#define ARUS_PIN 35
 
 
 // Konfigurasi WiFi
@@ -25,15 +28,24 @@ RealtimeDatabase Database;
 AsyncResult result;
 NoAuth noAuth;
 
-const int lightLimitUpper = 3000;
-const int lightLimitLower = 1500;
+ACS712 sensor(ACS712_05B, ARUS_PIN);
 
-String statKunci, statCommand;
+const int lightLimitUpper = 3500;
+const int lightLimitLower = 1300;
+
+
+
+String statKunci, statLampu, statCommand, statStep, lastStep;
 String commandDir = "/speech_result";
-String statDir = "/kunci";
-String debugDir = "/debug";
+String lockDir = "/kunci";
+String stepDir = "/step";
+String lampDir = "/lamp";
+
 
 int lightState = 0;
+int lastLightState = 0;
+int adcLdr;
+float arus = 0.0;
 
 void setup() {
   // put your setup code here, to run once:
@@ -41,8 +53,12 @@ void setup() {
   Serial.begin(115200);
 
   pinMode(FLASH_LED_PIN, OUTPUT);
-  pinMode(RELAY_PIN, OUTPUT);
+  pinMode(SOLENOID_PIN, OUTPUT);
+  pinMode(LAMP_PIN, OUTPUT);
   pinMode(LDR_PIN, INPUT);
+
+  digitalWrite(SOLENOID_PIN, HIGH);
+  digitalWrite(LAMP_PIN, HIGH);
 
   // Connect to Wi-Fi
   WiFi.mode(WIFI_STA);
@@ -81,10 +97,8 @@ void setup() {
   client.setAsyncResult(result);
 
   digitalWrite(FLASH_LED_PIN, LOW);
-  digitalWrite(RELAY_PIN, LOW);
-  Serial.println("Kunci Solenoid");
-  setStringFb(debugDir, "Kunci Solenoid");
-  delay(1000);
+
+  sensor.calibrate();
 }
 
 time_t getTimestamp() {
@@ -102,60 +116,82 @@ time_t getTimestamp() {
 void loop() {
   // put your main code here, to run repeatedly:
 
-  statKunci = getStringFb(statDir);
-  Serial.print("Kunci(Fb): ");
+  statKunci = getStringFb(lockDir);
+  Serial.print("statKunci: ");
   Serial.println(statKunci);
-  delay(1000);
+
+  statLampu = getStringFb(lampDir);
+
+  if (statKunci == "terkunci") {
+    digitalWrite(SOLENOID_PIN, HIGH);  //solenoid dibuka
+  } else if (statKunci == "terbuka") {
+    digitalWrite(SOLENOID_PIN, LOW);  //solenoid dibuka
+  }
+
+  if (statLampu == "on") {
+    digitalWrite(LAMP_PIN, LOW);  //solenoid dibuka
+  } else if (statLampu == "off") {
+    digitalWrite(LAMP_PIN, HIGH);  //solenoid dibuka
+  }
 
   statCommand = getStringFb(commandDir);
-  Serial.print("Command(Fb): ");
-  Serial.println(statCommand);
-  delay(1000);
 
-  if (statKunci == "terkunci" && statCommand == "terbuka") {
+  statStep = getStringFb(stepDir);
+
+
+
+  if (statStep == "locked" && statCommand == "terbuka") {
     Serial.println("Solenoid dibuka");
-    digitalWrite(RELAY_PIN, HIGH);  //solenoid dibuka
-    setStringFb(statDir, "terbuka");
-    delay(1000);
-    setStringFb(debugDir, "Solenoid Dibuka");
-    delay(1000);
+    delay(2000);
+
+    setStringFb(lockDir, "terbuka");
+    setStringFb(stepDir, "unlocked");
   }
 
-  int adcLdr = analogRead(LDR_PIN);
-  // Serial.print("LDR: ");
-  // Serial.println(adcLdr);
+  arus = sensor.getCurrentDC();
+  Serial.print("Arus: ");
+  Serial.println(arus);
+
+  adcLdr = 4096 - analogRead(LDR_PIN);
+  Serial.print("LDR: ");
+  Serial.println(adcLdr);
   lightState = getLightState(adcLdr);
-  Serial.print("Light State: ");
-  Serial.println(lightState);
 
-  if (lightState == 2) {  //pintu terbuka
+  if (lightState == 2 && statStep == "unlocked" && lightState != lastLightState) {  //pintu terbuka
     Serial.println("Pintu dibuka");
-    setStringFb(debugDir, "Pintu Dibuka");
-    delay(1000);
-    digitalWrite(RELAY_PIN, LOW);  //solenoid dikunci
-    Serial.println("KUNCI SOLENOID");
-    setStringFb(debugDir, "Kunci Solenoid");
-    delay(1000);
-  } else if (lightState == 1) {  //pintu ditutup
+    // delay(2000);
+    setStringFb(stepDir, "open");
+    setStringFb(lampDir, "on");
+
+  } else if (lightState == 3 && statKunci == "terbuka" && statStep == "open" && lightState != lastLightState) {  //pintu ditutup
     Serial.println("Pintu ditutup");
-    setStringFb(debugDir, "Pintu Ditutup");
-    delay(1000);
-    setStringFb(statDir, "terkunci");
-    delay(1000);
-    setStringFb(commandDir, "terkunci");
-    delay(1000);
+    // delay(2000);
+    setStringFb(lampDir, "off");
+    setStringFb(lockDir, "terkunci");
+    setStringFb(stepDir, "locked");
+    setStringFb(commandDir, "-");
+  }
+
+  if (statStep != lastStep) {
+    pushData("/logs");
   }
 
 
 
+  lastStep = statStep;
+  lastLightState = lightState;
 
-  delay(10);
+
+
+
+
+  delay(1000);
 }
 
 
 String getStringFb(String fbDir) {
   String str = "";
-  Serial.print("Get string... ");
+  Serial.print(fbDir + ": ");
   str = Database.get<String>(client, fbDir);
   if (client.lastError().code() == 0)
     Serial.println(str);
@@ -168,12 +204,28 @@ String getStringFb(String fbDir) {
 }
 
 void setStringFb(String fbDir, String str) {
-  Serial.print("Set string... ");
+  Serial.print("Set " + fbDir + " to:  " + str);
   bool status = Database.set<String>(client, fbDir, str);
   if (status)
     Serial.println("ok");
   else
     printError(client.lastError().code(), client.lastError().message());
+}
+
+void pushData(String fbDir) {
+
+  tstamp = getTimestamp();
+  String datetime = convertTimestampToDateTime(tstamp, 8);
+
+  String objBuilder = "{ \"ldr_value\":" + String(adcLdr) + ", \"current\":" + String(arus) + ", \"timestamp\":" + String(tstamp) + ", \"datetime\":\"" + datetime + "\", \"status\":\"" + statStep + "\"}";
+  Serial.print("Push JSON: ");
+  Serial.println(objBuilder);
+  String name = Database.push<object_t>(client, fbDir, object_t(objBuilder));
+  if (client.lastError().code() == 0)
+    Firebase.printf("ok, name: %s\n", name.c_str());
+  else
+    printError(client.lastError().code(), client.lastError().message());
+  delay(1000);
 }
 
 int getLightState(int adcVal) {
