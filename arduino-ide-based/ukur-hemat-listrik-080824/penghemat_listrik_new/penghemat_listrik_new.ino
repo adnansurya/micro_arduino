@@ -118,9 +118,13 @@ void setup() {
 
   rtcInit();
 
+  delay(1000);
+
   sensorInit();
 
-  callibrateACS(20);
+  delay(1000);
+
+  callibrateACS(50);
 
   calibrate = true;
 }
@@ -296,19 +300,19 @@ void displaySensorData() {
     lcd.setCursor(0, 0);
     lcd.print("P_1 = ");
     lcd.print(power1);
-    lcd.print(" W");
+    lcd.print(" VA");
     lcd.setCursor(0, 1);
     lcd.print("P_2 = ");
     lcd.print(power2);
-    lcd.print(" W");
+    lcd.print(" VA");
     lcd.setCursor(0, 2);
     lcd.print("P_3 = ");
     lcd.print(power3);
-    lcd.print(" W");
+    lcd.print(" VA");
     lcd.setCursor(0, 3);
     lcd.print("P_4 = ");
     lcd.print(power4);
-    lcd.print(" W");
+    lcd.print(" VA");
 
   } else {
     lcd.setCursor(0, 0);
