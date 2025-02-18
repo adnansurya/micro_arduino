@@ -11,8 +11,8 @@
 
 
 // Konfigurasi WiFi
-#define WIFI_SSID "MIKRO"         // Ganti dengan SSID WiFi Anda
-#define WIFI_PASSWORD "1DEAlist"  // Ganti dengan password WiFi Anda
+#define WIFI_SSID "pakelah"         // Ganti dengan SSID WiFi Anda
+#define WIFI_PASSWORD "Bolakbalik"  // Ganti dengan password WiFi Anda
 
 #define DATABASE_URL "https://pintucerdas-4b1ae-default-rtdb.asia-southeast1.firebasedatabase.app/"
 
@@ -37,9 +37,15 @@ const int lightLimitLower = 1000;
 
 String statKunci, statLampu, statCommand, statStep, lastStep;
 String commandDir = "/speech_result";
-String lockDir = "/kunci";
-String stepDir = "/step";
-String lampDir = "/lamp";
+String lockDir = "/realtime/kunci";
+String stepDir = "/realtime/status";
+String lampDir = "/realtime/lamp";
+String arusDir = "/realtime/current";
+String ldrDir = "/realtime/ldr_value";
+
+
+unsigned long lastUpdate = 0;
+unsigned long updateTimeout = 20000;
 
 
 int lightState = 0;
@@ -152,13 +158,14 @@ void loop() {
     setStringFb(stepDir, "unlocked");
   }
 
-  arus = sensor.getCurrentDC();
+  arus = abs(sensor.getCurrentDC());
   Serial.print("Arus: ");
   Serial.println(arus);
 
   adcLdr = 4096 - analogRead(LDR_PIN);
   Serial.print("LDR: ");
   Serial.println(adcLdr);
+
   lightState = getLightState(adcLdr);
 
   if (lightState == 2 && statStep == "unlocked" && lightState != lastLightState) {  //pintu terbuka
@@ -178,14 +185,26 @@ void loop() {
     setStringFb(commandDir, "-");
   }
 
+
   if (statStep != lastStep) {
+    digitalWrite(FLASH_LED_PIN, HIGH);
     pushData("/logs");
+  }
+
+  if (millis() - lastUpdate > updateTimeout) {
+    digitalWrite(FLASH_LED_PIN, HIGH);
+    Serial.println("UPDATE DATA");
+    setStringFb(arusDir, String(arus));
+    setStringFb(ldrDir, String(adcLdr));
+    pushData("/logs");
+    lastUpdate = millis();
   }
 
 
 
   lastStep = statStep;
   lastLightState = lightState;
+
 
 
 
