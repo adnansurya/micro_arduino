@@ -7,8 +7,8 @@
 #define LED_PIN 2
 
 // Konfigurasi WiFi
-const char* ssid = "Anafora";
-const char* password = "12345678";
+const char* ssid = "MIKRO";
+const char* password = "1DEAlist";
 
 // Konfigurasi MQTT
 const char* mqtt_server = "a02f84a8d83a48e7ae7b064d12537308.s1.eu.hivemq.cloud";
@@ -107,6 +107,8 @@ void loop() {
     snprintf(msg, MSG_BUFFER_SIZE, "hello world #%d", value++);
     Serial.print("Mengirim pesan: ");
     Serial.println(msg);
-    client.publish("testTopic", msg);
+    client.publish("sensor/pesan", msg);
   }
 }
+
+
