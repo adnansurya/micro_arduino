@@ -12,8 +12,10 @@
 #define BUZZER_PIN 23  // Pin digital untuk buzzer
 
 // Konfigurasi WiFi
-const char* ssid = "MIKRO";
-const char* password = "1DEAlist";
+// const char* ssid = "MIKRO";
+// const char* password = "1DEAlist";
+const char* ssid = "Cafe Tulus";
+const char* password = "PesanDulu";
 
 // Konfigurasi MQTT
 const char* mqtt_server = "a02f84a8d83a48e7ae7b064d12537308.s1.eu.hivemq.cloud";
@@ -51,18 +53,31 @@ time_t tstamp;
 char num_msg[NUM_BUFFER_SIZE];
 int value = 0;
 
+unsigned long standbyTimer = 120000;
+
 void setup() {
   Serial.begin(115200);
   lcd.init();
   lcd.backlight();
 
   Serial.println("Menghubungkan ke WiFi...");
+  lcd.setCursor(0, 0);
+  lcd.print("Connecting to:");
+  lcd.setCursor(0, 1);
+  lcd.print(ssid);
   WiFi.begin(ssid, password);
 
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
+    lcd.print(".");
   }
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Terhubung ke");
+  lcd.setCursor(0, 1);
+  lcd.print(ssid);
 
   Serial.println("\nWiFi terhubung");
   Serial.print("IP Address: ");
@@ -77,7 +92,24 @@ void setup() {
   client.setCallback(callback);
 
   pinMode(BUZZER_PIN, OUTPUT);
-  digitalWrite(BUZZER_PIN, LOW);
+  digitalWrite(BUZZER_PIN, LOW);  
+
+  while (millis() <= standbyTimer) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Preparing...");
+    lcd.setCursor(0, 1);
+
+    lcd.print("(");
+    lcd.print((standbyTimer - millis()) / 1000);
+    lcd.print(" sec)");
+    delay(1000);
+  }
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Ready");
+  delay(2000);
 }
 
 void loop() {
@@ -87,16 +119,7 @@ void loop() {
   }
   client.loop();
 
-  int mq7Raw = analogRead(MQ7_PIN);
-  int mq135Raw = analogRead(MQ135_PIN);
 
-  // Hitung Rs untuk masing-masing sensor
-  float mq7Rs = (4095.0 / mq7Raw - 1.0) * Ro_MQ7;
-  float mq135Rs = (4095.0 / mq135Raw - 1.0) * Ro_MQ135;
-
-  // Konversi ke PPM
-  mq7PPM = 1000 * pow(mq7Rs / Ro_MQ7, -1.5);             // MQ-7 (CO)
-  mq135PPM = 116.602 * pow(mq135Rs / Ro_MQ135, -2.769);  // MQ-135 (CO₂)
 
   Serial.print("CO (MQ-7): ");
   Serial.print(mq7PPM);
@@ -225,4 +248,20 @@ time_t getTimestamp() {
   }
   Serial.println(now);
   return now;
+}
+
+
+void getSensorValue() {
+  int mq7Raw = analogRead(MQ7_PIN);
+  int mq135Raw = analogRead(MQ135_PIN);
+
+
+  // Hitung Rs untuk masing-masing sensor
+  float mq7Rs = (4095.0 / mq7Raw - 1.0) * Ro_MQ7;
+  float mq135Rs = (4095.0 / mq135Raw - 1.0) * Ro_MQ135;
+
+  // Konversi ke PPM
+  mq7PPM = 1000 * pow(mq7Rs / Ro_MQ7, -1.5);             // MQ-7 (CO)
+  // mq7PPM = 10 * pow(mq7Rs / Ro_MQ7, -1.5);
+  mq135PPM = 116.602 * pow(mq135Rs / Ro_MQ135, -2.769);  // MQ-135 (CO₂)
 }
