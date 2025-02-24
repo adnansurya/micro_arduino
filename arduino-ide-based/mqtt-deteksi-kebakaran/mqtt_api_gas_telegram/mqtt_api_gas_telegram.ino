@@ -4,29 +4,40 @@
 #include <SPIFFS.h>
 #include <WiFiClientSecure.h>
 #include <UniversalTelegramBot.h>
+#include "DHT.h"
 
 #define LED_PIN 2
-#define BUZZER_PIN 32
+#define BUZZER_PIN 23
 #define MQ2_PIN 34    // Pin analog untuk sensor MQ-2
 #define FLAME_PIN 35  // Pin digital untuk sensor api
+#define DHTPIN 5
+
 
 // Konfigurasi WiFi
+// const char* ssid = "Galaxy A33 5G";
+// const char* password = "bayu1111.";
 const char* ssid = "MIKRO";
 const char* password = "1DEAlist";
 
 // Initialize Telegram BOT
+// String BOTtoken = "7608688502:AAHPpT7qYVQ0SwjMfFI2E0kmTLZRjMCLPpM";  // your Bot Token (Get from Botfather)
+// String CHAT_ID = "5585014358";
 String BOTtoken = "1837465469:AAHGQzX5EzMhAGCKkHS8IiBvEJJ5t1e6O8c";  // your Bot Token (Get from Botfather)
 String CHAT_ID = "108488036";
 
 // Konfigurasi MQTT
-const char* mqtt_server = "a02f84a8d83a48e7ae7b064d12537308.s1.eu.hivemq.cloud";
+const char* mqtt_server = "4cc6fe883e7d40a18ceb314db9f36464.s1.eu.hivemq.cloud";
 const int mqtt_port = 8883;  // MQTT dengan SSL/TLS
-const char* mqtt_user = "MIKRO";
-const char* mqtt_password = "1DEAlist";
+const char* mqtt_user = "bayutappang";
+const char* mqtt_password = "Bayutappang11";
+
 
 WiFiClientSecure espClient, clientTCP;
 PubSubClient client(espClient);
 UniversalTelegramBot bot(BOTtoken, clientTCP);
+
+#define DHTTYPE DHT22
+DHT dht(DHTPIN, DHT22);
 
 unsigned long lastSensor = 0;
 unsigned long sensorTimeout = 1000;
@@ -41,13 +52,17 @@ unsigned long lastTimeBotRan;
 char num_msg[NUM_BUFFER_SIZE];
 int value = 0;
 
-#define limitGas 1500
+#define limitGas 1200
 #define limitApi 1500
+#define limitSuhu 40
 
 int adaGas = 0;
 int adaApi = 0;
+int suhuPanas = 0;
+
 int gasValue = 0;
 int apiValue = 0;
+float suhuValue = 0.0;
 
 String pesan = "";
 String lastPesan = "";
@@ -134,6 +149,9 @@ void setup() {
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(callback);
 
+
+  dht.begin();
+
   String ipNotif = "ESP32 Ready!";
   bot.sendMessage(CHAT_ID, ipNotif, "");
 }
@@ -156,6 +174,10 @@ void loop() {
     Serial.print("Intensitas Gas LPG: ");
     Serial.println(gasValue);
 
+    suhuValue = dht.readTemperature();
+    Serial.print("Suhu: ");
+    Serial.println(suhuValue);
+
     lastSensor = millis();
   }
 
@@ -167,6 +189,9 @@ void loop() {
 
     snprintf(num_msg, NUM_BUFFER_SIZE, "%d", apiValue);
     client.publish("sensor/api_value", num_msg);
+
+    snprintf(num_msg, NUM_BUFFER_SIZE, "%f", suhuValue);
+    client.publish("sensor/suhu_value", num_msg);
 
     Serial.println("Data sensor telah dikirim ke MQTT.");
     lastPublishTime = millis();
@@ -184,22 +209,35 @@ void loop() {
     adaApi = 0;
   }
 
-  if (adaGas == 0 && adaApi == 0) {
+  if (suhuValue > limitSuhu) {
+    suhuPanas = 1;
+  } else {
+    suhuPanas = 0;
+  }
+
+
+  if (adaGas == 0 && adaApi == 0 && suhuPanas == 0) {
     pesan = "Safe Condition";
     digitalWrite(BUZZER_PIN, LOW);
     digitalWrite(LED_PIN, LOW);
-  } else if (adaGas == 1 && adaApi == 0) {
-    pesan = "LPG Gas Leaked!";
-    digitalWrite(BUZZER_PIN, HIGH);
-    digitalWrite(LED_PIN, HIGH);
-  } else if (adaGas == 0 && adaApi == 1) {
-    pesan = "Fire Detected!";
-    digitalWrite(BUZZER_PIN, HIGH);
-    digitalWrite(LED_PIN, HIGH);
-  } else if (adaGas == 1 && adaApi == 1) {
+  } else if (adaGas == 1 && adaApi == 1 && suhuPanas == 1) {
     pesan = "Emergency! This Building is on Fire!";
     digitalWrite(BUZZER_PIN, HIGH);
     digitalWrite(LED_PIN, HIGH);
+  } else {
+    pesan = "";
+    digitalWrite(BUZZER_PIN, HIGH);
+    digitalWrite(LED_PIN, HIGH);
+
+    if (adaGas == 1) {
+      pesan += "Gas Leaked! ";
+
+    } else if (adaApi == 1) {
+      pesan += "Fire Detected! ";
+
+    } else if (suhuPanas == 1) {
+      pesan += "Temperature is Raising!";
+    }
   }
 
 
