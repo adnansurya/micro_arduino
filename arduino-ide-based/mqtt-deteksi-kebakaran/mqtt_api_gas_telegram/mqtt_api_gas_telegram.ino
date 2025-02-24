@@ -14,16 +14,12 @@
 
 
 // Konfigurasi WiFi
-// const char* ssid = "Galaxy A33 5G";
-// const char* password = "bayu1111.";
-const char* ssid = "MIKRO";
-const char* password = "1DEAlist";
+const char* ssid = "Galaxy A33 5G";
+const char* password = "bayu1111.";
 
 // Initialize Telegram BOT
-// String BOTtoken = "7608688502:AAHPpT7qYVQ0SwjMfFI2E0kmTLZRjMCLPpM";  // your Bot Token (Get from Botfather)
-// String CHAT_ID = "5585014358";
-String BOTtoken = "1837465469:AAHGQzX5EzMhAGCKkHS8IiBvEJJ5t1e6O8c";  // your Bot Token (Get from Botfather)
-String CHAT_ID = "108488036";
+String BOTtoken = "7608688502:AAHPpT7qYVQ0SwjMfFI2E0kmTLZRjMCLPpM";  // your Bot Token (Get from Botfather)
+String CHAT_ID = "5585014358";
 
 // Konfigurasi MQTT
 const char* mqtt_server = "4cc6fe883e7d40a18ceb314db9f36464.s1.eu.hivemq.cloud";
