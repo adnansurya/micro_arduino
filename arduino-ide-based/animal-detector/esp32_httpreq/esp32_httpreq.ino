@@ -15,7 +15,7 @@ NewPing sonar(trigPin, echoPin, MAX_DISTANCE);
 const char* ssid = "Wenzzz";
 const char* password = "87654321";
 
-String esp32CamIP = "http://192.168.53.79";
+String esp32CamIP = "http://192.168.12.79";
 
 String ESP32IP;
 
@@ -71,10 +71,10 @@ void loop() {
   if (deteksiPir == 1 && lastPir == 0) {
     blinkOut(buzzerPin, 2, 250);
     openURL(esp32CamIP + "/on_pir");
-    // delay(3000);
+    delay(3000);
   }
 
-  if (deteksiPing == 1 && lastPing == 0) {
+  if (deteksiPing == 1) {
     blinkOut(buzzerPin, 2, 100);
     openURL(esp32CamIP + "/on_ping");
     delay(3000);
