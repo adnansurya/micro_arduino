@@ -29,7 +29,7 @@ FirebaseConfig config;
 int ldrValue = 0;
 int udpPort = 202018202081;
 WiFiUDP udp;
-float kelembapan = 0; 
+float kelembapan = 0;
 float temperatureFloat;
 
 // Definisi pin untuk DHT22
@@ -85,11 +85,6 @@ void loop() {
     static unsigned long sendDataPrevMillis = 0;
     if (millis() - sendDataPrevMillis > 7500) {
       sendDataPrevMillis = millis();
-      if (Firebase.RTDB.setInt(&fbdo, "sensor/cahaya", ldrValue)) {
-        Serial.println("LDR value sent to Firebase successfully");
-      } else {
-        Serial.printf("Failed to send LDR value: %s\n", fbdo.errorReason().c_str());
-      }
     }
   }
 }
@@ -114,13 +109,29 @@ void bacaSHT() {
   static unsigned long sendDataPrevMillis = 0;
   if (millis() - sendDataPrevMillis > 7500) {
     sendDataPrevMillis = millis();
-    if (Firebase.RTDB.setFloat(&fbdo, "sensor/kelembapan", kelembapan)) {
-      Serial.println("Humidity value sent to Firebase successfully");
-    } else {
-      Serial.printf("Failed to send humidity value: %s\n", fbdo.errorReason().c_str());
-    }
   }
   delay(3000);
+}
+
+void kirimData() {
+
+  if (Firebase.RTDB.setFloat(&fbdo, "sensor/kelembapan", kelembapan)) {
+    Serial.println("Humidity value sent to Firebase successfully");
+  } else {
+    Serial.printf("Failed to send humidity value: %s\n", fbdo.errorReason().c_str());
+  }
+
+  if (Firebase.RTDB.setFloat(&fbdo, "sensor/suhu", temperatureFloat)) {
+    Serial.println("Temperature value sent to Firebase successfully");
+  } else {
+    Serial.printf("Failed to send temperature value: %s\n", fbdo.errorReason().c_str());
+  }
+
+  if (Firebase.RTDB.setInt(&fbdo, "sensor/cahaya", ldrValue)) {
+    Serial.println("LDR value sent to Firebase successfully");
+  } else {
+    Serial.printf("Failed to send LDR value: %s\n", fbdo.errorReason().c_str());
+  }
 }
 
 void receiveData() {
@@ -134,8 +145,6 @@ void receiveData() {
 
     Serial.print("Received data: ");
     Serial.println(perintah);
-
-  
   }
   delay(3000);
 }
@@ -149,10 +158,5 @@ void bacaSuhu() {
   } else {
     temperatureFloat = t;
     Serial.println("Temperature: " + String(t) + "°C\nHumidity: " + String(h) + "%");
-      if (Firebase.RTDB.setFloat(&fbdo, "sensor/suhu", temperatureFloat)) {
-      Serial.println("Temperature value sent to Firebase successfully");
-    } else {
-      Serial.printf("Failed to send temperature value: %s\n", fbdo.errorReason().c_str());
-    }
   }
 }
