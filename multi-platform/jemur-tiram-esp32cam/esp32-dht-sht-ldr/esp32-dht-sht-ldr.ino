@@ -4,11 +4,13 @@
 #elif defined(ESP8266)
 #include <ESP8266WiFi.h>
 #endif
+#include <WiFiClientSecure.h>
 #include <Firebase_ESP_Client.h>
 #include <Wire.h>
 #include "Adafruit_SHT31.h"
 #include <WiFiUDP.h>
 #include <DHT.h>
+#include <UniversalTelegramBot.h>
 
 // Library dan fungsi Firebase
 #include "addons/TokenHelper.h"
@@ -20,6 +22,14 @@
 #define API_KEY "AIzaSyAEJvUK8RGqR-tI6QyRb2bUMF6Y2mUj3D4"
 #define DATABASE_URL "https://thelast-e2d6d-default-rtdb.firebaseio.com/"
 
+// Ganti dengan token bot Telegram Anda
+// String BOTtoken = "7714606423:AAE-sFrXKqkawnGxAN3MgWwIyxQgnxW5yHY";
+String BOTtoken = "1837465469:AAHGQzX5EzMhAGCKkHS8IiBvEJJ5t1e6O8c";
+String CHAT_ID = "108488036";
+
+WiFiClientSecure client;
+UniversalTelegramBot bot(BOTtoken, client);
+
 Adafruit_SHT31 sht31 = Adafruit_SHT31();
 FirebaseData fbdo;
 FirebaseAuth auth;
@@ -27,10 +37,14 @@ FirebaseConfig config;
 
 #define LDRPIN 34
 int ldrValue = 0;
-int udpPort = 202018202081;
-WiFiUDP udp;
+
 float kelembapan = 0;
 float temperatureFloat;
+
+WiFiUDP udp;
+unsigned int localPort = 9999;
+char packetBuffer[255];
+String textData = "";
 
 // Definisi pin untuk DHT22
 #define DHTPIN 5
@@ -58,6 +72,12 @@ void setup() {
   Serial.print("Connected with IP: ");
   Serial.println(WiFi.localIP());
 
+  udp.begin(localPort);
+  Serial.printf("UDP server : %s:%i \n", WiFi.localIP().toString().c_str(), localPort);
+  client.setInsecure();  // Disable SSL certificate validation
+
+  bot.sendMessage(CHAT_ID, "ESP32 IP: " + WiFi.localIP().toString(), "");
+
   // Konfigurasi Firebase
   config.api_key = API_KEY;
   config.database_url = DATABASE_URL;
@@ -69,31 +89,20 @@ void setup() {
   config.token_status_callback = tokenStatusCallback;
   Firebase.begin(&config, &auth);
   Firebase.reconnectWiFi(true);
-
-  // Mulai UDP
-  udp.begin(udpPort);
-  Serial.printf("UDP Listening on port %d\n", udpPort);
 }
 
 void loop() {
   bacaLDR();
   bacaSHT();
   bacaSuhu();
-  receiveData();
-
-  if (Firebase.ready()) {
-    static unsigned long sendDataPrevMillis = 0;
-    if (millis() - sendDataPrevMillis > 7500) {
-      sendDataPrevMillis = millis();
-    }
-  }
+  waitDataCommand();
+  delay(10);
 }
 
 void bacaLDR() {
   ldrValue = analogRead(LDRPIN);
   Serial.print("Nilai LDR: ");
   Serial.println(ldrValue);
-  delay(3000);
 }
 
 void bacaSHT() {
@@ -105,12 +114,18 @@ void bacaSHT() {
   } else {
     Serial.println("Gagal membaca kelembapan!");
   }
+}
 
-  static unsigned long sendDataPrevMillis = 0;
-  if (millis() - sendDataPrevMillis > 7500) {
-    sendDataPrevMillis = millis();
+void bacaSuhu() {
+  float h = dht.readHumidity();
+  float t = dht.readTemperature();
+
+  if (isnan(t)) {
+    Serial.println("Failed to read from DHT sensor!");
+  } else {
+    temperatureFloat = t;
+    Serial.println("Temperature: " + String(t) + "°C");
   }
-  delay(3000);
 }
 
 void kirimData() {
@@ -134,29 +149,21 @@ void kirimData() {
   }
 }
 
-void receiveData() {
+void waitDataCommand() {
+
   int packetSize = udp.parsePacket();
+
   if (packetSize) {
-    byte data[sizeof(float)];
-    udp.read(data, sizeof(data));
-
-    String perintah;
-    memcpy(&perintah, data, sizeof(perintah));
-
-    Serial.print("Received data: ");
-    Serial.println(perintah);
-  }
-  delay(3000);
-}
-
-void bacaSuhu() {
-  float h = dht.readHumidity();
-  float t = dht.readTemperature();
-
-  if (isnan(h) || isnan(t)) {
-    Serial.println("Failed to read from DHT sensor!");
-  } else {
-    temperatureFloat = t;
-    Serial.println("Temperature: " + String(t) + "°C\nHumidity: " + String(h) + "%");
+    Serial.print(" Received packet from : ");
+    Serial.println(udp.remoteIP());
+    Serial.print(" Size : ");
+    Serial.println(packetSize);
+    int len = udp.read(packetBuffer, 255);
+    if (len > 0) packetBuffer[len - 1] = 0;
+    textData = String(packetBuffer);
+    textData.trim();
+    Serial.printf("Data From Client: %s\n", textData);
+    Serial.println("\n");
+    delay(1000);
   }
 }
