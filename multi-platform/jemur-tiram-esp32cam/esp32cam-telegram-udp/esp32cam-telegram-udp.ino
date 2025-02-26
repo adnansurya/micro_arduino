@@ -18,7 +18,13 @@ const char* ssid = "Can jie";
 const char* password = "qwerty015";
 
 // Ganti dengan token bot Telegram Anda
-#define BOTtoken "7714606423:AAE-sFrXKqkawnGxAN3MgWwIyxQgnxW5yHY"
+// #define BOTtoken "7714606423:AAE-sFrXKqkawnGxAN3MgWwIyxQgnxW5yHY"
+#define BOTtoken "1837465469:AAHGQzX5EzMhAGCKkHS8IiBvEJJ5t1e6O8c"
+#define CHAT_ID "108488036"
+
+// Definisi untuk UDP
+const char* udpAddress = "192.168.45.142";  // Ganti dengan IP ESP32 penerima
+const int udpPort = 202018202081;           // Port UDP yang digunakan
 
 WiFiClientSecure client;
 UniversalTelegramBot bot(BOTtoken, client);
@@ -137,6 +143,8 @@ void setup() {
     }
   }
 
+  client.setCACert(TELEGRAM_CERTIFICATE_ROOT);
+
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
     Serial.print(".");
@@ -144,6 +152,21 @@ void setup() {
   }
   Serial.println("WiFi connected");
   Serial.println(WiFi.localIP());
+
+  Serial.print("Retrieving time: ");
+  configTime(0, 0, "pool.ntp.org");  // get UTC time via NTP
+  time_t now = time(nullptr);
+  while (now < 24 * 3600) {
+    Serial.print(".");
+    delay(100);
+    now = time(nullptr);
+  }
+  Serial.println(now);
+
+
+
+  String ipNotif = "ESP32 Cam IP Server : " + WiFi.localIP().toString();
+  bot.sendMessage(CHAT_ID, ipNotif, "");
 
   client.setInsecure();  // Disable SSL certificate validation
   bot.longPoll = 60;
@@ -161,13 +184,13 @@ void loop() {
     Bot_lasttime = millis();
   }
 
-  if(millis() > (lastSending + (timerSecond * 1000))){
+  if (millis() > (lastSending + (timerSecond * 1000))) {
 
     sendTimer();
 
     lastSending = millis();
   }
-  
+
   delay(1000);
 }
 
