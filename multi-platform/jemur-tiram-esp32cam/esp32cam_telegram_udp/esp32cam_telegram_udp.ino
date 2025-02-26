@@ -36,6 +36,8 @@ unsigned int localPort = 9999;
 const char* udpAddress = "192.168.45.142";  // Ganti dengan IP ESP32 penerima
 unsigned long timerSecond = 10;
 unsigned long lastSending = 0;
+bool waitResponse = false;
+String textData = "";
 
 //CAMERA_MODEL_AI_THINKER
 #define PWDN_GPIO_NUM 32
@@ -175,8 +177,8 @@ String sendPhotoTelegram() {
   if (clientTCP.connect(myDomain, 443)) {
     Serial.println("Connection successful");
 
-    String head = "--RandomTutorials\r\nContent-Disposition: form-data; name=\"chat_id\"; \r\n\r\n" + CHAT_ID + "\r\n--RandomNerdTutorials\r\nContent-Disposition: form-data; name=\"photo\"; filename=\"esp32-cam.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n";
-    String tail = "\r\n--RandomTutorials--\r\n";
+    String head = "--RandomNerdTutorials\r\nContent-Disposition: form-data; name=\"chat_id\"; \r\n\r\n" + CHAT_ID + "\r\n--RandomNerdTutorials\r\nContent-Disposition: form-data; name=\"photo\"; filename=\"esp32-cam.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n";
+    String tail = "\r\n--RandomNerdTutorials--\r\n";
 
     size_t imageLen = fb->len;
     size_t extraLen = head.length() + tail.length();
@@ -185,7 +187,7 @@ String sendPhotoTelegram() {
     clientTCP.println("POST /bot" + BOTtoken + "/sendPhoto HTTP/1.1");
     clientTCP.println("Host: " + String(myDomain));
     clientTCP.println("Content-Length: " + String(totalLen));
-    clientTCP.println("Content-Type: multipart/form-data; boundary=RandomTutorials");
+    clientTCP.println("Content-Type: multipart/form-data; boundary=RandomNerdTutorials");
     clientTCP.println();
     clientTCP.print(head);
 
@@ -271,7 +273,7 @@ void setup() {
   }
   Serial.println(now);
 
-  String ipNotif = "ESP32 Cam IP Server : " + WiFi.localIP().toString();
+  String ipNotif = "ESP32-CAM Ready!";
   bot.sendMessage(CHAT_ID, ipNotif, "");
 }
 
@@ -293,6 +295,11 @@ void loop() {
     }
     lastTimeBotRan = millis();
   }
+
+  if(waitResponse){
+    waitDataResponse();
+  }
+
 }
 
 
@@ -302,4 +309,28 @@ void sendDataRequest() {
   udp.printf("request_data");
   udp.printf("\r\n");
   udp.endPacket();
+  delay(1000);
+  waitResponse = true;
+}
+
+
+void waitDataResponse() {
+  int packetSize = udp.parsePacket();
+
+  if (packetSize) {
+    Serial.print(" Received packet from : ");
+    Serial.println(udp.remoteIP());
+    Serial.print(" Size : ");
+    Serial.println(packetSize);
+    int len = udp.read(packetBuffer, 255);
+    if (len > 0) packetBuffer[len - 1] = 0;
+    textData = String(packetBuffer);
+    textData.trim();
+    Serial.print("Data From Server: " +  textData);
+    Serial.println("\n");
+    delay(1000);
+    bot.sendMessage(CHAT_ID, textData, "");
+    waitResponse = false;
+    textData = "";
+  }
 }

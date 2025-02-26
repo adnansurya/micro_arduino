@@ -34,12 +34,15 @@ Adafruit_SHT31 sht31 = Adafruit_SHT31();
 FirebaseData fbdo;
 FirebaseAuth auth;
 FirebaseConfig config;
+unsigned long rtdbTimerSecond = 10;
+unsigned long rtdbSendLast = 0;
 
 #define LDRPIN 34
 int ldrValue = 0;
-
 float kelembapan = 0;
 float temperatureFloat;
+unsigned long readUpdateSecond = 1;
+unsigned long readUpdateLast = 0;
 
 WiFiUDP udp;
 unsigned int localPort = 9999;
@@ -76,7 +79,7 @@ void setup() {
   Serial.printf("UDP server : %s:%i \n", WiFi.localIP().toString().c_str(), localPort);
   client.setInsecure();  // Disable SSL certificate validation
 
-  bot.sendMessage(CHAT_ID, "ESP32 IP: " + WiFi.localIP().toString(), "");
+  bot.sendMessage(CHAT_ID, "ESP32 (All Sensor) IP: " + WiFi.localIP().toString(), "");
 
   // Konfigurasi Firebase
   config.api_key = API_KEY;
@@ -92,11 +95,23 @@ void setup() {
 }
 
 void loop() {
-  bacaLDR();
-  bacaSHT();
-  bacaSuhu();
+
+  if (millis() > (readUpdateLast + (readUpdateSecond * 1000))) {
+    bacaLDR();
+    bacaSHT();
+    bacaSuhu();
+    Serial.println();
+    readUpdateLast = millis();
+  }
+
+  if (millis() > (rtdbSendLast + (rtdbTimerSecond * 1000))) {
+    kirimData();
+    Serial.println();
+    rtdbSendLast = millis();
+  }
+
   waitDataCommand();
-  delay(10);
+  delay(1);
 }
 
 void bacaLDR() {
@@ -162,8 +177,33 @@ void waitDataCommand() {
     if (len > 0) packetBuffer[len - 1] = 0;
     textData = String(packetBuffer);
     textData.trim();
-    Serial.printf("Data From Client: %s\n", textData);
+    Serial.print("Data From Client: " + textData);
     Serial.println("\n");
     delay(1000);
+    if (textData == "request_data") {
+      Serial.println("Request Accepted. Responding...");
+      char buf[20];
+      udp.beginPacket(udp.remoteIP(), udp.remotePort());
+      udp.print("LDR: ");
+      sprintf(buf, "%d", ldrValue);
+      udp.printf(buf);
+
+      udp.print("\nKelembapan: ");
+      char tempStr[10];
+      dtostrf(kelembapan, 6, 2, tempStr);  // Convert float to string
+      sprintf(buf, "%s", tempStr);
+      udp.printf(buf);
+      udp.print(" %");
+
+      udp.print("\nSuhu: ");
+      dtostrf(temperatureFloat, 6, 2, tempStr);  // Convert float to string
+      sprintf(buf, "%s °C", tempStr);
+      udp.printf(buf);
+
+      udp.printf("\r\n");
+      udp.endPacket();
+      delay(2000);
+      textData = "";
+    }
   }
 }
