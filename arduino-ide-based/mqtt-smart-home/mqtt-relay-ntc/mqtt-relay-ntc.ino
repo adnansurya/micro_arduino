@@ -21,6 +21,7 @@ PubSubClient client(espClient);
 
 time_t onTime = 0;
 time_t offTime = 0;
+bool lampuState = false; // Variabel untuk menyimpan state lampu
 
 void setup_wifi() {
   Serial.println("Menghubungkan ke WiFi...");
@@ -50,6 +51,16 @@ void setDateTime() {
   Serial.println("\nWaktu telah disinkronkan.");
 }
 
+void updateLampuState() {
+  // Lampu menyala jika dalam rentang waktu onTime dan offTime
+  time_t now = time(nullptr);
+  if (lampuState || (now >= onTime && now < offTime)) {
+    digitalWrite(RELAY_LAMPU, LOW); // Menyalakan relay
+  } else {
+    digitalWrite(RELAY_LAMPU, HIGH); // Mematikan relay
+  }
+}
+
 void callback(char* topic, byte* payload, unsigned int length) {
   String messageTemp;
   
@@ -65,11 +76,14 @@ void callback(char* topic, byte* payload, unsigned int length) {
   if (String(topic) == "saklar") {
     digitalWrite(RELAY_SAKLAR, messageTemp == "saklar_on" ? LOW : HIGH);
   } else if (String(topic) == "lampu") {
-    digitalWrite(RELAY_LAMPU, messageTemp == "lampu_on" ? LOW : HIGH);
+    lampuState = (messageTemp == "lampu_on");
+    updateLampuState();
   } else if (String(topic) == "lampu/jadwal/on") {
     onTime = atol(messageTemp.c_str());
+    updateLampuState();
   } else if (String(topic) == "lampu/jadwal/off") {
     offTime = atol(messageTemp.c_str());
+    updateLampuState();
   }
 }
 
@@ -103,6 +117,10 @@ void setup() {
   espClient.setInsecure();
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(callback);
+
+  // Memastikan relay mati saat memulai
+  digitalWrite(RELAY_SAKLAR, HIGH);
+  digitalWrite(RELAY_LAMPU, HIGH);
 }
 
 void loop() {
@@ -111,10 +129,5 @@ void loop() {
   }
   client.loop();
 
-  time_t now = time(nullptr);
-  if (now >= onTime && now < offTime) {
-    digitalWrite(RELAY_LAMPU, LOW);
-  } else {
-    digitalWrite(RELAY_LAMPU, HIGH);
-  }
+  updateLampuState();
 }
