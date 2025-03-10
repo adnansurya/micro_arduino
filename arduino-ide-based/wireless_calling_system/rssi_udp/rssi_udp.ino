@@ -1,35 +1,34 @@
 #include <ESP8266WiFi.h>
-#include <WiFiManager.h>
 #include <WiFiUdp.h>
 
 // Parameter daya sinyal dan faktor pengurangan
 const int signalAtOneMeter = -40; // Nilai RSSI pada jarak 1 meter (dBm)
 const float pathLossExponent = 3.0; // Faktor pengurangan sinyal (n)
 
+// Konfigurasi WiFi
+const char *ssid = "SSID_WIFI";        // Ganti dengan SSID jaringan WiFi Anda
+const char *password = "PASSWORD_WIFI"; // Ganti dengan password WiFi Anda
+
 // Konfigurasi UDP
 WiFiUDP udp;
-const char *udpAddress = "192.168.1.100"; // Ganti dengan alamat IP tujuan
+const char *udpAddress = "192.168.1.101"; // Ganti dengan alamat IP perangkat penerima
 const int udpPort = 12345; // Port tujuan
 
 void setup() {
   Serial.begin(115200);
 
-  // Membuat instance WiFiManager
-  WiFiManager wifiManager;
-
-  // Memulai WiFiManager (apabila belum disetel, akan masuk ke mode konfigurasi)
-  if (!wifiManager.autoConnect("AutoConnectAP")) {
-    Serial.println("Gagal menghubungkan ke WiFi, rebooting...");
-    delay(3000);
-    ESP.restart();
+  // Menyambungkan ke WiFi
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
   }
-
-  // Terkoneksi ke jaringan WiFi
-  Serial.println("Terhubung ke WiFi!");
+  Serial.println("\nTerhubung ke WiFi");
+  Serial.print("Alamat IP Pengirim: ");
+  Serial.println(WiFi.localIP());
 
   // Memulai koneksi UDP
-  udp.begin(udpPort);
-  Serial.println("UDP dimulai");
+  Serial.println("Memulai UDP...");
 }
 
 void loop() {
@@ -44,14 +43,14 @@ void loop() {
   Serial.println(distance);
 
   // Menyiapkan pesan untuk dikirimkan
-  String message = "RSSI: " + String(rssi) + " dBm, Jarak: " + String(distance) + " meter";
+  String message = "Device1;RSSI:" + String(rssi) + ";Distance:" + String(distance);
 
   // Mengirim pesan melalui UDP
   udp.beginPacket(udpAddress, udpPort);
   udp.print(message);
   udp.endPacket();
 
-  Serial.println("Data dikirimkan melalui UDP!");
+  Serial.println("Data dikirim melalui UDP!");
 
-  delay(1000); // Mengukur dan mengirim data setiap detik
+  delay(1000); // Mengirimkan data setiap detik
 }
