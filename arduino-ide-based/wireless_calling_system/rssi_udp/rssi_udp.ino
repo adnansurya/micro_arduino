@@ -9,8 +9,8 @@ const int signalAtOneMeter = -40; // Nilai RSSI pada jarak 1 meter (dBm)
 const float pathLossExponent = 3.0; // Faktor pengurangan sinyal (n)
 
 
-const char *deviceId = "2";
-const char *ssid_default = "Wireless Caller 2";
+const char *deviceId = "1";
+const char *ssid_default = "Wireless Caller 1";
 
 
 // Konfigurasi UDP

@@ -20,7 +20,7 @@ char incomingPacket[255];   // Buffer untuk menyimpan paket yang diterima
 String device1Data = "Menunggu...";
 String device2Data = "Menunggu...";
 
-const char *ssid_default = "Wireless Caller Transmitter";
+const char* ssid_default = "Wireless Caller Transmitter";
 
 String IPAddress;
 
@@ -93,6 +93,18 @@ void loop() {
     lastLcdMillis = millis();
   }
 
+  // Cek apakah tombol ditekan
+  if (digitalRead(button1) == LOW) {
+    Serial.println("Call Device 1");
+    sendUDPMessage(deviceIP1, "call");
+    delay(500);
+  }
+  if (digitalRead(button2) == LOW) {
+    Serial.println("Call Device 2");
+    sendUDPMessage(deviceIP2, "call");
+    delay(500);
+  }
+
 
 
   int packetSize = udp.parsePacket();  // Mengecek apakah ada paket yang diterima
@@ -136,4 +148,19 @@ String getValue(String data, char separator, int index) {
     }
   }
   return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
+}
+
+
+void sendUDPMessage(String ipStr, String msgStr) {
+  const char *ipSend = ipStr.c_str();  // Konversi String ke const char*
+  const char *msgSend = msgStr.c_str();  // Konversi String ke const char*
+
+  udp.beginPacket(ipSend, udpPort);
+  udp.write(msgSend);
+  udp.endPacket();
+
+  Serial.print("Pesan dikirim ke ");
+  Serial.print(ipSend);  // Gunakan ipSend yang sudah dikonversi
+  Serial.print(": ");
+  Serial.println(msgSend);
 }
