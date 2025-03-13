@@ -2,51 +2,105 @@
 #include <WiFiUdp.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
+#include <WiFiManager.h>
+
+// Konfigurasi tombol
+#define button1 D5
+#define button2 D6
 
 // Konfigurasi LCD 20x4 (alamat I2C: 0x27, sesuaikan dengan modul Anda)
 LiquidCrystal_I2C lcd(0x27, 20, 4);
 
 // Konfigurasi UDP
 WiFiUDP udp;
-const int udpPort = 12345; // Port untuk menerima data
-char incomingPacket[255]; // Buffer untuk menyimpan paket yang diterima
+const int udpPort = 12345;  // Port untuk menerima data
+char incomingPacket[255];   // Buffer untuk menyimpan paket yang diterima
 
 // Variabel untuk menyimpan data masing-masing perangkat
 String device1Data = "Menunggu...";
 String device2Data = "Menunggu...";
 
+const char *ssid_default = "Wireless Caller Transmitter";
+
+String IPAddress;
+
+unsigned long lastLcdMillis = 0;
+unsigned long lcdSeconds = 1;
+
+int rssi1, rssi2;
+float jarak1, jarak2;
+
+String deviceIP1, deviceIP2;
+
 void setup() {
   Serial.begin(115200);
 
+  // Inisialisasi LCD
+  lcd.init();
+  lcd.backlight();
+  lcd.setCursor(0, 0);
+  lcd.print("Connecting WiFi");
+
+  // Konfigurasi tombol sebagai input
+  pinMode(button1, INPUT_PULLUP);
+  pinMode(button2, INPUT_PULLUP);
+
   // Menyambungkan ke WiFi
-  WiFi.begin("SSID_WIFI", "PASSWORD_WIFI"); // Ganti dengan SSID dan password WiFi Anda
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
+  // Membuat instance WiFiManager
+  WiFiManager wifiManager;
+
+  // Memulai WiFiManager (apabila belum disetel, akan masuk ke mode konfigurasi)
+  if (!wifiManager.autoConnect(ssid_default)) {
+    Serial.println("Gagal menghubungkan ke WiFi, rebooting...");
+    delay(3000);
+    ESP.restart();
   }
+
   Serial.println("\nTerhubung ke WiFi");
   Serial.print("Alamat IP: ");
-  Serial.println(WiFi.localIP());
+  IPAddress = WiFi.localIP().toString();
+  Serial.println();
 
   // Memulai koneksi UDP
   udp.begin(udpPort);
   Serial.print("Listening UDP on port ");
   Serial.println(udpPort);
 
-  // Inisialisasi LCD
-  lcd.begin();
-  lcd.backlight();
+  lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("Menunggu data...");
 }
 
 void loop() {
-  int packetSize = udp.parsePacket(); // Mengecek apakah ada paket yang diterima
+
+  if (millis() > (lcdSeconds * 1000) + lastLcdMillis) {
+
+    // Menampilkan data pada LCD
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("IP: ");
+    lcd.print(IPAddress);
+    lcd.setCursor(0, 2);
+    lcd.print("D1: ");
+    lcd.print(rssi1);
+    lcd.print(" ");
+    lcd.print(jarak1);
+    lcd.setCursor(0, 3);
+    lcd.print("D2: ");
+    lcd.print(rssi2);
+    lcd.print(" ");
+    lcd.print(jarak2);
+    lastLcdMillis = millis();
+  }
+
+
+
+  int packetSize = udp.parsePacket();  // Mengecek apakah ada paket yang diterima
   if (packetSize) {
     // Membaca data dari paket
     int len = udp.read(incomingPacket, 255);
     if (len > 0) {
-      incomingPacket[len] = '\0'; // Menambahkan null terminator ke string
+      incomingPacket[len] = '\0';  // Menambahkan null terminator ke string
     }
     Serial.print("Data diterima: ");
     Serial.println(incomingPacket);
@@ -55,21 +109,31 @@ void loop() {
     String data = String(incomingPacket);
     if (data.startsWith("Device1")) {
       device1Data = data;
+      deviceIP1 = getValue(device1Data, '|', 1);
+      rssi1 = getValue(device1Data, '|', 2).toInt();
+      jarak1 = getValue(device1Data, '|', 3).toFloat();
     } else if (data.startsWith("Device2")) {
       device2Data = data;
+      deviceIP2 = getValue(device2Data, '|', 1);
+      rssi2 = getValue(device2Data, '|', 2).toInt();
+      jarak2 = getValue(device2Data, '|', 3).toFloat();
     }
-
-    // Menampilkan data pada LCD
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("Device 1:");
-    lcd.setCursor(0, 1);
-    lcd.print(device1Data);
-    lcd.setCursor(0, 2);
-    lcd.print("Device 2:");
-    lcd.setCursor(0, 3);
-    lcd.print(device2Data);
   }
 
-  delay(100); // Mengurangi beban prosesor
+  delay(100);  // Mengurangi beban prosesor
+}
+
+String getValue(String data, char separator, int index) {
+  int found = 0;
+  int strIndex[] = { 0, -1 };
+  int maxIndex = data.length() - 1;
+
+  for (int i = 0; i <= maxIndex && found <= index; i++) {
+    if (data.charAt(i) == separator || i == maxIndex) {
+      found++;
+      strIndex[0] = strIndex[1] + 1;
+      strIndex[1] = (i == maxIndex) ? i + 1 : i;
+    }
+  }
+  return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
 }

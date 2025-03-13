@@ -8,13 +8,16 @@
 const int signalAtOneMeter = -40; // Nilai RSSI pada jarak 1 meter (dBm)
 const float pathLossExponent = 3.0; // Faktor pengurangan sinyal (n)
 
-const char *ssid_default = "Wireless Caller";
+
+const char *deviceId = "2";
+const char *ssid_default = "Wireless Caller 2";
 
 
 // Konfigurasi UDP
 WiFiUDP udp;
-const char *udpAddress = "192.168.1.101"; // Ganti dengan alamat IP perangkat penerima
+const char *udpAddress = "192.168.164.140"; // Ganti dengan alamat IP perangkat penerima
 const int udpPort = 12345; // Port tujuan
+String IPDevice;
 
 void setup() {
 
@@ -36,7 +39,8 @@ void setup() {
   
   Serial.println("\nTerhubung ke WiFi");
   Serial.print("Alamat IP Pengirim: ");
-  Serial.println(WiFi.localIP());
+  IPDevice = WiFi.localIP().toString();
+  Serial.println(IPDevice);
 
   // Memulai koneksi UDP
   Serial.println("Memulai UDP...");
@@ -54,7 +58,7 @@ void loop() {
   Serial.println(distance);
 
   // Menyiapkan pesan untuk dikirimkan
-  String message = "Device2;RSSI:" + String(rssi) + ";Distance:" + String(distance);
+  String message = "Device"+String(deviceId)+"|" + IPDevice +"|" + String(rssi) + "|" + String(distance);
 
   // Mengirim pesan melalui UDP
   udp.beginPacket(udpAddress, udpPort);
