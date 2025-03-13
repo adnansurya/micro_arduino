@@ -6,6 +6,8 @@
 #define RELAY_SAKLAR 16  // Relay untuk saklar
 #define RELAY_LAMPU 17   // Relay untuk lampu
 
+#define offsetHour 8
+
 // Konfigurasi WiFi
 const char* ssid = "MIKRO";
 const char* password = "1DEAlist";
@@ -19,9 +21,18 @@ const char* mqtt_password = "1DEAlist";
 WiFiClientSecure espClient;
 PubSubClient client(espClient);
 
-time_t onTime = 0;
-time_t offTime = 0;
-bool lampuState = false; // Variabel untuk menyimpan state lampu
+String onTime, offTime;
+int onMinute, onHour, offMinute, offHour;
+int hour, minute, second;
+bool jadwalOnState = false;
+bool jadwalOffState = false;
+bool lampuState = false;  // Variabel untuk menyimpan state lampu
+
+time_t now;
+unsigned long lastMillis = 0;
+unsigned long refreshSecondMillis = 1;
+
+
 
 void setup_wifi() {
   Serial.println("Menghubungkan ke WiFi...");
@@ -39,10 +50,11 @@ void setup_wifi() {
 
 void setDateTime() {
   Serial.print("Menunggu sinkronisasi waktu NTP...");
-  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+  configTime(offsetHour * 3600, 0, "pool.ntp.org", "time.nist.gov");  // Waktu WIB (UTC+8)
 
-  time_t now = time(nullptr);
-  while (now < 8 * 3600 * 2) {
+  now = time(nullptr);
+
+  while (now < offsetHour * 3600 * 2) {
     delay(100);
     Serial.print(".");
     now = time(nullptr);
@@ -53,21 +65,46 @@ void setDateTime() {
 
 void updateLampuState() {
   // Lampu menyala jika dalam rentang waktu onTime dan offTime
-  time_t now = time(nullptr);
-  if (lampuState || (now >= onTime && now < offTime)) {
-    digitalWrite(RELAY_LAMPU, LOW); // Menyalakan relay
+  now = time(nullptr);
+
+  // Konversi ke struktur waktu lokal
+  struct tm* timeInfo = localtime(&now);
+
+  // Ambil jam dan menit
+  hour = timeInfo->tm_hour;
+  minute = timeInfo->tm_min;
+  second = timeInfo->tm_sec;
+
+
+  if (lampuState && jadwalOffState) {
+    if (hour == offHour && minute == offMinute && second == 0) {
+      Serial.println("OFF by Jadwal");
+      lampuState = false;
+    }
+  }
+
+  if (!lampuState && jadwalOnState) {
+    if (hour == onHour && minute == onMinute && second == 0) {
+      Serial.println("ON by Jadwal");
+      lampuState = true;
+    }
+  }
+
+
+  if (lampuState) {
+    digitalWrite(RELAY_LAMPU, LOW);  // Menyalakan relay
   } else {
-    digitalWrite(RELAY_LAMPU, HIGH); // Mematikan relay
+    digitalWrite(RELAY_LAMPU, HIGH);  // Mematikan relay
   }
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
   String messageTemp;
-  
+
   for (int i = 0; i < length; i++) {
     messageTemp += (char)payload[i];
   }
-  
+
   Serial.print("Pesan diterima dari topik: ");
   Serial.println(topic);
   Serial.print("Pesan: ");
@@ -78,11 +115,19 @@ void callback(char* topic, byte* payload, unsigned int length) {
   } else if (String(topic) == "lampu") {
     lampuState = (messageTemp == "lampu_on");
     updateLampuState();
+
   } else if (String(topic) == "lampu/jadwal/on") {
-    onTime = atol(messageTemp.c_str());
+    onTime = messageTemp.c_str();
+    onHour = onTime.substring(0, 2).toInt();
+    onMinute = onTime.substring(3, 5).toInt();
+    jadwalOnState = true;
     updateLampuState();
+
   } else if (String(topic) == "lampu/jadwal/off") {
-    offTime = atol(messageTemp.c_str());
+    offTime = messageTemp.c_str();
+    offHour = offTime.substring(0, 2).toInt();
+    offMinute = offTime.substring(3, 5).toInt();
+    jadwalOffState = true;
     updateLampuState();
   }
 }
@@ -130,4 +175,18 @@ void loop() {
   client.loop();
 
   updateLampuState();
+
+  if (millis() > (refreshSecondMillis * 1000) + lastMillis) {
+
+    Serial.printf("Waktu:  %02d:%02d:%02d\n", hour, minute, second);
+
+    Serial.print("LampuState: ");
+    Serial.print(lampuState);
+    Serial.print("\tJadwalOn: ");
+    Serial.print(jadwalOnState);
+    Serial.print("\tJadwalOff: ");
+    Serial.println(jadwalOffState);
+
+    lastMillis = millis();
+  }
 }
