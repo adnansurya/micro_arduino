@@ -9,14 +9,14 @@
 #define offsetHour 8
 
 // Konfigurasi WiFi
-const char* ssid = "MIKRO";
-const char* password = "1DEAlist";
+const char* ssid = "Ini namanya";
+const char* password = "inipasswordnya";
 
 // Konfigurasi MQTT
-const char* mqtt_server = "a02f84a8d83a48e7ae7b064d12537308.s1.eu.hivemq.cloud";
+const char* mqtt_server = "a9be9b5043a147a2b4a13289f2abdf22.s1.eu.hivemq.cloud";
 const int mqtt_port = 8883;
-const char* mqtt_user = "MIKRO";
-const char* mqtt_password = "1DEAlist";
+const char* mqtt_user = "jeska";
+const char* mqtt_password = "Skripsi123";
 
 WiFiClientSecure espClient;
 PubSubClient client(espClient);
