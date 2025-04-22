@@ -14,7 +14,7 @@
 //Provide the RTDB payload printing info and other helper functions.
 #include "addons/RTDBHelper.h"
 
-#define buzzerPin D4
+#define buzzerPin D8
 
 // Insert Firebase project API Key
 #define API_KEY "AIzaSyBc6X4IjEKCtd1pw_2Cc6DIkrmXbqT3Hmg"
@@ -33,7 +33,7 @@ long intervalMillis = 5000;
 int count = 0;
 bool signupOK = false;
 
-String deviceId = "device_11";
+String deviceId = "device_12";
 String fbDir = "main/realtime/" + deviceId;
 
 WiFiManager wm;
@@ -54,6 +54,7 @@ void setup() {
   pinMode(buzzerPin, OUTPUT);
   digitalWrite(buzzerPin, LOW);
 
+
   res = wm.autoConnect("AutoConnectAP");  // anonymous ap
   if (!res) {
     Serial.println("Failed to connect");
@@ -62,6 +63,12 @@ void setup() {
     //if you get here you have connected to the WiFi
     Serial.println("connected...yeey :)");
   }
+
+  digitalWrite(buzzerPin, HIGH);
+  delay(1500);
+  digitalWrite(buzzerPin, LOW);
+
+
 
   /* Assign the api key (required) */
   config.api_key = API_KEY;
@@ -95,22 +102,22 @@ void loop() {
   long rssiVal = WiFi.RSSI();
   float jarak = rssiToMeter(rssiVal, nilai_a, nilai_n);
 
-  if(jarak <= batasBawah){
+  if (jarak <= batasBawah) {
     kondisiAlarm = 0;
-  }else if(jarak > batasBawah && jarak <= batasAtas){
+  } else if (jarak > batasBawah && jarak <= batasAtas) {
     kondisiAlarm = 1;
-  }else{
+  } else {
     kondisiAlarm = 2;
   }
   Serial.println(jarak);
 
-  if(kondisiAlarm == 0){
+  if (kondisiAlarm == 0) {
     digitalWrite(buzzerPin, LOW);
-  }else if(kondisiAlarm == 1){
+  } else if (kondisiAlarm == 1) {
     digitalWrite(buzzerPin, HIGH);
-    delay(200);      
+    delay(200);
     digitalWrite(buzzerPin, LOW);
-  }else{
+  } else {
     digitalWrite(buzzerPin, HIGH);
   }
 
@@ -142,10 +149,10 @@ void loop() {
 float rssiToMeter(long rssiUkur, float nilaiA, float nilaiN) {
   float meterHasil = 0.0;
 
-  float pembilang = nilaiA - (float) rssiUkur ;
+  float pembilang = nilaiA - (float)rssiUkur;
   float penyebut = 10 * nilaiN;
   float pangkat = pembilang / penyebut;
-  
+
   meterHasil = pow(10, pangkat);
 
   return abs(meterHasil);
