@@ -39,7 +39,7 @@ const char index_html[] PROGMEM = R"rawliteral(
   </div><br>
   <div>
     <label>Servo 3: <span id="s3val">90</span>°</label><br>
-    <input type="range" min="0" max="180" value="90" id="s3" oninput="updateServo(this.value,3)">
+    <input type="range" min="60" max="180" value="120" id="s3" oninput="updateServo(this.value,3)">
   </div><br>
   <div>
     <label>Servo 4: <span id="s4val">50</span>°</label><br>
