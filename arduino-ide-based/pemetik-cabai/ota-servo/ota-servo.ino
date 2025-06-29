@@ -30,7 +30,7 @@ const char index_html[] PROGMEM = R"rawliteral(
 <body>
   <h2>Kendali Lengan Robot OTA</h2>
   <div>
-    <label>Atas - (<span id="s1val">90</span>&#176;) - Bawah</label><br>
+    <label>Bawah - (<span id="s1val">90</span>&#176;) - Atas</label><br>
     <input type="range" min="0" max="180" value="90" id="s1" oninput="updateServo(this.value,1)">
   </div><br>
   <div>
@@ -173,8 +173,8 @@ void loop() {
 void jepitOtomatis() {
   const int lepas = 50;
   const int jepit = 70;
-  const int jeda = 200; // delay per gerakan (ms)
-  const int ulang = 10;  // berapa kali gerakan jepit-lepas
+  const int jeda = 500; // delay per gerakan (ms)
+  const int ulang = 5;  // berapa kali gerakan jepit-lepas
 
   for (int i = 0; i < ulang; i++) {
     servo4.write(jepit);
