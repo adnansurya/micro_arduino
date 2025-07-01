@@ -35,7 +35,7 @@ const char index_html[] PROGMEM = R"rawliteral(
   </style>
 </head>
 <body>
-  <h2>Kendali Lengan Robot OTA</h2>
+  <h2>Kendali Lengan Robot</h2>
   <div>
     <label>Bawah - (<span id="s1val">90</span>&#176;) - Atas</label><br>
     <input type="range" min="0" max="180" value="90" id="s1" oninput="updateServo(this.value,1)">
@@ -80,11 +80,11 @@ void setup() {
   pwm.setPWM(SERVO1_CH, 0, angleToPulse(90));
   pwm.setPWM(SERVO2_CH, 0, angleToPulse(90));
   pwm.setPWM(SERVO3_CH, 0, angleToPulse(110));
-  pwm.setPWM(SERVO4_CH, 0, angleToPulse(50));
+  pwm.setPWM(SERVO4_CH, 0, angleToPulse(70));
 
   // Jalankan sebagai Access Point
-  const char* ssid = "LenganRobotESP32";
-  const char* password = "12345678";
+  const char* ssid = "LenganRobot";
+  const char* password = "1sampai8";
   WiFi.softAP(ssid, password);
   Serial.print("AP IP address: ");
   Serial.println(WiFi.softAPIP());
