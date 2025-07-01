@@ -49,10 +49,12 @@ const char index_html[] PROGMEM = R"rawliteral(
     <input type="range" min="50" max="170" value="110" id="s3" oninput="updateServo(this.value,3)">
   </div><br>
   <div>
-    <label>Lepas - (<span id="s4val">50</span>&#176;) - Jepit</label><br>
-    <input type="range" min="30" max="70" value="50" id="s4" oninput="updateServo(this.value,4)">
+    <label>Lepas - (<span id="s4val">70</span>&#176;) - Jepit</label><br>
+    <input type="range" min="60" max="80" value="70" id="s4" oninput="updateServo(this.value,4)">
   </div><br>
   <button onclick="jepit()">JEPIT OTOMATIS</button>
+  <br><br>
+  <a href="/update"><button>OTA UPDATE</button></a>
 
   <script>
     function updateServo(val, id) {
@@ -117,11 +119,15 @@ void setup() {
 
   // OTA Update
   server.on("/update", HTTP_GET, [](AsyncWebServerRequest *request) {
-    request->send(200, "text/html",
-      "<form method='POST' action='/update' enctype='multipart/form-data'>"
-      "<input type='file' name='update'><input type='submit' value='Upload'>"
-      "</form>");
+  request->send(200, "text/html",
+    "<h2>OTA Firmware Update</h2>"
+    "<form method='POST' action='/update' enctype='multipart/form-data'>"
+    "<input type='file' name='update'><br><br>"
+    "<input type='submit' value='Upload'>"
+    "</form><br>"
+    "<a href='/'><button>Kembali ke Homepage</button></a>");
   });
+
 
   server.on("/update", HTTP_POST,
     [](AsyncWebServerRequest *request) {
@@ -154,10 +160,10 @@ void loop() {
 }
 
 void jepitOtomatis() {
-  const int lepas = 50;
-  const int jepit = 70;
+  const int lepas = 60;
+  const int jepit = 80;
   const int jeda = 500;
-  const int ulang = 5;
+  const int ulang = 3;
   for (int i = 0; i < ulang; i++) {
     pwm.setPWM(SERVO4_CH, 0, angleToPulse(jepit));
     delay(jeda);
