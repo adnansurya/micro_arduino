@@ -6,10 +6,14 @@
 #include <ArduinoJson.h>
 #include "secret.h"
 
-#define RELAY_SAKLAR 16  // Relay untuk saklar
-#define RELAY_LAMPU 17   // Relay untuk lampu
-
+#define RELAY_SAKLAR 16
+#define RELAY_LAMPU 17
 #define offsetHour 8
+
+WiFiClientSecure espClient;
+PubSubClient client(espClient);
+UniversalTelegramBot bot(BOT_TOKEN, espClient);
+
 
 // Konfigurasi WiFi
 const char* ssid = "Ini namanya";
@@ -22,25 +26,24 @@ const char* mqtt_user = "jeska";
 const char* mqtt_password = "Skripsi123";
 
 
-WiFiClientSecure espClient;
-PubSubClient client(espClient);
-UniversalTelegramBot bot(BOT_TOKEN, espClient);
-
+// Variabel status
 String onTime, offTime;
 int onMinute, onHour, offMinute, offHour;
 int hour, minute, second;
 bool jadwalOnState = false;
 bool jadwalOffState = false;
 bool lampuState = false;
+bool saklarState = false;  // Tambahan variabel status saklar
 bool lastLampuState = false;
 bool lastSaklarState = false;
-bool lastMqttConnected = false; // Untuk memantau status koneksi MQTT sebelumnya
+bool lastMqttConnected = false;
 
 time_t now;
 unsigned long lastMillis = 0;
 unsigned long refreshSecondMillis = 1;
 unsigned long lastTelegramCheck = 0;
 const unsigned long telegramCheckInterval = 1000;
+
 
 void setup_wifi() {
   Serial.println("Menghubungkan ke WiFi...");
@@ -57,18 +60,13 @@ void setup_wifi() {
 }
 
 void setDateTime() {
-  Serial.print("Menunggu sinkronisasi waktu NTP...");
   configTime(offsetHour * 3600, 0, "pool.ntp.org", "time.nist.gov");
-
   now = time(nullptr);
-
   while (now < offsetHour * 3600 * 2) {
     delay(100);
-    Serial.print(".");
     now = time(nullptr);
   }
-
-  Serial.println("\nWaktu telah disinkronkan.");
+  Serial.println("Waktu telah disinkronkan.");
 }
 
 void sendTelegramNotification(const String &message) {
@@ -89,9 +87,12 @@ void updateLampuState() {
   bool stateChanged = false;
   String changeSource = "";
 
+  // Update status saklar
+  saklarState = (digitalRead(RELAY_SAKLAR) == LOW);
+
+  // Logika kontrol lampu
   if (lampuState && jadwalOffState) {
     if (hour == offHour && minute == offMinute && second == 0) {
-      Serial.println("OFF by Jadwal");
       lampuState = false;
       stateChanged = true;
       changeSource = "Jadwal";
@@ -100,7 +101,6 @@ void updateLampuState() {
 
   if (!lampuState && jadwalOnState) {
     if (hour == onHour && minute == onMinute && second == 0) {
-      Serial.println("ON by Jadwal");
       lampuState = true;
       stateChanged = true;
       changeSource = "Jadwal";
@@ -109,37 +109,30 @@ void updateLampuState() {
 
   if (lampuState != lastLampuState) {
     stateChanged = true;
-    if (changeSource == "") {
-      changeSource = "Remote";
-    }
+    if (changeSource == "") changeSource = "Remote";
     lastLampuState = lampuState;
   }
 
+  // Kirim notifikasi jika ada perubahan
   if (stateChanged) {
-    String notification = "Status Lampu berubah:\n";
-    notification += "Status: " + String(lampuState ? "ON" : "OFF") + "\n";
-    notification += "Sumber: " + changeSource + "\n";
-    notification += "Waktu: " + String(hour) + ":" + String(minute) + ":" + String(second);
+    String notification = "🔄 Status Perangkat:\n";
+    notification += "💡 Lampu: " + String(lampuState ? "ON" : "OFF") + "\n";
+    notification += "🔌 Saklar: " + String(saklarState ? "ON" : "OFF") + "\n"; // Tambahan status saklar
+    notification += "📌 Sumber: " + changeSource + "\n";
+    notification += "⏰ Waktu: " + String(hour) + ":" + String(minute) + ":" + String(second);
     sendTelegramNotification(notification);
   }
 
-  if (lampuState) {
-    digitalWrite(RELAY_LAMPU, LOW);
-  } else {
-    digitalWrite(RELAY_LAMPU, HIGH);
-  }
+  digitalWrite(RELAY_LAMPU, lampuState ? LOW : HIGH);
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
   String messageTemp;
-
   for (int i = 0; i < length; i++) {
     messageTemp += (char)payload[i];
   }
 
-  Serial.print("Pesan diterima dari topik: ");
-  Serial.println(topic);
-  Serial.print("Pesan: ");
+  Serial.print("Pesan diterima: ");
   Serial.println(messageTemp);
 
   if (String(topic) == "saklar") {
@@ -147,73 +140,63 @@ void callback(char* topic, byte* payload, unsigned int length) {
     digitalWrite(RELAY_SAKLAR, newSaklarState ? LOW : HIGH);
     
     if (newSaklarState != lastSaklarState) {
-      String notification = "Status Saklar berubah:\n";
+      String notification = "🔌 Perubahan Status Saklar:\n";
       notification += "Status: " + String(newSaklarState ? "ON" : "OFF") + "\n";
-      notification += "Waktu: " + String(hour) + ":" + String(minute) + ":" + String(second);
+      notification += "⏰ Waktu: " + String(hour) + ":" + String(minute) + ":" + String(second);
       sendTelegramNotification(notification);
       lastSaklarState = newSaklarState;
     }
-    
-  } else if (String(topic) == "lampu") {
+  } 
+  else if (String(topic) == "lampu") {
     lampuState = (messageTemp == "lampu_on");
     updateLampuState();
-
-  } else if (String(topic) == "lampu/jadwal/on") {
-    onTime = messageTemp.c_str();
+  }
+  else if (String(topic) == "lampu/jadwal/on") {
+    onTime = messageTemp;
     onHour = onTime.substring(0, 2).toInt();
     onMinute = onTime.substring(3, 5).toInt();
     jadwalOnState = true;
-    updateLampuState();
-
-    String notification = "Jadwal ON diperbarui:\n";
+    
+    String notification = "⏰ Jadwal ON Diperbarui:\n";
     notification += "Waktu: " + onTime + "\n";
-    notification += "Waktu server: " + String(hour) + ":" + String(minute) + ":" + String(second);
+    notification += "Status Saklar: " + String(saklarState ? "ON" : "OFF") + "\n"; // Tambahan status saklar
     sendTelegramNotification(notification);
-
-  } else if (String(topic) == "lampu/jadwal/off") {
-    offTime = messageTemp.c_str();
+  }
+  else if (String(topic) == "lampu/jadwal/off") {
+    offTime = messageTemp;
     offHour = offTime.substring(0, 2).toInt();
     offMinute = offTime.substring(3, 5).toInt();
     jadwalOffState = true;
-    updateLampuState();
-
-    String notification = "Jadwal OFF diperbarui:\n";
+    
+    String notification = "⏰ Jadwal OFF Diperbarui:\n";
     notification += "Waktu: " + offTime + "\n";
-    notification += "Waktu server: " + String(hour) + ":" + String(minute) + ":" + String(second);
+    notification += "Status Saklar: " + String(saklarState ? "ON" : "OFF") + "\n"; // Tambahan status saklar
     sendTelegramNotification(notification);
   }
 }
 
 void reconnect() {
-  static bool connectionStatusChanged = false;
-  
   if (!client.connected()) {
-    Serial.print("Menghubungkan ke MQTT... ");
-    
     if (client.connect("ESP32_Client", mqtt_user, mqtt_password)) {
-      Serial.println("Berhasil terhubung!");
       client.subscribe("saklar");
       client.subscribe("lampu");
       client.subscribe("lampu/jadwal/on");
       client.subscribe("lampu/jadwal/off");
       
-      // Hanya kirim notifikasi jika sebelumnya tidak terhubung
       if (!lastMqttConnected) {
-        String notification = "✅ Terhubung ke MQTT broker\n";
-        notification += "Waktu: " + String(hour) + ":" + String(minute) + ":" + String(second);
+        String notification = "🌐 Koneksi MQTT:\n";
+        notification += "Status: Terhubung\n";
+        notification += "💡 Lampu: " + String(lampuState ? "ON" : "OFF") + "\n";
+        notification += "🔌 Saklar: " + String(saklarState ? "ON" : "OFF") + "\n";
         sendTelegramNotification(notification);
       }
       lastMqttConnected = true;
     } else {
-      Serial.print("Gagal, rc=");
-      Serial.print(client.state());
-      Serial.println(" Coba lagi dalam 5 detik...");
-      
-      // Hanya kirim notifikasi jika sebelumnya terhubung
       if (lastMqttConnected) {
-        String notification = "⚠️ Terputus dari MQTT broker\n";
-        notification += "Kode error: " + String(client.state()) + "\n";
-        notification += "Waktu: " + String(hour) + ":" + String(minute) + ":" + String(second);
+        String notification = "⚠️ Koneksi MQTT:\n";
+        notification += "Status: Terputus\n";
+        notification += "💡 Lampu: " + String(lampuState ? "ON" : "OFF") + "\n";
+        notification += "🔌 Saklar: " + String(saklarState ? "ON" : "OFF") + "\n";
         sendTelegramNotification(notification);
       }
       lastMqttConnected = false;
@@ -227,31 +210,26 @@ void checkTelegramMessages() {
     int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
 
     while (numNewMessages) {
-      Serial.println("Menerima pesan Telegram");
       for (int i = 0; i < numNewMessages; i++) {
-        String chat_id = String(bot.messages[i].chat_id);
-        if (chat_id != CHAT_ID) {
-          bot.sendMessage(chat_id, "Unauthorized user", "");
+        if (String(bot.messages[i].chat_id) != CHAT_ID) {
+          bot.sendMessage(bot.messages[i].chat_id, "Unauthorized user", "");
           continue;
         }
         
         String text = bot.messages[i].text;
-        String from_name = bot.messages[i].from_name;
-
         if (text == "/status") {
           String statusMessage = "📊 Status Sistem:\n";
           statusMessage += "💡 Lampu: " + String(lampuState ? "ON" : "OFF") + "\n";
-          statusMessage += "🔌 Saklar: " + String(digitalRead(RELAY_SAKLAR) == LOW ? "ON" : "OFF") + "\n";
-          statusMessage += "⏰ Jadwal ON: " + (jadwalOnState ? (onTime + " ✅") : "❌ Tidak aktif") + "\n";
-          statusMessage += "⏰ Jadwal OFF: " + (jadwalOffState ? (offTime + " ✅") : "❌ Tidak aktif") + "\n";
-          statusMessage += "📶 Status MQTT: " + String(client.connected() ? "✅ Terhubung" : "❌ Terputus") + "\n";
-          statusMessage += "🕒 Waktu Sistem: " + String(hour) + ":" + String(minute) + ":" + String(second);
-          bot.sendMessage(chat_id, statusMessage, "");
+          statusMessage += "🔌 Saklar: " + String(saklarState ? "ON" : "OFF") + "\n";
+          statusMessage += "⏰ Jadwal ON: " + (jadwalOnState ? onTime : "Tidak aktif") + "\n";
+          statusMessage += "⏰ Jadwal OFF: " + (jadwalOffState ? offTime : "Tidak aktif") + "\n";
+          statusMessage += "🌐 MQTT: " + String(client.connected() ? "Terhubung" : "Terputus") + "\n";
+          statusMessage += "🕒 Waktu: " + String(hour) + ":" + String(minute) + ":" + String(second);
+          bot.sendMessage(CHAT_ID, statusMessage, "");
         }
       }
       numNewMessages = bot.getUpdates(bot.last_message_received + 1);
     }
-
     lastTelegramCheck = millis();
   }
 }
@@ -260,6 +238,8 @@ void setup() {
   Serial.begin(115200);
   pinMode(RELAY_SAKLAR, OUTPUT);
   pinMode(RELAY_LAMPU, OUTPUT);
+  digitalWrite(RELAY_SAKLAR, HIGH);
+  digitalWrite(RELAY_LAMPU, HIGH);
 
   setup_wifi();
   setDateTime();
@@ -268,36 +248,23 @@ void setup() {
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(callback);
 
-  digitalWrite(RELAY_SAKLAR, HIGH);
-  digitalWrite(RELAY_LAMPU, HIGH);
-  lastSaklarState = false;
-  lastLampuState = false;
-  lastMqttConnected = false;
-
-  // Notifikasi startup hanya sekali
-  String notification = "⚡ Sistem telah dihidupkan\n";
-  notification += "📡 Alamat IP: " + WiFi.localIP().toString() + "\n";
-  notification += "🕒 Waktu: " + String(hour) + ":" + String(minute) + ":" + String(second);
+  // Notifikasi startup
+  String notification = "⚡ Sistem Aktif\n";
+  notification += "📡 IP: " + WiFi.localIP().toString() + "\n";
+  notification += "💡 Lampu: " + String(lampuState ? "ON" : "OFF") + "\n";
+  notification += "🔌 Saklar: " + String(saklarState ? "ON" : "OFF") + "\n";
   sendTelegramNotification(notification);
 }
 
 void loop() {
-  reconnect(); // Fungsi reconnect sekarang menangani notifikasi status koneksi
+  reconnect();
   client.loop();
-
   updateLampuState();
   checkTelegramMessages();
 
-  if (millis() > (refreshSecondMillis * 1000) + lastMillis) {
-    Serial.printf("Waktu:  %02d:%02d:%02d\n", hour, minute, second);
-
-    Serial.print("LampuState: ");
-    Serial.print(lampuState);
-    Serial.print("\tJadwalOn: ");
-    Serial.print(jadwalOnState);
-    Serial.print("\tJadwalOff: ");
-    Serial.println(jadwalOffState);
-
+  if (millis() - lastMillis > refreshSecondMillis * 1000) {
+    Serial.printf("Waktu: %02d:%02d:%02d\n", hour, minute, second);
+    Serial.printf("Lampu: %d | Saklar: %d\n", lampuState, saklarState);
     lastMillis = millis();
   }
 }
