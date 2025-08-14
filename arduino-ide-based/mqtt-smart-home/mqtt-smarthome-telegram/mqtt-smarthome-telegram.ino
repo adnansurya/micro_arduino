@@ -257,10 +257,12 @@ void setup() {
 }
 
 void loop() {
-  reconnect();
+   if (!client.connected()) {
+    reconnect();
+  }
   client.loop();
   updateLampuState();
-  checkTelegramMessages();
+  // checkTelegramMessages();
 
   if (millis() - lastMillis > refreshSecondMillis * 1000) {
     Serial.printf("Waktu: %02d:%02d:%02d\n", hour, minute, second);
