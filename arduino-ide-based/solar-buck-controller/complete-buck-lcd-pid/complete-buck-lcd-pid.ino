@@ -6,7 +6,7 @@
 // Inisialisasi LCD I2C
 LiquidCrystal_I2C lcd(0x27, 20, 4);  // Ganti alamat I2C sesuai modul Anda
 
-const float defaultSetPoint = 14.4; //set point volt default
+const float defaultSetPoint = 14.4;  //set point volt default
 
 // Pin untuk sensor
 const int currentSensor1 = A0;
@@ -34,8 +34,8 @@ const int CALIBRATION_SAMPLES = 500;
 const int NUM_SAMPLES = 10;  // Filter moving average
 
 // Variabel PID
-double setpointV2 = defaultSetPoint;     // Setpoint tegangan V2 
-double inputV2, outputServo;  // Input dari V2, output ke servo
+double setpointV2 = defaultSetPoint;  // Setpoint tegangan V2
+double inputV2, outputServo;          // Input dari V2, output ke servo
 
 // Tuning parameter PID (sesuaikan melalui eksperimen)
 double Kp = 2.0, Ki = 0.5, Kd = 0.1;
@@ -163,10 +163,10 @@ void loop() {
   current1 /= NUM_SAMPLES;
   current2 /= NUM_SAMPLES;
 
+  sampleIndex = (sampleIndex + 1) % NUM_SAMPLES;
+
   current1 = abs(current1);
   current2 = abs(current2);
-
-  sampleIndex = (sampleIndex + 1) % NUM_SAMPLES;
 
   // ==================== IMPLEMENTASI PID ====================
   inputV2 = voltage2;          // Feedback dari V2
