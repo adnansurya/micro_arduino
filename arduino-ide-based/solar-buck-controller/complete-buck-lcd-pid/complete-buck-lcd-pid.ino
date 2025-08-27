@@ -12,7 +12,6 @@ const int currentSensor2 = A1;
 const int voltageSensor1 = A2;
 const int voltageSensor2 = A3;
 const int servoPin = 9;  // Pin untuk servo
-
 // Konstanta untuk perhitungan
 const float VREF = 5.0;           // Tegangan referensi Arduino (5V)
 const int ADC_RESOLUTION = 1023;  // Resolusi ADC 10-bit
@@ -33,11 +32,11 @@ const int CALIBRATION_SAMPLES = 500;
 const int NUM_SAMPLES = 10;  // Filter moving average
 
 // Variabel PID
-double setpointV2 = 12.0;     // Setpoint tegangan V2 (default 12V)
+double setpointV2 = 14.4;     // Setpoint tegangan V2 (default 12V)
 double inputV2, outputServo;  // Input dari V2, output ke servo
 
 // Tuning parameter PID (sesuaikan melalui eksperimen)
-double Kp = 3.0, Ki = 0.5, Kd = 0.1;
+double Kp = 2.0, Ki = 0.5, Kd = 0.1;
 
 // Inisialisasi PID dan Servo
 PID myPID(&inputV2, &outputServo, &setpointV2, Kp, Ki, Kd, DIRECT);
