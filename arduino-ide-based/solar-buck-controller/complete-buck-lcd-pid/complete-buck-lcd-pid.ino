@@ -6,6 +6,8 @@
 // Inisialisasi LCD I2C
 LiquidCrystal_I2C lcd(0x27, 20, 4);  // Ganti alamat I2C sesuai modul Anda
 
+const float defaultSetPoint = 14.4; //set point volt default
+
 // Pin untuk sensor
 const int currentSensor1 = A0;
 const int currentSensor2 = A1;
@@ -32,7 +34,7 @@ const int CALIBRATION_SAMPLES = 500;
 const int NUM_SAMPLES = 10;  // Filter moving average
 
 // Variabel PID
-double setpointV2 = 14.4;     // Setpoint tegangan V2 (default 12V)
+double setpointV2 = defaultSetPoint;     // Setpoint tegangan V2 
 double inputV2, outputServo;  // Input dari V2, output ke servo
 
 // Tuning parameter PID (sesuaikan melalui eksperimen)
@@ -161,6 +163,9 @@ void loop() {
   current1 /= NUM_SAMPLES;
   current2 /= NUM_SAMPLES;
 
+  current1 = abs(current1);
+  current2 = abs(current2);
+
   sampleIndex = (sampleIndex + 1) % NUM_SAMPLES;
 
   // ==================== IMPLEMENTASI PID ====================
@@ -243,7 +248,7 @@ void checkSerialCommands() {
         setpointV2 -= 0.5;
         break;
       case 'r':  // Reset to default
-        setpointV2 = 12.0;
+        setpointV2 = defaultSetPoint;
         break;
       case 's':  // Show current values
         Serial.print("Current Setpoint: ");
