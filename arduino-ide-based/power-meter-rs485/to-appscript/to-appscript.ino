@@ -28,12 +28,22 @@ void setup() {
 
 void loop() {
   if (WiFi.status() == WL_CONNECTED) {
-    // Simulasi data sensor
-    float temperature = readTemperature();
-    float humidity = readHumidity();
+    // Baca data listrik 3 fasa
+    float voltageP, currentP, powerP;
+    float voltageQ, currentQ, powerQ;
+    float voltageR, currentR, powerR;
+    float totalPower;
+    
+    readElectricalData(voltageP, currentP, powerP, 
+                      voltageQ, currentQ, powerQ, 
+                      voltageR, currentR, powerR, 
+                      totalPower);
 
     // Kirim data ke Google Apps Script
-    sendToGoogleScript(temperature, humidity);
+    sendToGoogleScript(voltageP, currentP, powerP,
+                      voltageQ, currentQ, powerQ,
+                      voltageR, currentR, powerR,
+                      totalPower);
   } else {
     Serial.println("⚠️ Koneksi WiFi terputus, mencoba reconnect...");
     WiFi.begin(ssid, password);
@@ -42,7 +52,10 @@ void loop() {
   delay(30000); // kirim data setiap 30 detik
 }
 
-void sendToGoogleScript(float temperature, float humidity) {
+void sendToGoogleScript(float vP, float cP, float pP,
+                       float vQ, float cQ, float pQ,
+                       float vR, float cR, float pR,
+                       float totalP) {
   WiFiClientSecure client;
   client.setInsecure();  // disable sertifikat SSL (aman untuk testing)
 
@@ -56,10 +69,30 @@ void sendToGoogleScript(float temperature, float humidity) {
 
   http.addHeader("Content-Type", "application/json");
 
-  // Buat payload JSON
-  DynamicJsonDocument doc(256);
-  doc["temperature"] = temperature;
-  doc["humidity"] = humidity;
+  // Buat payload JSON dengan data listrik 3 fasa
+  DynamicJsonDocument doc(1024);
+  
+  // Data Fasa P
+  JsonObject phaseP = doc.createNestedObject("phaseP");
+  phaseP["voltage"] = vP;
+  phaseP["current"] = cP;
+  phaseP["power"] = pP;
+  
+  // Data Fasa Q
+  JsonObject phaseQ = doc.createNestedObject("phaseQ");
+  phaseQ["voltage"] = vQ;
+  phaseQ["current"] = cQ;
+  phaseQ["power"] = pQ;
+  
+  // Data Fasa R
+  JsonObject phaseR = doc.createNestedObject("phaseR");
+  phaseR["voltage"] = vR;
+  phaseR["current"] = cR;
+  phaseR["power"] = pR;
+  
+  // Total daya
+  doc["totalPower"] = totalP;
+  doc["timestamp"] = millis(); // Timestamp untuk tracking
 
   String payload;
   serializeJson(doc, payload);
@@ -81,13 +114,34 @@ void sendToGoogleScript(float temperature, float humidity) {
   http.end();
 }
 
-// Fungsi simulasi pembacaan sensor (ganti dengan sensor sebenarnya)
-float readTemperature() {
-  // Simulasi suhu antara 25.0 - 30.0
-  return 25.0 + (random(0, 100) / 20.0);
-}
-
-float readHumidity() {
-  // Simulasi kelembaban antara 60.0 - 70.0
-  return 60.0 + (random(0, 100) / 10.0);
+// Fungsi simulasi pembacaan data listrik 3 fasa
+void readElectricalData(float &vP, float &cP, float &pP,
+                       float &vQ, float &cQ, float &pQ,
+                       float &vR, float &cR, float &pR,
+                       float &totalP) {
+  
+  // Simulasi data Fasa P
+  vP = 220.0 + (random(-10, 10) / 10.0); // 220V ±1V
+  cP = 5.0 + (random(-20, 20) / 10.0);   // 5A ±2A
+  pP = vP * cP;                          // Daya = V × I
+  
+  // Simulasi data Fasa Q
+  vQ = 220.0 + (random(-10, 10) / 10.0);
+  cQ = 4.5 + (random(-20, 20) / 10.0);
+  pQ = vQ * cQ;
+  
+  // Simulasi data Fasa R
+  vR = 220.0 + (random(-10, 10) / 10.0);
+  cR = 5.5 + (random(-20, 20) / 10.0);
+  pR = vR * cR;
+  
+  // Total daya
+  totalP = pP + pQ + pR;
+  
+  // Tampilkan data di Serial Monitor untuk debugging
+  Serial.println("📊 Data Listrik 3 Fasa:");
+  Serial.printf("Fasa P: %.1fV, %.1fA, %.1fW\n", vP, cP, pP);
+  Serial.printf("Fasa Q: %.1fV, %.1fA, %.1fW\n", vQ, cQ, pQ);
+  Serial.printf("Fasa R: %.1fV, %.1fA, %.1fW\n", vR, cR, pR);
+  Serial.printf("Total Daya: %.1fW\n", totalP);
 }
