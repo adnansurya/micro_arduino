@@ -25,6 +25,7 @@ struct RegisterDefinition {
   const char* name;
   const char* dataType;  // "U16", "S16", "U32", "S32", "FLOAT", "U32LE", "S32LE", "FLOATLE"
   const char* jsonKey;   // Key untuk JSON
+  float scaleFactor;     // Faktor skala untuk pembagian data
 };
 
 // Struktur untuk menyimpan hasil dalam format float
@@ -36,29 +37,29 @@ struct ReadingResult {
 
 // Daftar register yang ingin dibaca
 RegisterDefinition registersToRead[] = {
-  { 0x0042, "R phase Voltage", "U32", "voltageR" },
-  { 0x0044, "S phase Voltage", "U32", "voltageS" },
-  { 0x0046, "T phase Voltage", "U32", "voltageT" },
-  { 0x0058, "R phase Current", "U32", "currentR" },
-  { 0x005A, "S phase Current", "U32", "currentS" },
-  { 0x005C, "T phase Current", "U32", "currentT" },
-  { 0x0064, "R phase Active Power", "S32", "powerR" },
-  { 0x0066, "S phase Active Power", "S32", "powerS" },
-  { 0x0068, "T phase Active Power", "S32", "powerT" },
-  { 0x006A, "Total Active Power", "S32", "totalActivePower" },
-  { 0x006C, "R phase Reactive Power", "S32", "reactivePowerR" },
-  { 0x006E, "S phase Reactive Power", "S32", "reactivePowerS" },
-  { 0x0070, "T phase Reactive Power", "S32", "reactivePowerT" },
-  { 0x0072, "Total Reactive Power", "S32", "totalReactivePower" },
-  { 0x0074, "R phase Apparent Power", "S32", "apparentPowerR" },
-  { 0x0076, "S phase Apparent Power", "S32", "apparentPowerS" },
-  { 0x0078, "T phase Apparent Power", "S32", "apparentPowerT" },
-  { 0x007A, "Total Apparent Power", "S32", "totalApparentPower" },
-  { 0x007C, "R phase Power Factor", "S16", "powerFactorR" },
-  { 0x007D, "S phase Power Factor", "S16", "powerFactorS" },
-  { 0x007E, "T phase Power Factor", "S16", "powerFactorT" },
-  { 0x007F, "Total Power Factor", "S16", "totalPowerFactor" },
-  { 0x0080, "Frequency", "U16", "frequency" },
+  { 0x0042, "R phase Voltage", "U32", "voltageR", 10000.0 },
+  { 0x0044, "S phase Voltage", "U32", "voltageS", 10000.0 },
+  { 0x0046, "T phase Voltage", "U32", "voltageT", 10000.0 },
+  { 0x0058, "R phase Current", "U32", "currentR", 10000.0 },
+  { 0x005A, "S phase Current", "U32", "currentS", 10000.0 },
+  { 0x005C, "T phase Current", "U32", "currentT", 10000.0 },
+  { 0x0064, "R phase Active Power", "S32", "powerR", 10000.0 },
+  { 0x0066, "S phase Active Power", "S32", "powerS", 10000.0 },
+  { 0x0068, "T phase Active Power", "S32", "powerT", 10000.0 },
+  { 0x006A, "Total Active Power", "S32", "totalActivePower", 10000.0 },
+  { 0x006C, "R phase Reactive Power", "S32", "reactivePowerR", 10000.0 },
+  { 0x006E, "S phase Reactive Power", "S32", "reactivePowerS", 10000.0 },
+  { 0x0070, "T phase Reactive Power", "S32", "reactivePowerT", 10000.0 },
+  { 0x0072, "Total Reactive Power", "S32", "totalReactivePower", 10000.0 },
+  { 0x0074, "R phase Apparent Power", "S32", "apparentPowerR", 10000.0 },
+  { 0x0076, "S phase Apparent Power", "S32", "apparentPowerS", 10000.0 },
+  { 0x0078, "T phase Apparent Power", "S32", "apparentPowerT", 10000.0 },
+  { 0x007A, "Total Apparent Power", "S32", "totalApparentPower", 10000.0 },
+  { 0x007C, "R phase Power Factor", "S16", "powerFactorR", 1000.0 },
+  { 0x007D, "S phase Power Factor", "S16", "powerFactorS", 1000.0 },
+  { 0x007E, "T phase Power Factor", "S16", "powerFactorT", 1000.0 },
+  { 0x007F, "Total Power Factor", "S16", "totalPowerFactor", 1000.0 },
+  { 0x0080, "Frequency", "U16", "frequency", 100.0 },
 };
 
 const int numRegisters = sizeof(registersToRead) / sizeof(registersToRead[0]);
@@ -95,7 +96,9 @@ void setup() {
     Serial.print(" (");
     Serial.print(registersToRead[i].name);
     Serial.print("): ");
-    Serial.println(registersToRead[i].dataType);
+    Serial.print(registersToRead[i].dataType);
+    Serial.print(", Skala: 1/");
+    Serial.println(registersToRead[i].scaleFactor);
   }
   Serial.println();
 }
@@ -124,11 +127,14 @@ void baca_registers_statistik() {
   for (int i = 0; i < numRegisters; i++) {
     // Dapatkan nilai sebagai float
     float floatValue = getFloatData(registersToRead[i].address, registersToRead[i].dataType);
+    
+    // Terapkan faktor skala
+    float scaledValue = floatValue / registersToRead[i].scaleFactor;
 
     // Simpan ke array readingResults
     readingResults[i].name = registersToRead[i].name;
     readingResults[i].jsonKey = registersToRead[i].jsonKey;
-    readingResults[i].value = floatValue;
+    readingResults[i].value = scaledValue;
 
     // Tampilkan hasil
     Serial.print(registersToRead[i].name);
@@ -145,8 +151,12 @@ void baca_registers_statistik() {
       Serial.print(endAddr, HEX);
     }
     Serial.print("): ");
-
-    Serial.println(floatValue, 6);  // Tampilkan dengan 6 digit desimal
+    Serial.print(floatValue); // Nilai asli dari modbus
+    Serial.print(" -> ");
+    Serial.print(scaledValue, 6); // Nilai setelah diskala
+    Serial.print(" (Skala 1/");
+    Serial.print(registersToRead[i].scaleFactor);
+    Serial.println(")");
   }
 
   // Tampilkan isi array readingResults
@@ -180,7 +190,7 @@ void kirim_data_ke_appscript() {
   // Tambahkan timestamp
   doc["timestamp"] = millis();
   
-  // Tambahkan semua data dari readingResults
+  // Tambahkan semua data dari readingResults (sudah diskala)
   for (int i = 0; i < numRegisters; i++) {
     doc[readingResults[i].jsonKey] = readingResults[i].value;
   }
