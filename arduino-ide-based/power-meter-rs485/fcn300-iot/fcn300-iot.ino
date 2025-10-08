@@ -4,14 +4,24 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <WiFiClientSecure.h>
+#include <RTClib.h>
+#include <SD.h>
+#include <SPI.h>
+#include <WiFiManager.h>
 
 // Konfigurasi Hardware Serial untuk RS485
 HardwareSerial modbusSerial(2);  // Gunakan UART2 ESP32
 ModbusMaster node;
 
-// Konfigurasi WiFi
-const char* ssid = "DAMAI KEMAKMURAN";
-const char* password = "damai321";
+// Konfigurasi RTC DS3231
+RTC_DS3231 rtc;
+
+// Konfigurasi SD Card
+const int chipSelect = 5;  // GPIO5 untuk CS SD card
+File dataFile;
+
+// Konfigurasi WiFi Manager
+WiFiManager wm;
 
 // URL Web App
 const String GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw5HivqIgz4phUOFdWfPoQDfc_3VPm3T9pqjfDVJxdEw1ODb4Po_AO-k49P9BrhJah4nA/exec";
@@ -23,9 +33,9 @@ static uint8_t modbusAddr = 1;
 struct RegisterDefinition {
   uint16_t address;
   const char* name;
-  const char* dataType;  // "U16", "S16", "U32", "S32", "FLOAT", "U32LE", "S32LE", "FLOATLE"
-  const char* jsonKey;   // Key untuk JSON
-  float scaleFactor;     // Faktor skala untuk pembagian data
+  const char* dataType;
+  const char* jsonKey;
+  float scaleFactor;
 };
 
 // Struktur untuk menyimpan hasil dalam format float
@@ -67,21 +77,48 @@ const int numRegisters = sizeof(registersToRead) / sizeof(registersToRead[0]);
 // Array untuk menyimpan hasil pembacaan dalam format float
 ReadingResult readingResults[numRegisters];
 
+// Variabel untuk manajemen data offline
+bool sdCardAvailable = false;
+bool rtcAvailable = false;
+const String dataFileName = "/data_log.csv";
+const String backupFileName = "/backup_data.csv";
+
+// Variabel untuk WiFi Manager
+bool shouldSaveConfig = false;
+unsigned long lastReconnectAttempt = 0;
+const unsigned long RECONNECT_INTERVAL = 30000; // 30 detik
+
 void setup() {
   modbusSerial.begin(9600, SERIAL_8N1, 16, 17);
   Serial.begin(115200);
 
-  // Hubungkan ke WiFi
-  WiFi.begin(ssid, password);
-  Serial.print("Menghubungkan ke WiFi");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    Serial.print(".");
+  // Inisialisasi RTC
+  if (rtc.begin()) {
+    rtcAvailable = true;
+    Serial.println("✅ RTC DS3231 terhubung");
+    
+    // Jika RTC kehilangan power, atur waktu ke waktu kompilasi
+    if (rtc.lostPower()) {
+      Serial.println("⚠️ RTC kehilangan power, mengatur waktu ke waktu kompilasi");
+      rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+    }
+  } else {
+    Serial.println("❌ Gagal terhubung ke RTC DS3231");
   }
-  Serial.println();
-  Serial.println("✅ Terhubung ke WiFi");
-  Serial.print("Alamat IP: ");
-  Serial.println(WiFi.localIP());
+
+  // Inisialisasi SD Card
+  if (SD.begin(chipSelect)) {
+    sdCardAvailable = true;
+    Serial.println("✅ SD Card terhubung");
+    
+    // Buat file header CSV jika belum ada
+    createCSVHeader();
+  } else {
+    Serial.println("❌ Gagal terhubung ke SD Card");
+  }
+
+  // Konfigurasi WiFi Manager
+  setupWiFiManager();
 
   Serial.println("Fort FCN300 Static Register Reader");
   Serial.println("==================================");
@@ -104,16 +141,64 @@ void setup() {
 }
 
 void loop() {
+  // Cek koneksi WiFi dan reconnect jika perlu
+  if (WiFi.status() != WL_CONNECTED) {
+    unsigned long currentMillis = millis();
+    if (currentMillis - lastReconnectAttempt > RECONNECT_INTERVAL) {
+      lastReconnectAttempt = currentMillis;
+      Serial.println("⚠️ Koneksi WiFi terputus, mencoba reconnect...");
+      WiFi.reconnect();
+    }
+  }
+
+  baca_registers_statistik();
+  
   if (WiFi.status() == WL_CONNECTED) {
-    baca_registers_statistik();
+    // Coba kirim data offline terlebih dahulu jika ada
+    sendOfflineData();
+    // Kirim data baru
     kirim_data_ke_appscript();
   } else {
-    Serial.println("⚠️ Koneksi WiFi terputus, mencoba reconnect...");
-    WiFi.begin(ssid, password);
-    delay(5000); // Tunggu 5 detik sebelum mencoba lagi
+    Serial.println("⚠️ Koneksi WiFi terputus, menyimpan data ke SD Card...");
+    simpan_data_ke_sd(); // Simpan data ke SD card
   }
 
   delay(30000); // Tunggu 30 detik sebelum membaca lagi
+}
+
+void setupWiFiManager() {
+  // Set callback untuk save config
+  wm.setSaveConfigCallback(saveConfigCallback);
+  
+  // Set timeout untuk configuration portal
+  wm.setConfigPortalTimeout(180); // 3 menit
+  
+  // Custom parameter jika diperlukan (contoh)
+  // WiFiManagerParameter custom_text("text", "Enter text here", "default", 40);
+  // wm.addParameter(&custom_text);
+
+  Serial.println("Menyiapkan WiFi Manager...");
+  
+  // Coba koneksi otomatis dengan kredensial yang tersimpan
+  // Jika gagal, buka configuration portal
+  if (!wm.autoConnect("ESP32-DataLogger", "password123")) {
+    Serial.println("❌ Gagal terhubung dan timeout configuration portal");
+    delay(3000);
+    ESP.restart();
+  } else {
+    Serial.println("✅ Terhubung ke WiFi!");
+    Serial.print("SSID: ");
+    Serial.println(WiFi.SSID());
+    Serial.print("IP Address: ");
+    Serial.println(WiFi.localIP());
+    Serial.print("RSSI: ");
+    Serial.println(WiFi.RSSI());
+  }
+}
+
+void saveConfigCallback() {
+  Serial.println("Konfigurasi WiFi disimpan");
+  shouldSaveConfig = true;
 }
 
 void baca_registers_statistik() {
@@ -141,56 +226,50 @@ void baca_registers_statistik() {
     Serial.print(" (Reg 0x");
     Serial.print(registersToRead[i].address, HEX);
 
-    // Tentukan jumlah register yang perlu dibaca berdasarkan tipe data
     int numRegsToRead = 1;
     if (strcmp(registersToRead[i].dataType, "U32") == 0 || strcmp(registersToRead[i].dataType, "S32") == 0 || strcmp(registersToRead[i].dataType, "FLOAT") == 0 || strcmp(registersToRead[i].dataType, "U32LE") == 0 || strcmp(registersToRead[i].dataType, "S32LE") == 0 || strcmp(registersToRead[i].dataType, "FLOATLE") == 0) {
       numRegsToRead = 2;
-
       Serial.print("-0x");
       uint16_t endAddr = registersToRead[i].address + 1;
       Serial.print(endAddr, HEX);
     }
     Serial.print("): ");
-    Serial.print(floatValue); // Nilai asli dari modbus
+    Serial.print(floatValue);
     Serial.print(" -> ");
-    Serial.print(scaledValue, 6); // Nilai setelah diskala
+    Serial.print(scaledValue, 6);
     Serial.print(" (Skala 1/");
     Serial.print(registersToRead[i].scaleFactor);
     Serial.println(")");
-  }
-
-  // Tampilkan isi array readingResults
-  Serial.println("\nHasil yang disimpan dalam array:");
-  for (int i = 0; i < numRegisters; i++) {
-    Serial.print(readingResults[i].name);
-    Serial.print(" (");
-    Serial.print(readingResults[i].jsonKey);
-    Serial.print("): ");
-    Serial.println(readingResults[i].value, 6);
   }
 }
 
 void kirim_data_ke_appscript() {
   WiFiClientSecure client;
-  client.setInsecure();  // disable sertifikat SSL (aman untuk testing)
+  client.setInsecure();
 
   HTTPClient http;
 
-  // Mulai koneksi HTTPS
   if (!http.begin(client, GOOGLE_SCRIPT_URL)) {
     Serial.println("❌ Gagal memulai koneksi HTTPS");
+    simpan_data_ke_sd(); // Simpan ke SD jika gagal kirim
     return;
   }
 
   http.addHeader("Content-Type", "application/json");
 
-  // Buat payload JSON dengan data dari modbus
-  DynamicJsonDocument doc(2048);  // Ukuran lebih besar untuk menampung semua data
+  // Buat payload JSON
+  DynamicJsonDocument doc(2048);
   
-  // Tambahkan timestamp
-  doc["timestamp"] = millis();
+  // Tambahkan timestamp dari RTC jika available
+  if (rtcAvailable) {
+    DateTime now = rtc.now();
+    doc["timestamp"] = now.unixtime();
+    doc["datetime"] = getDateTimeString(now);
+  } else {
+    doc["timestamp"] = millis();
+  }
   
-  // Tambahkan semua data dari readingResults (sudah diskala)
+  // Tambahkan semua data
   for (int i = 0; i < numRegisters; i++) {
     doc[readingResults[i].jsonKey] = readingResults[i].value;
   }
@@ -201,23 +280,200 @@ void kirim_data_ke_appscript() {
   Serial.print("📤 Mengirim data: ");
   Serial.println(payload);
 
-  // Kirim request POST
   int httpCode = http.POST(payload);
 
   if (httpCode > 0) {
     Serial.printf("✅ Kode respons HTTP: %d\n", httpCode);
     String response = http.getString();
     Serial.println("📥 Respons: " + response);
+    
+    // Simpan data ke CSV sebagai backup meskipun berhasil dikirim
+    simpan_data_ke_csv();
   } else {
     Serial.printf("❌ Error pada request: %s\n", http.errorToString(httpCode).c_str());
+    simpan_data_ke_sd(); // Simpan ke SD jika gagal kirim
   }
 
   http.end();
 }
 
-// Fungsi untuk mendapatkan data sebagai float berdasarkan address dan tipe data
+void simpan_data_ke_sd() {
+  if (!sdCardAvailable) {
+    Serial.println("❌ SD Card tidak tersedia untuk penyimpanan offline");
+    return;
+  }
+
+  File file = SD.open(backupFileName, FILE_APPEND);
+  if (!file) {
+    Serial.println("❌ Gagal membuka file backup");
+    return;
+  }
+
+  // Buat string data dalam format JSON untuk penyimpanan offline
+  String dataLine = "{";
+  
+  // Timestamp
+  if (rtcAvailable) {
+    DateTime now = rtc.now();
+    dataLine += "\"timestamp\":" + String(now.unixtime()) + ",";
+    dataLine += "\"datetime\":\"" + getDateTimeString(now) + "\",";
+  } else {
+    dataLine += "\"timestamp\":" + String(millis()) + ",";
+  }
+  
+  // Data modbus
+  for (int i = 0; i < numRegisters; i++) {
+    dataLine += "\"" + String(readingResults[i].jsonKey) + "\":" + String(readingResults[i].value, 6);
+    if (i < numRegisters - 1) dataLine += ",";
+  }
+  dataLine += "}\n";
+
+  file.print(dataLine);
+  file.close();
+  
+  Serial.println("💾 Data disimpan ke SD Card (backup)");
+}
+
+void simpan_data_ke_csv() {
+  if (!sdCardAvailable) return;
+
+  File file = SD.open(dataFileName, FILE_APPEND);
+  if (!file) return;
+
+  // Timestamp
+  if (rtcAvailable) {
+    DateTime now = rtc.now();
+    file.print(getDateTimeString(now));
+  } else {
+    file.print(millis());
+  }
+  file.print(",");
+
+  // Data modbus
+  for (int i = 0; i < numRegisters; i++) {
+    file.print(readingResults[i].value, 6);
+    if (i < numRegisters - 1) file.print(",");
+  }
+  file.println();
+  file.close();
+  
+  Serial.println("💾 Data disimpan ke CSV");
+}
+
+void createCSVHeader() {
+  if (!sdCardAvailable) return;
+
+  // Cek apakah file sudah ada
+  if (!SD.exists(dataFileName)) {
+    File file = SD.open(dataFileName, FILE_WRITE);
+    if (file) {
+      // Tulis header
+      file.print("Timestamp,");
+      for (int i = 0; i < numRegisters; i++) {
+        file.print(readingResults[i].jsonKey);
+        if (i < numRegisters - 1) file.print(",");
+      }
+      file.println();
+      file.close();
+      Serial.println("✅ File CSV dibuat dengan header");
+    }
+  }
+
+  // Buat file backup jika belum ada
+  if (!SD.exists(backupFileName)) {
+    File file = SD.open(backupFileName, FILE_WRITE);
+    if (file) {
+      file.println("Backup Data - JSON Format");
+      file.close();
+    }
+  }
+}
+
+void sendOfflineData() {
+  if (!sdCardAvailable || !SD.exists(backupFileName)) return;
+
+  File file = SD.open(backupFileName);
+  if (!file) return;
+
+  Serial.println("🔄 Mengirim data offline yang tersimpan...");
+
+  WiFiClientSecure client;
+  client.setInsecure();
+  HTTPClient http;
+
+  String line;
+  int successCount = 0;
+  int failCount = 0;
+
+  while (file.available()) {
+    line = file.readStringUntil('\n');
+    line.trim();
+    
+    if (line.length() == 0 || line.startsWith("Backup")) continue;
+
+    if (!http.begin(client, GOOGLE_SCRIPT_URL)) {
+      Serial.println("❌ Gagal memulai koneksi HTTPS untuk data offline");
+      break;
+    }
+
+    http.addHeader("Content-Type", "application/json");
+    int httpCode = http.POST(line);
+
+    if (httpCode > 0) {
+      Serial.printf("✅ Data offline terkirim: HTTP %d\n", httpCode);
+      successCount++;
+    } else {
+      Serial.printf("❌ Gagal kirim data offline: %s\n", http.errorToString(httpCode).c_str());
+      failCount++;
+      break; // Stop jika gagal, mungkin jaringan down lagi
+    }
+
+    http.end();
+    delay(100); // Delay kecil antara pengiriman
+  }
+
+  file.close();
+
+  // Hapus file backup jika semua data berhasil dikirim
+  if (failCount == 0 && successCount > 0) {
+    SD.remove(backupFileName);
+    Serial.println("✅ Semua data offline berhasil dikirim, file backup dihapus");
+  }
+
+  Serial.printf("📊 Statistik data offline: %d berhasil, %d gagal\n", successCount, failCount);
+}
+
+String getDateTimeString(DateTime dt) {
+  char buffer[20];
+  sprintf(buffer, "%04d-%02d-%02d %02d:%02d:%02d", 
+          dt.year(), dt.month(), dt.day(), 
+          dt.hour(), dt.minute(), dt.second());
+  return String(buffer);
+}
+
+// Fungsi untuk reset WiFi configuration (bisa dipanggil via serial)
+void resetWiFiConfig() {
+  Serial.println("🗑️ Menghapus konfigurasi WiFi...");
+  wm.resetSettings();
+  delay(1000);
+  Serial.println("🔄 Restarting ESP32...");
+  ESP.restart();
+}
+
+// Fungsi untuk membuka configuration portal manual
+void startConfigPortal() {
+  Serial.println("🚀 Membuka Configuration Portal...");
+  wm.setConfigPortalTimeout(180);
+  
+  if (!wm.startConfigPortal("ESP32-DataLogger", "password123")) {
+    Serial.println("❌ Gagal connect dan timeout");
+  } else {
+    Serial.println("✅ Terhubung ke WiFi baru!");
+  }
+}
+
+// Fungsi-fungsi modbus yang sudah ada (getFloatData, getRawData, printModbusError, convertToFloat)
 float getFloatData(uint16_t address, const char* dataType) {
-  // Tentukan jumlah register yang perlu dibaca berdasarkan tipe data
   int numRegsToRead = 1;
   if (strcmp(dataType, "U32") == 0 || strcmp(dataType, "S32") == 0 || strcmp(dataType, "FLOAT") == 0 || strcmp(dataType, "U32LE") == 0 || strcmp(dataType, "S32LE") == 0 || strcmp(dataType, "FLOATLE") == 0) {
     numRegsToRead = 2;
@@ -234,7 +490,6 @@ float getFloatData(uint16_t address, const char* dataType) {
     return NAN;
   }
 
-  // Interpretasi berdasarkan tipe data dan konversi ke float
   if (strcmp(dataType, "U16") == 0) {
     return (float)node.getResponseBuffer(0);
   } else if (strcmp(dataType, "S16") == 0) {
@@ -262,7 +517,6 @@ float getFloatData(uint16_t address, const char* dataType) {
   return NAN;
 }
 
-// Fungsi untuk mendapatkan data mentah (raw values) sebagai array
 bool getRawData(uint16_t address, int numRegisters, uint16_t* buffer) {
   node.begin(modbusAddr, modbusSerial);
   uint8_t result = node.readInputRegisters(address, numRegisters);
