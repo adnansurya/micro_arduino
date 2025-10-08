@@ -26,6 +26,9 @@ WiFiManager wm;
 // URL Web App
 const String GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw5HivqIgz4phUOFdWfPoQDfc_3VPm3T9pqjfDVJxdEw1ODb4Po_AO-k49P9BrhJah4nA/exec";
 
+// API untuk mendapatkan waktu dari internet
+const String TIME_API_URL = "http://worldtimeapi.org/api/timezone/Asia/Makassar";
+
 // Alamat modbus device
 static uint8_t modbusAddr = 1;
 
@@ -88,19 +91,39 @@ bool shouldSaveConfig = false;
 unsigned long lastReconnectAttempt = 0;
 const unsigned long RECONNECT_INTERVAL = 30000; // 30 detik
 
+// Variabel untuk time sync
+bool timeSynced = false;
+unsigned long lastTimeSync = 0;
+const unsigned long TIME_SYNC_INTERVAL = 24 * 60 * 60 * 1000; // Sync setiap 24 jam
+
+// Versi firmware
+const String FIRMWARE_VERSION = "1.4.0-TIME-SYNC";
+
 void setup() {
   modbusSerial.begin(9600, SERIAL_8N1, 16, 17);
   Serial.begin(115200);
+
+  Serial.println();
+  Serial.println("==================================");
+  Serial.println("   ESP32 Data Logger dengan Time Sync");
+  Serial.print("   Firmware Version: ");
+  Serial.println(FIRMWARE_VERSION);
+  Serial.println("==================================");
 
   // Inisialisasi RTC
   if (rtc.begin()) {
     rtcAvailable = true;
     Serial.println("✅ RTC DS3231 terhubung");
     
-    // Jika RTC kehilangan power, atur waktu ke waktu kompilasi
+    // Cek jika RTC kehilangan power
     if (rtc.lostPower()) {
-      Serial.println("⚠️ RTC kehilangan power, mengatur waktu ke waktu kompilasi");
-      rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+      Serial.println("⚠️ RTC kehilangan power, perlu sync waktu dari internet");
+    } else {
+      Serial.println("✅ RTC waktu tersimpan");
+      // Tampilkan waktu RTC saat ini
+      DateTime now = rtc.now();
+      Serial.print("🕒 Waktu RTC saat ini: ");
+      Serial.println(getDateTimeString(now));
     }
   } else {
     Serial.println("❌ Gagal terhubung ke RTC DS3231");
@@ -110,8 +133,6 @@ void setup() {
   if (SD.begin(chipSelect)) {
     sdCardAvailable = true;
     Serial.println("✅ SD Card terhubung");
-    
-    // Buat file header CSV jika belum ada
     createCSVHeader();
   } else {
     Serial.println("❌ Gagal terhubung ke SD Card");
@@ -120,8 +141,12 @@ void setup() {
   // Konfigurasi WiFi Manager
   setupWiFiManager();
 
+  // Sync waktu dari internet setelah WiFi terkoneksi
+  if (WiFi.status() == WL_CONNECTED && rtcAvailable) {
+    syncTimeFromAPI();
+  }
+
   Serial.println("Fort FCN300 Static Register Reader");
-  Serial.println("==================================");
   Serial.println("Membaca register yang telah ditentukan (HEX)");
   Serial.println();
 
@@ -138,6 +163,9 @@ void setup() {
     Serial.println(registersToRead[i].scaleFactor);
   }
   Serial.println();
+
+  // Tampilkan info
+  printSystemInfo();
 }
 
 void loop() {
@@ -151,36 +179,178 @@ void loop() {
     }
   }
 
+  // Sync waktu periodic setiap 24 jam
+  if (WiFi.status() == WL_CONNECTED && rtcAvailable && !timeSynced) {
+    unsigned long currentMillis = millis();
+    if (currentMillis - lastTimeSync > TIME_SYNC_INTERVAL) {
+      syncTimeFromAPI();
+    }
+  }
+
   baca_registers_statistik();
   
   if (WiFi.status() == WL_CONNECTED) {
-    // Coba kirim data offline terlebih dahulu jika ada
     sendOfflineData();
-    // Kirim data baru
     kirim_data_ke_appscript();
   } else {
     Serial.println("⚠️ Koneksi WiFi terputus, menyimpan data ke SD Card...");
-    simpan_data_ke_sd(); // Simpan data ke SD card
+    simpan_data_ke_sd();
   }
 
-  delay(30000); // Tunggu 30 detik sebelum membaca lagi
+  delay(30000);
+}
+
+// Fungsi untuk sync waktu dari API internet
+bool syncTimeFromAPI() {
+  if (!rtcAvailable) {
+    Serial.println("❌ RTC tidak tersedia untuk sync waktu");
+    return false;
+  }
+
+  Serial.println("🕒 Mensinkronisasi waktu dari internet...");
+
+  HTTPClient http;
+  WiFiClient client;
+
+  // Gunakan HTTP (bukan HTTPS) untuk kemudahan
+  if (!http.begin(client, TIME_API_URL)) {
+    Serial.println("❌ Gagal terhubung ke time API");
+    return false;
+  }
+
+  int httpCode = http.GET();
+  
+  if (httpCode == HTTP_CODE_OK) {
+    String payload = http.getString();
+    Serial.println("✅ Berhasil mendapatkan waktu dari API");
+    
+    // Parse JSON response
+    DynamicJsonDocument doc(1024);
+    DeserializationError error = deserializeJson(doc, payload);
+    
+    if (error) {
+      Serial.print("❌ Error parsing JSON: ");
+      Serial.println(error.c_str());
+      http.end();
+      return false;
+    }
+
+    // Extract waktu dari JSON response
+    // Format dari worldtimeapi.org: "2024-01-15T14:30:25.123456+07:00"
+    String datetimeStr = doc["datetime"].as<String>();
+    unsigned long unixtime = doc["unixtime"].as<unsigned long>();
+    
+    Serial.print("📅 Waktu dari API: ");
+    Serial.println(datetimeStr);
+    Serial.print("⏱️ Unix time: ");
+    Serial.println(unixtime);
+
+    // Konversi unixtime ke DateTime
+    time_t rawtime = unixtime;
+    struct tm *timeinfo = localtime(&rawtime);
+
+    // Buat DateTime object
+    DateTime apiTime(
+      timeinfo->tm_year + 1900, // tahun sejak 1900
+      timeinfo->tm_mon + 1,     // bulan 0-11 → 1-12
+      timeinfo->tm_mday,        // hari
+      timeinfo->tm_hour,        // jam
+      timeinfo->tm_min,         // menit
+      timeinfo->tm_sec          // detik
+    );
+
+    // Set RTC dengan waktu dari API
+    rtc.adjust(apiTime);
+    
+    timeSynced = true;
+    lastTimeSync = millis();
+    
+    Serial.print("✅ Waktu RTC disinkronisasi: ");
+    Serial.println(getDateTimeString(apiTime));
+    
+    http.end();
+    return true;
+    
+  } else {
+    Serial.printf("❌ Gagal mendapatkan waktu, HTTP code: %d\n", httpCode);
+    // Coba API alternatif
+    return syncTimeFromBackupAPI();
+  }
+  
+  http.end();
+  return false;
+}
+
+// Fungsi backup menggunakan API alternatif
+bool syncTimeFromBackupAPI() {
+  Serial.println("🔄 Mencoba API waktu alternatif...");
+  
+  const String backupAPI = "http://worldtimeapi.org/api/ip"; // API alternatif
+  
+  HTTPClient http;
+  WiFiClient client;
+
+  if (!http.begin(client, backupAPI)) {
+    Serial.println("❌ Gagal terhubung ke backup time API");
+    return false;
+  }
+
+  int httpCode = http.GET();
+  
+  if (httpCode == HTTP_CODE_OK) {
+    String payload = http.getString();
+    
+    DynamicJsonDocument doc(1024);
+    DeserializationError error = deserializeJson(doc, payload);
+    
+    if (error) {
+      Serial.print("❌ Error parsing JSON backup API: ");
+      Serial.println(error.c_str());
+      http.end();
+      return false;
+    }
+
+    String datetimeStr = doc["datetime"].as<String>();
+    unsigned long unixtime = doc["unixtime"].as<unsigned long>();
+    
+    Serial.print("📅 Waktu dari backup API: ");
+    Serial.println(datetimeStr);
+
+    time_t rawtime = unixtime;
+    struct tm *timeinfo = localtime(&rawtime);
+
+    DateTime apiTime(
+      timeinfo->tm_year + 1900,
+      timeinfo->tm_mon + 1,
+      timeinfo->tm_mday,
+      timeinfo->tm_hour,
+      timeinfo->tm_min,
+      timeinfo->tm_sec
+    );
+
+    rtc.adjust(apiTime);
+    
+    timeSynced = true;
+    lastTimeSync = millis();
+    
+    Serial.print("✅ Waktu RTC disinkronisasi dari backup API: ");
+    Serial.println(getDateTimeString(apiTime));
+    
+    http.end();
+    return true;
+  }
+  
+  http.end();
+  return false;
 }
 
 void setupWiFiManager() {
-  // Set callback untuk save config
   wm.setSaveConfigCallback(saveConfigCallback);
-  
-  // Set timeout untuk configuration portal
-  wm.setConfigPortalTimeout(180); // 3 menit
-  
-  // Custom parameter jika diperlukan (contoh)
-  // WiFiManagerParameter custom_text("text", "Enter text here", "default", 40);
-  // wm.addParameter(&custom_text);
+  wm.setConfigPortalTimeout(180);
+  wm.setHostname("esp32-datalogger");
 
   Serial.println("Menyiapkan WiFi Manager...");
   
-  // Coba koneksi otomatis dengan kredensial yang tersimpan
-  // Jika gagal, buka configuration portal
   if (!wm.autoConnect("ESP32-DataLogger", "password123")) {
     Serial.println("❌ Gagal terhubung dan timeout configuration portal");
     delay(3000);
@@ -193,6 +363,28 @@ void setupWiFiManager() {
     Serial.println(WiFi.localIP());
     Serial.print("RSSI: ");
     Serial.println(WiFi.RSSI());
+    Serial.print("Hostname: ");
+    Serial.println(WiFi.getHostname());
+  }
+}
+
+void printSystemInfo() {
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println();
+    Serial.println("=== SYSTEM INFORMATION ===");
+    Serial.print("🕒 RTC Status: ");
+    Serial.println(rtcAvailable ? "✅ Connected" : "❌ Disconnected");
+    if (rtcAvailable) {
+      DateTime now = rtc.now();
+      Serial.print("📅 RTC Time: ");
+      Serial.println(getDateTimeString(now));
+      Serial.print("🔁 Time Sync: ");
+      Serial.println(timeSynced ? "✅ Synced" : "❌ Not Synced");
+    }
+    Serial.print("💾 SD Card: ");
+    Serial.println(sdCardAvailable ? "✅ Connected" : "❌ Disconnected");
+    Serial.println("==================================");
+    Serial.println();
   }
 }
 
