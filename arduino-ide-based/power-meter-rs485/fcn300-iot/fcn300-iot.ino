@@ -83,13 +83,18 @@ ReadingResult readingResults[numRegisters];
 // Variabel untuk manajemen data offline
 bool sdCardAvailable = false;
 bool rtcAvailable = false;
+bool wifiConnected = false;
+bool offlineMode = false;
+
 const String dataFileName = "/data_log.csv";
 const String backupFileName = "/backup_data.csv";
+const String statusFileName = "/system_status.txt";
 
 // Variabel untuk WiFi Manager
 bool shouldSaveConfig = false;
 unsigned long lastReconnectAttempt = 0;
 const unsigned long RECONNECT_INTERVAL = 30000; // 30 detik
+const unsigned long OFFLINE_MODE_TIMEOUT = 60000; // 1 menit timeout untuk offline mode
 
 // Variabel untuk time sync
 bool timeSynced = false;
@@ -97,7 +102,7 @@ unsigned long lastTimeSync = 0;
 const unsigned long TIME_SYNC_INTERVAL = 24 * 60 * 60 * 1000; // Sync setiap 24 jam
 
 // Versi firmware
-const String FIRMWARE_VERSION = "1.4.0-TIME-SYNC";
+const String FIRMWARE_VERSION = "1.4.0-OFFLINE";
 
 void setup() {
   modbusSerial.begin(9600, SERIAL_8N1, 16, 17);
@@ -105,7 +110,7 @@ void setup() {
 
   Serial.println();
   Serial.println("==================================");
-  Serial.println("   ESP32 Data Logger dengan Time Sync");
+  Serial.println("   ESP32 Data Logger - OFFLINE MODE");
   Serial.print("   Firmware Version: ");
   Serial.println(FIRMWARE_VERSION);
   Serial.println("==================================");
@@ -134,16 +139,28 @@ void setup() {
     sdCardAvailable = true;
     Serial.println("✅ SD Card terhubung");
     createCSVHeader();
+    saveSystemStatus("BOOT", "System started in setup");
   } else {
     Serial.println("❌ Gagal terhubung ke SD Card");
   }
 
-  // Konfigurasi WiFi Manager
+  // Konfigurasi WiFi Manager dengan timeout lebih singkat
   setupWiFiManager();
 
-  // Sync waktu dari internet setelah WiFi terkoneksi
-  if (WiFi.status() == WL_CONNECTED && rtcAvailable) {
-    syncTimeFromAPI();
+  // Jika WiFi tidak terkoneksi, masuk offline mode
+  if (WiFi.status() != WL_CONNECTED) {
+    offlineMode = true;
+    Serial.println("🔌 OFFLINE MODE: WiFi tidak tersedia, bekerja secara lokal");
+    saveSystemStatus("OFFLINE_MODE", "WiFi not available at boot");
+  } else {
+    wifiConnected = true;
+    Serial.println("📡 ONLINE MODE: Terhubung ke WiFi");
+    
+    // Sync waktu dari internet setelah WiFi terkoneksi
+    if (rtcAvailable) {
+      syncTimeFromAPI();
+    }
+    saveSystemStatus("ONLINE_MODE", "WiFi connected successfully");
   }
 
   Serial.println("Fort FCN300 Static Register Reader");
@@ -169,35 +186,90 @@ void setup() {
 }
 
 void loop() {
-  // Cek koneksi WiFi dan reconnect jika perlu
-  if (WiFi.status() != WL_CONNECTED) {
+  // Cek koneksi WiFi dan reconnect jika perlu (hanya jika tidak dalam offline mode)
+  if (!offlineMode && WiFi.status() != WL_CONNECTED) {
     unsigned long currentMillis = millis();
     if (currentMillis - lastReconnectAttempt > RECONNECT_INTERVAL) {
       lastReconnectAttempt = currentMillis;
       Serial.println("⚠️ Koneksi WiFi terputus, mencoba reconnect...");
+      
       WiFi.reconnect();
+      delay(5000); // Tunggu 5 detik untuk koneksi
+      
+      if (WiFi.status() == WL_CONNECTED) {
+        wifiConnected = true;
+        Serial.println("✅ Berhasil reconnect ke WiFi");
+        saveSystemStatus("WIFI_RECONNECT", "Successfully reconnected to WiFi");
+      } else {
+        // Jika gagal reconnect berkali-kali, masuk offline mode
+        static int reconnectAttempts = 0;
+        reconnectAttempts++;
+        
+        if (reconnectAttempts >= 3) {
+          offlineMode = true;
+          wifiConnected = false;
+          Serial.println("🔌 Masuk OFFLINE MODE: Gagal reconnect setelah 3x percobaan");
+          saveSystemStatus("OFFLINE_MODE", "Failed to reconnect after 3 attempts");
+          reconnectAttempts = 0;
+        }
+      }
     }
   }
 
-  // Sync waktu periodic setiap 24 jam
-  if (WiFi.status() == WL_CONNECTED && rtcAvailable && !timeSynced) {
+  // Coba keluar dari offline mode secara periodic
+  if (offlineMode) {
+    unsigned long currentMillis = millis();
+    if (currentMillis - lastReconnectAttempt > RECONNECT_INTERVAL) {
+      lastReconnectAttempt = currentMillis;
+      
+      Serial.println("🔄 Mencoba koneksi WiFi dari offline mode...");
+      WiFi.reconnect();
+      delay(3000);
+      
+      if (WiFi.status() == WL_CONNECTED) {
+        offlineMode = false;
+        wifiConnected = true;
+        Serial.println("✅ Keluar dari OFFLINE MODE: Berhasil terkoneksi WiFi");
+        saveSystemStatus("ONLINE_MODE", "Exited offline mode, WiFi connected");
+        
+        // Sync waktu jika RTC tersedia
+        if (rtcAvailable) {
+          syncTimeFromAPI();
+        }
+        
+        // Kirim data offline yang tersimpan
+        sendOfflineData();
+      }
+    }
+  }
+
+  // Sync waktu periodic setiap 24 jam (hanya jika online)
+  if (wifiConnected && rtcAvailable && !timeSynced) {
     unsigned long currentMillis = millis();
     if (currentMillis - lastTimeSync > TIME_SYNC_INTERVAL) {
       syncTimeFromAPI();
     }
   }
 
+  // Baca data modbus
   baca_registers_statistik();
   
-  if (WiFi.status() == WL_CONNECTED) {
-    sendOfflineData();
-    kirim_data_ke_appscript();
+  // Proses data berdasarkan mode
+  if (wifiConnected && !offlineMode) {
+    // Mode online: kirim data langsung
+    if (kirim_data_ke_appscript()) {
+      Serial.println("✅ Data berhasil dikirim ke cloud");
+    } else {
+      Serial.println("❌ Gagal kirim data, simpan ke SD Card");
+      simpan_data_ke_sd();
+    }
   } else {
-    Serial.println("⚠️ Koneksi WiFi terputus, menyimpan data ke SD Card...");
+    // Mode offline: simpan data ke SD Card
+    Serial.println("🔌 OFFLINE MODE: Menyimpan data ke SD Card...");
     simpan_data_ke_sd();
   }
 
-  delay(30000);
+  delay(30000); // Delay 30 detik antara pembacaan
 }
 
 // Fungsi untuk sync waktu dari API internet
@@ -346,15 +418,24 @@ bool syncTimeFromBackupAPI() {
 
 void setupWiFiManager() {
   wm.setSaveConfigCallback(saveConfigCallback);
-  wm.setConfigPortalTimeout(180);
+  wm.setConfigPortalTimeout(120); // Timeout 2 menit
+  wm.setConnectTimeout(30); // Timeout koneksi 30 detik
   wm.setHostname("esp32-datalogger");
 
   Serial.println("Menyiapkan WiFi Manager...");
+  Serial.println("Mencoba koneksi ke WiFi yang tersimpan...");
+
+  // Coba koneksi dengan timeout lebih singkat
+  bool res = wm.autoConnect("ESP32-DataLogger", "password123");
   
-  if (!wm.autoConnect("ESP32-DataLogger", "password123")) {
-    Serial.println("❌ Gagal terhubung dan timeout configuration portal");
-    delay(3000);
-    ESP.restart();
+  if (!res) {
+    Serial.println("❌ Gagal terhubung ke WiFi");
+    Serial.println("🔌 Masuk OFFLINE MODE - Sistem akan bekerja dengan SD Card");
+    Serial.println("💡 Untuk konfigurasi WiFi, tekan reset dan akses portal config");
+    
+    offlineMode = true;
+    wifiConnected = false;
+    saveSystemStatus("WIFI_FAIL", "Failed to connect to WiFi at boot");
   } else {
     Serial.println("✅ Terhubung ke WiFi!");
     Serial.print("SSID: ");
@@ -363,29 +444,42 @@ void setupWiFiManager() {
     Serial.println(WiFi.localIP());
     Serial.print("RSSI: ");
     Serial.println(WiFi.RSSI());
-    Serial.print("Hostname: ");
-    Serial.println(WiFi.getHostname());
+    
+    wifiConnected = true;
+    offlineMode = false;
+    saveSystemStatus("WIFI_SUCCESS", "Connected to: " + WiFi.SSID());
   }
 }
 
 void printSystemInfo() {
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println();
-    Serial.println("=== SYSTEM INFORMATION ===");
-    Serial.print("🕒 RTC Status: ");
-    Serial.println(rtcAvailable ? "✅ Connected" : "❌ Disconnected");
-    if (rtcAvailable) {
-      DateTime now = rtc.now();
-      Serial.print("📅 RTC Time: ");
-      Serial.println(getDateTimeString(now));
-      Serial.print("🔁 Time Sync: ");
-      Serial.println(timeSynced ? "✅ Synced" : "❌ Not Synced");
-    }
-    Serial.print("💾 SD Card: ");
-    Serial.println(sdCardAvailable ? "✅ Connected" : "❌ Disconnected");
-    Serial.println("==================================");
-    Serial.println();
+  Serial.println();
+  Serial.println("=== SYSTEM INFORMATION ===");
+  Serial.print("📡 WiFi Status: ");
+  Serial.println(wifiConnected ? "✅ Connected" : "❌ Disconnected");
+  Serial.print("🔌 Operation Mode: ");
+  Serial.println(offlineMode ? "OFFLINE" : "ONLINE");
+  Serial.print("🕒 RTC Status: ");
+  Serial.println(rtcAvailable ? "✅ Connected" : "❌ Disconnected");
+  if (rtcAvailable) {
+    DateTime now = rtc.now();
+    Serial.print("📅 RTC Time: ");
+    Serial.println(getDateTimeString(now));
+    Serial.print("🔁 Time Sync: ");
+    Serial.println(timeSynced ? "✅ Synced" : "❌ Not Synced");
   }
+  Serial.print("💾 SD Card: ");
+  Serial.println(sdCardAvailable ? "✅ Connected" : "❌ Disconnected");
+  
+  if (wifiConnected) {
+    Serial.print("🌐 IP Address: ");
+    Serial.println(WiFi.localIP());
+    Serial.print("📶 RSSI: ");
+    Serial.print(WiFi.RSSI());
+    Serial.println(" dBm");
+  }
+  
+  Serial.println("==================================");
+  Serial.println();
 }
 
 void saveConfigCallback() {
@@ -435,19 +529,52 @@ void baca_registers_statistik() {
   }
 }
 
-void kirim_data_ke_appscript() {
+
+void saveSystemStatus(const String& event, const String& message) {
+  if (!sdCardAvailable) return;
+
+  File file = SD.open(statusFileName, FILE_APPEND);
+  if (!file) return;
+
+  String timestamp;
+  if (rtcAvailable) {
+    DateTime now = rtc.now();
+    timestamp = getDateTimeString(now);
+  } else {
+    timestamp = String(millis());
+  }
+
+  file.print(timestamp);
+  file.print(" - ");
+  file.print(event);
+  file.print(" - ");
+  file.print(message);
+  file.print(" - WiFi:");
+  file.print(wifiConnected ? "Connected" : "Disconnected");
+  file.print(" - Mode:");
+  file.println(offlineMode ? "Offline" : "Online");
+  
+  file.close();
+}
+
+bool kirim_data_ke_appscript() {
+  if (!wifiConnected || offlineMode) {
+    return false;
+  }
+
   WiFiClientSecure client;
   client.setInsecure();
+  client.setTimeout(10000); // Timeout 10 detik
 
   HTTPClient http;
 
   if (!http.begin(client, GOOGLE_SCRIPT_URL)) {
     Serial.println("❌ Gagal memulai koneksi HTTPS");
-    simpan_data_ke_sd(); // Simpan ke SD jika gagal kirim
-    return;
+    return false;
   }
 
   http.addHeader("Content-Type", "application/json");
+  http.setTimeout(10000); // Timeout 10 detik
 
   // Buat payload JSON
   DynamicJsonDocument doc(2048);
@@ -460,6 +587,9 @@ void kirim_data_ke_appscript() {
   } else {
     doc["timestamp"] = millis();
   }
+  
+  // Tambahkan status mode
+  doc["mode"] = offlineMode ? "offline" : "online";
   
   // Tambahkan semua data
   for (int i = 0; i < numRegisters; i++) {
@@ -481,12 +611,13 @@ void kirim_data_ke_appscript() {
     
     // Simpan data ke CSV sebagai backup meskipun berhasil dikirim
     simpan_data_ke_csv();
+    http.end();
+    return true;
   } else {
     Serial.printf("❌ Error pada request: %s\n", http.errorToString(httpCode).c_str());
-    simpan_data_ke_sd(); // Simpan ke SD jika gagal kirim
+    http.end();
+    return false;
   }
-
-  http.end();
 }
 
 void simpan_data_ke_sd() {
@@ -495,35 +626,37 @@ void simpan_data_ke_sd() {
     return;
   }
 
-  File file = SD.open(backupFileName, FILE_APPEND);
-  if (!file) {
-    Serial.println("❌ Gagal membuka file backup");
-    return;
+  // Simpan ke file backup (JSON format)
+  File backupFile = SD.open(backupFileName, FILE_APPEND);
+  if (backupFile) {
+    String dataLine = "{";
+    
+    // Timestamp
+    if (rtcAvailable) {
+      DateTime now = rtc.now();
+      dataLine += "\"timestamp\":" + String(now.unixtime()) + ",";
+      dataLine += "\"datetime\":\"" + getDateTimeString(now) + "\",";
+    } else {
+      dataLine += "\"timestamp\":" + String(millis()) + ",";
+    }
+    
+    dataLine += "\"mode\":\"" + String(offlineMode ? "offline" : "online") + "\",";
+    
+    // Data modbus
+    for (int i = 0; i < numRegisters; i++) {
+      dataLine += "\"" + String(readingResults[i].jsonKey) + "\":" + String(readingResults[i].value, 6);
+      if (i < numRegisters - 1) dataLine += ",";
+    }
+    dataLine += "}\n";
+
+    backupFile.print(dataLine);
+    backupFile.close();
+    
+    Serial.println("💾 Data disimpan ke SD Card (backup)");
   }
 
-  // Buat string data dalam format JSON untuk penyimpanan offline
-  String dataLine = "{";
-  
-  // Timestamp
-  if (rtcAvailable) {
-    DateTime now = rtc.now();
-    dataLine += "\"timestamp\":" + String(now.unixtime()) + ",";
-    dataLine += "\"datetime\":\"" + getDateTimeString(now) + "\",";
-  } else {
-    dataLine += "\"timestamp\":" + String(millis()) + ",";
-  }
-  
-  // Data modbus
-  for (int i = 0; i < numRegisters; i++) {
-    dataLine += "\"" + String(readingResults[i].jsonKey) + "\":" + String(readingResults[i].value, 6);
-    if (i < numRegisters - 1) dataLine += ",";
-  }
-  dataLine += "}\n";
-
-  file.print(dataLine);
-  file.close();
-  
-  Serial.println("💾 Data disimpan ke SD Card (backup)");
+  // Juga simpan ke CSV
+  simpan_data_ke_csv();
 }
 
 void simpan_data_ke_csv() {
