@@ -4,7 +4,7 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <base64.h>
-#include <ESPmDNS.h>  // Tambahkan library mDNS
+#include <ESPmDNS.h>
 
 // Camera pin definitions
 #define PWDN_GPIO_NUM     32
@@ -26,7 +26,7 @@
 #define LED_FLASH         4
 
 WebServer server(80);
-const String APPS_SCRIPT_URL = "https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec";
+const String APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxn7MRT1RSf3AVQ_iqIbfcYe7tNFEL1T5sFIbskY-TS8QcuAuMFW9gxy9P0GFCVuwzA/exec";
 
 // WiFi credentials
 const char* ssid = "MIKRO";
@@ -91,13 +91,13 @@ void setup() {
   }
   
   // Setup server routes
-  server.on("/api/attendance", HTTP_POST, handleAttendance);
+  server.on("/api/take_photo", HTTP_POST, handleTakePhoto);
   server.on("/health", HTTP_GET, handleHealth);
   server.on("/info", HTTP_GET, handleInfo);
   
   server.begin();
   Serial.println("ESP32-CAM Server Started");
-  Serial.println("Ready to receive data from ESP32...");
+  Serial.println("Ready to receive photo requests from ESP32...");
 }
 
 bool initCamera() {
@@ -142,8 +142,8 @@ bool initCamera() {
   return true;
 }
 
-void handleAttendance() {
-  Serial.println("Processing attendance request...");
+void handleTakePhoto() {
+  Serial.println("Photo request received from ESP32...");
   digitalWrite(LED_FLASH, HIGH);
   
   if (server.hasArg("plain")) {
@@ -162,8 +162,11 @@ void handleAttendance() {
     
     String cardUID = doc["card_uid"] | "UNKNOWN";
     String timestamp = doc["timestamp"] | "UNKNOWN";
+    String rowId = doc["row_id"] | "UNKNOWN";
+    String deviceId = doc["device_id"] | "UNKNOWN";
     
     Serial.println("Card UID: " + cardUID);
+    Serial.println("Row ID: " + rowId);
     Serial.println("Timestamp: " + timestamp);
     
     // Capture photo
@@ -183,17 +186,17 @@ void handleAttendance() {
     
     Serial.println("Photo captured: " + String(photoBase64.length()) + " characters");
     
-    // Send to Google Apps Script
-    bool success = sendToGoogleAppsScript(cardUID, timestamp, photoBase64);
+    // Send photo to Google Apps Script dengan row ID
+    bool success = sendPhotoToGoogleAppsScript(cardUID, timestamp, rowId, photoBase64);
     
     if (success) {
       digitalWrite(LED_FLASH, HIGH);
       delay(800);
       digitalWrite(LED_FLASH, LOW);
-      server.send(200, "application/json", "{\"status\":\"success\", \"message\":\"Photo captured and data sent\"}");
+      server.send(200, "application/json", "{\"status\":\"success\", \"message\":\"Photo captured and uploaded\"}");
     } else {
       ledSequence(2, 400);
-      server.send(500, "application/json", "{\"status\":\"error\", \"message\":\"Failed to send to cloud\"}");
+      server.send(500, "application/json", "{\"status\":\"error\", \"message\":\"Failed to upload photo\"}");
     }
   } else {
     ledSequence(4, 100);
@@ -201,7 +204,7 @@ void handleAttendance() {
   }
 }
 
-bool sendToGoogleAppsScript(String cardUID, String timestamp, String photoBase64) {
+bool sendPhotoToGoogleAppsScript(String cardUID, String timestamp, String rowId, String photoBase64) {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("No WiFi connection");
     return false;
@@ -212,16 +215,21 @@ bool sendToGoogleAppsScript(String cardUID, String timestamp, String photoBase64
   HTTPClient http;
   http.begin(APPS_SCRIPT_URL);
   http.addHeader("Content-Type", "application/json");
-  http.setTimeout(15000);
+  http.setTimeout(30000); // Timeout lebih lama untuk upload foto
   
-  DynamicJsonDocument doc(4096);
+  DynamicJsonDocument doc(5000); // Lebih besar untuk foto
   doc["card_uid"] = cardUID;
   doc["timestamp"] = timestamp;
+  doc["row_id"] = rowId;
   doc["device_id"] = "ESP32-CAM-01";
   doc["photo"] = photoBase64;
+  doc["type"] = "photo_upload";
+  doc["photo_status"] = "uploaded";
   
   String payload;
   serializeJson(doc, payload);
+  
+  Serial.println("Uploading photo to Google Apps Script...");
   
   int httpCode = http.POST(payload);
   bool success = (httpCode == 200);
@@ -229,13 +237,16 @@ bool sendToGoogleAppsScript(String cardUID, String timestamp, String photoBase64
   digitalWrite(LED_FLASH, LOW);
   
   if (success) {
-    Serial.println("Data sent to Google Apps Script successfully");
+    String response = http.getString();
+    Serial.println("Photo uploaded successfully");
+    Serial.println("Response: " + response);
+    
     delay(300);
     digitalWrite(LED_FLASH, HIGH);
     delay(200);
     digitalWrite(LED_FLASH, LOW);
   } else {
-    Serial.println("Failed to send to Google Apps Script: " + String(httpCode));
+    Serial.println("Failed to upload photo. HTTP Code: " + String(httpCode));
     delay(300);
     ledSequence(2, 200);
   }
