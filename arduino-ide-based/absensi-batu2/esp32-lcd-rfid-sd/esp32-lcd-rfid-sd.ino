@@ -7,6 +7,7 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include <WiFiClientSecure.h>
 
 // Pin definitions
 #define SS_PIN_RFID 4
@@ -17,8 +18,13 @@
 const char* ssid = "MIKRO";
 const char* password = "1DEAlist";
 
-// Google Apps Script Web App URL
-const char* webAppURL = "https://script.google.com/macros/s/AKfycbxn7MRT1RSf3AVQ_iqIbfcYe7tNFEL1T5sFIbskY-TS8QcuAuMFW9gxy9P0GFCVuwzA/exec";
+// Google Sheets API Configuration
+const char* spreadsheetId = "1PrE6lcD2UlXVGeDsl2ADjQpauOwGioSNTBOsdHIx35Q";
+const char* sheetName = "Data Siswa";
+const char* apiKey = "AIzaSyALePRtFy01Dr3QzhKxroL7dmOhpKPnBa8"; // Dapatkan dari Google Cloud Console
+
+// Google Apps Script Web App URL (untuk absensi)
+const char* webAppURL = "https://script.google.com/macros/s/AKfycbz1e6MWnfqxIWLpKyPuW51ZmF64kTkDZk_1vyG7ui3Y8jMfj6c96L70XUhgKrwzuHI5/exec";
 
 // ESP32-CAM URL
 const char* esp32camURL = "http://esp32cam.local/foto_id";
@@ -36,9 +42,24 @@ String currentDate;
 String currentTime;
 String lastCardUID = "";
 String todayDate = "";
-String currentFotoID = ""; // Untuk menyimpan foto_id terakhir
+String currentFotoID = "";
 
-// Fungsi untuk generate random string di ESP32
+// Struct untuk data siswa
+struct Siswa {
+  String nis;
+  String kelas;
+  String nama;
+  String uid;
+};
+
+const int MAX_SISWA = 100;
+Siswa dataSiswa[MAX_SISWA];
+int jumlahSiswa = 0;
+
+// WiFi Client Secure untuk HTTPS
+WiFiClientSecure client;
+
+// Fungsi untuk generate random string
 String generateRandomString(int length) {
   String result = "";
   String characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -49,6 +70,85 @@ String generateRandomString(int length) {
     result += characters[randomIndex];
   }
   return result;
+}
+
+// Fungsi untuk extract URL dari HTML redirect
+String extractRedirectURL(String htmlContent) {
+  // Cari tag <A HREF=
+  int hrefIndex = htmlContent.indexOf("HREF=\"");
+  if (hrefIndex == -1) {
+    hrefIndex = htmlContent.indexOf("href=\"");
+  }
+  
+  if (hrefIndex != -1) {
+    int start = hrefIndex + 6; // Panjang "HREF="" atau "href=""
+    int end = htmlContent.indexOf("\"", start);
+    
+    if (end != -1) {
+      return htmlContent.substring(start, end);
+    }
+  }
+  
+  return "";
+}
+
+// Fungsi untuk HTTP request dengan handle redirect
+String httpRequestWithRedirect(const String& url, const String& payload = "", bool isPost = false) {
+  HTTPClient http;
+  String finalURL = url;
+  String response = "";
+  int maxRedirects = 3;
+  int redirectCount = 0;
+  
+  while (redirectCount < maxRedirects) {
+    Serial.print("HTTP Request to: ");
+    Serial.println(finalURL);
+    
+    http.begin(finalURL);
+    
+    if (isPost) {
+      http.addHeader("Content-Type", "application/json");
+    }
+    
+    int httpResponseCode;
+    if (isPost) {
+      httpResponseCode = http.POST(payload);
+    } else {
+      httpResponseCode = http.GET();
+    }
+    
+    if (httpResponseCode > 0) {
+      response = http.getString();
+      
+      // Cek jika response adalah HTML redirect
+      if (response.indexOf("Moved Temporarily") != -1 || 
+          response.indexOf("The document has moved") != -1) {
+        
+        String newURL = extractRedirectURL(response);
+        if (newURL != "") {
+          Serial.print("Redirect detected to: ");
+          Serial.println(newURL);
+          finalURL = newURL;
+          redirectCount++;
+          http.end();
+          continue; // Coba lagi dengan URL baru
+        }
+      }
+      
+      // Jika bukan redirect, return response
+      http.end();
+      return response;
+      
+    } else {
+      Serial.print("Error in HTTP request: ");
+      Serial.println(httpResponseCode);
+      http.end();
+      return "";
+    }
+  }
+  
+  Serial.println("Max redirects reached");
+  return "";
 }
 
 void setup() {
@@ -99,10 +199,23 @@ void setup() {
     createBackupHeader();
   }
   
+  // Set root CA untuk HTTPS
+  client.setInsecure(); // Hati-hati: ini tidak verify certificate
+  
   // Connect to WiFi
   connectToWiFi();
   
-  // Upload data backup jika ada dan WiFi terhubung
+  // Sinkronisasi data siswa dari Google Sheets
+  if (WiFi.status() == WL_CONNECTED) {
+    if (!syncDataSiswaSheetsAPI()) {
+      // Jika Sheets API gagal, coba metode alternatif
+      syncDataSiswaAlternative();
+    }
+  } else {
+    bacaDataSiswaDariSD();
+  }
+  
+  // Upload data backup
   if (WiFi.status() == WL_CONNECTED && SD.begin(SS_PIN_SD)) {
     uploadBackupData();
   }
@@ -119,9 +232,262 @@ void setup() {
   lcd.print("Tempelkan Kartu");
   
   Serial.println("System Ready!");
+  Serial.print("Jumlah siswa terdaftar: ");
+  Serial.println(jumlahSiswa);
+}
+
+// Method 1: Google Sheets API v4
+bool syncDataSiswaSheetsAPI() {
+  Serial.println("Menggunakan Google Sheets API...");
+  
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Sheets API...");
+  
+  String url = "https://sheets.googleapis.com/v4/spreadsheets/";
+  url += spreadsheetId;
+  url += "/values/";
+  url += sheetName;
+  url += "?key=";
+  url += apiKey;
+  
+  HTTPClient http;
+  http.begin(client, url);
+  
+  int httpCode = http.GET();
+  
+  if (httpCode == HTTP_CODE_OK) {
+    String payload = http.getString();
+    Serial.println("Data received from Sheets API");
+    
+    DynamicJsonDocument doc(16384);
+    DeserializationError error = deserializeJson(doc, payload);
+    
+    if (!error) {
+      JsonArray values = doc["values"];
+      jumlahSiswa = 0;
+      
+      // Skip header row (index 0)
+      for (int i = 1; i < values.size() && jumlahSiswa < MAX_SISWA; i++) {
+        JsonArray row = values[i];
+        if (row.size() >= 4) {
+          dataSiswa[jumlahSiswa].nis = row[0].as<String>();
+          dataSiswa[jumlahSiswa].kelas = row[1].as<String>();
+          dataSiswa[jumlahSiswa].nama = row[2].as<String>();
+          dataSiswa[jumlahSiswa].uid = row[3].as<String>();
+          jumlahSiswa++;
+        }
+      }
+      
+      simpanDataSiswaKeSD();
+      
+      Serial.print("Sheets API Success: ");
+      Serial.println(jumlahSiswa);
+      
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("API Success!");
+      lcd.setCursor(0, 1);
+      lcd.print("Siswa: ");
+      lcd.print(jumlahSiswa);
+      
+      http.end();
+      return true;
+    }
+  }
+  
+  Serial.println("Sheets API failed");
+  http.end();
+  return false;
+}
+
+// Method 2: Alternative - Simpan data langsung di kode
+void syncDataSiswaAlternative() {
+  Serial.println("Menggunakan metode alternatif...");
+  
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Alternative");
+  lcd.setCursor(0, 1);
+  lcd.print("Method...");
+  
+  // Coba baca dari SD card dulu
+  bacaDataSiswaDariSD();
+  
+  // Jika tidak ada data di SD, gunakan data default
+  if (jumlahSiswa == 0) {
+    // Tambahkan beberapa data contoh
+    // Ganti dengan data siswa sebenarnya
+    dataSiswa[0] = {"12345", "XII IPA 1", "John Doe", "A1B2C3D4"};
+    dataSiswa[1] = {"12346", "XII IPA 1", "Jane Smith", "E5F6G7H8"};
+    jumlahSiswa = 2;
+    
+    simpanDataSiswaKeSD();
+    
+    Serial.println("Using default data");
+  }
+  
+  delay(2000);
+}
+
+// Method 3: Simple HTTP dengan handle redirect manual
+bool syncDataSiswaSimpleHTTP() {
+  Serial.println("Menggunakan Simple HTTP...");
+  
+  String url = "https://script.google.com/macros/s/AKfycbxn7MRT1RSf3AVQ_iqIbfcYe7tNFEL1T5sFIbskY-TS8QcuAuMFW9gxy9P0GFCVuwzA/exec?action=getSiswa";
+  
+  HTTPClient http;
+  http.begin(client, url);
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  
+  int httpCode = http.GET();
+  
+  if (httpCode == HTTP_CODE_OK) {
+    String payload = http.getString();
+    
+    // Cek jika ini HTML redirect
+    if (payload.indexOf("Moved Temporarily") != -1) {
+      Serial.println("Redirect detected, trying to extract URL...");
+      
+      // Extract redirect URL
+      int hrefStart = payload.indexOf("HREF=\"");
+      if (hrefStart == -1) hrefStart = payload.indexOf("href=\"");
+      
+      if (hrefStart != -1) {
+        int urlStart = hrefStart + 6;
+        int urlEnd = payload.indexOf("\"", urlStart);
+        String newUrl = payload.substring(urlStart, urlEnd);
+        
+        Serial.print("New URL: ");
+        Serial.println(newUrl);
+        
+        // Coba dengan URL baru
+        http.end();
+        http.begin(client, newUrl);
+        httpCode = http.GET();
+        
+        if (httpCode == HTTP_CODE_OK) {
+          payload = http.getString();
+        }
+      }
+    }
+    
+    // Parse JSON
+    DynamicJsonDocument doc(4096);
+    DeserializationError error = deserializeJson(doc, payload);
+    
+    if (!error) {
+      JsonArray data = doc["data"];
+      jumlahSiswa = 0;
+      
+      for (JsonObject obj : data) {
+        if (jumlahSiswa < MAX_SISWA) {
+          dataSiswa[jumlahSiswa].nis = obj["nis"].as<String>();
+          dataSiswa[jumlahSiswa].kelas = obj["kelas"].as<String>();
+          dataSiswa[jumlahSiswa].nama = obj["nama"].as<String>();
+          dataSiswa[jumlahSiswa].uid = obj["uid"].as<String>();
+          jumlahSiswa++;
+        }
+      }
+      
+      simpanDataSiswaKeSD();
+      http.end();
+      return true;
+    }
+  }
+  
+  http.end();
+  return false;
+}
+
+// [Fungsi-fungsi lainnya tetap sama...]
+void simpanDataSiswaKeSD() {
+  dataFile = SD.open("/data_siswa.csv", FILE_WRITE);
+  
+  if (dataFile) {
+    dataFile.println("NIS,Kelas,Nama,UID");
+    
+    for (int i = 0; i < jumlahSiswa; i++) {
+      dataFile.print(dataSiswa[i].nis);
+      dataFile.print(",");
+      dataFile.print(dataSiswa[i].kelas);
+      dataFile.print(",");
+      dataFile.print(dataSiswa[i].nama);
+      dataFile.print(",");
+      dataSiswa[i].uid.toUpperCase();
+      dataFile.println(dataSiswa[i].uid);
+    }
+    
+    dataFile.close();
+    Serial.println("Data siswa disimpan ke SD card");
+  }
+}
+
+void bacaDataSiswaDariSD() {
+  if (!SD.exists("/data_siswa.csv")) return;
+  
+  dataFile = SD.open("/data_siswa.csv", FILE_READ);
+  if (!dataFile) return;
+  
+  // Skip header
+  dataFile.readStringUntil('\n');
+  
+  jumlahSiswa = 0;
+  
+  while (dataFile.available() && jumlahSiswa < MAX_SISWA) {
+    String line = dataFile.readStringUntil('\n');
+    line.trim();
+    
+    if (line.length() == 0) continue;
+    
+    int firstComma = line.indexOf(',');
+    int secondComma = line.indexOf(',', firstComma + 1);
+    int thirdComma = line.indexOf(',', secondComma + 1);
+    
+    if (firstComma == -1 || secondComma == -1 || thirdComma == -1) continue;
+    
+    dataSiswa[jumlahSiswa].nis = line.substring(0, firstComma);
+    dataSiswa[jumlahSiswa].kelas = line.substring(firstComma + 1, secondComma);
+    dataSiswa[jumlahSiswa].nama = line.substring(secondComma + 1, thirdComma);
+    dataSiswa[jumlahSiswa].uid = line.substring(thirdComma + 1);
+    
+    jumlahSiswa++;
+  }
+  
+  dataFile.close();
+  Serial.print("Data dari SD: ");
+  Serial.println(jumlahSiswa);
+}
+
+Siswa* cariSiswaByUID(String uid) {
+  for (int i = 0; i < jumlahSiswa; i++) {
+    if (dataSiswa[i].uid.equalsIgnoreCase(uid)) {
+      return &dataSiswa[i];
+    }
+  }
+  return NULL;
+}
+
+void tampilkanInfoSiswa(Siswa* siswa) {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  
+  String namaDisplay = siswa->nama;
+  if (namaDisplay.length() > 16) {
+    namaDisplay = namaDisplay.substring(0, 16);
+  }
+  lcd.print(namaDisplay);
+  
+  lcd.setCursor(0, 1);
+  String infoDisplay = siswa->nis + " " + siswa->kelas;
+  if (infoDisplay.length() > 16) {
+    infoDisplay = infoDisplay.substring(0, 16);
+  }
+  lcd.print(infoDisplay);
 }
 
 void loop() {
+  // [Kode loop tetap sama]
   // Update date and time every second
   static unsigned long lastUpdate = 0;
   if (millis() - lastUpdate >= 1000) {
@@ -163,19 +529,102 @@ void loop() {
   Serial.print("Card UID: ");
   Serial.println(cardUID);
   
-  // Display on LCD
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("UID: ");
-  lcd.print(cardUID.substring(0, 11));
-  lcd.setCursor(0, 1);
-  lcd.print(cardUID.substring(11));
+  // Cek apakah UID terdaftar dalam data siswa
+  Siswa* siswa = cariSiswaByUID(cardUID);
+  
+  if (siswa != NULL) {
+    // Jika terdaftar, tampilkan informasi siswa
+    tampilkanInfoSiswa(siswa);
+  } else {
+    // Jika tidak terdaftar, tampilkan UID saja
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("UID: ");
+    lcd.print(cardUID.substring(0, 11));
+    lcd.setCursor(0, 1);
+    lcd.print(cardUID.substring(11));
+    lcd.print(" Tdk Daftar");
+  }
   
   // Save to cloud and SD card
   processAttendance(cardUID);
   
   mfrc522.PICC_HaltA();
 }
+
+// Fungsi untuk sinkronisasi data siswa dari Google Sheets (DIMODIFIKASI)
+void syncDataSiswa() {
+  Serial.println("Memulai sinkronisasi data siswa...");
+  
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Sync Data");
+  lcd.setCursor(0, 1);
+  lcd.print("Siswa...");
+  
+  String syncURL = "https://script.google.com/macros/s/AKfycbxn7MRT1RSf3AVQ_iqIbfcYe7tNFEL1T5sFIbskY-TS8QcuAuMFW9gxy9P0GFCVuwzA/exec?action=getSiswa";
+  
+  String response = httpRequestWithRedirect(syncURL);
+  
+  if (response != "") {
+    Serial.println("Data siswa diterima:");
+    Serial.println(response);
+    
+    // Parse JSON response
+    DynamicJsonDocument doc(4096);
+    DeserializationError error = deserializeJson(doc, response);
+    
+    if (!error) {
+      jumlahSiswa = 0;
+      
+      // Simpan ke array
+      JsonArray data = doc["data"].as<JsonArray>();
+      for (JsonObject obj : data) {
+        if (jumlahSiswa < MAX_SISWA) {
+          dataSiswa[jumlahSiswa].nis = obj["nis"].as<String>();
+          dataSiswa[jumlahSiswa].kelas = obj["kelas"].as<String>();
+          dataSiswa[jumlahSiswa].nama = obj["nama"].as<String>();
+          dataSiswa[jumlahSiswa].uid = obj["uid"].as<String>();
+          jumlahSiswa++;
+        }
+      }
+      
+      // Simpan ke SD card
+      simpanDataSiswaKeSD();
+      
+      Serial.print("Sinkronisasi berhasil. Jumlah siswa: ");
+      Serial.println(jumlahSiswa);
+      
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Sync Success!");
+      lcd.setCursor(0, 1);
+      lcd.print("Siswa: ");
+      lcd.print(jumlahSiswa);
+      
+    } else {
+      Serial.println("Error parsing JSON data siswa");
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Sync Error!");
+      lcd.setCursor(0, 1);
+      lcd.print("Parse Failed");
+    }
+  } else {
+    Serial.println("Gagal mengambil data siswa dari server");
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Sync Failed!");
+    lcd.setCursor(0, 1);
+    lcd.print("Server Error");
+    
+    // Coba baca dari SD card jika gagal sync
+    bacaDataSiswaDariSD();
+  }
+  
+  delay(2000);
+}
+
 
 void uploadBackupData() {
   if (!SD.exists("/backup.csv")) {
@@ -289,11 +738,8 @@ void uploadBackupData() {
   delay(3000);
 }
 
+// Fungsi untuk upload backup data (DIMODIFIKASI)
 bool uploadBackupEntry(String tanggal, String waktu, String uid, String foto_id) {
-  HTTPClient http;
-  http.begin(webAppURL);
-  http.addHeader("Content-Type", "application/json");
-  
   // Create JSON data untuk backup
   DynamicJsonDocument doc(1024);
   doc["tanggal"] = tanggal;
@@ -309,24 +755,20 @@ bool uploadBackupEntry(String tanggal, String waktu, String uid, String foto_id)
   Serial.print("Uploading backup: ");
   Serial.println(jsonString);
   
-  int httpResponseCode = http.POST(jsonString);
-  bool success = (httpResponseCode >= 100 && httpResponseCode < 400);
+  String response = httpRequestWithRedirect(webAppURL, jsonString, true);
   
-  if (httpResponseCode > 0) {
-    String response = http.getString();
-    Serial.println("Backup HTTP Response: " + String(httpResponseCode));
+  if (response != "") {
+    // Parse response untuk cek status
+    DynamicJsonDocument resDoc(1024);
+    DeserializationError error = deserializeJson(resDoc, response);
     
-    if (success) {
-      Serial.println("Backup entry uploaded successfully");
-    } else {
-      Serial.println("Failed to upload backup entry, HTTP error: " + String(httpResponseCode));
+    if (!error) {
+      String status = resDoc["status"].as<String>();
+      return status == "success";
     }
-  } else {
-    Serial.println("Error in backup HTTP request");
   }
   
-  http.end();
-  return success;
+  return false;
 }
 
 void processAttendance(String uid) {
@@ -390,11 +832,8 @@ void processAttendance(String uid) {
   lcd.print("Tempelkan Kartu");
 }
 
+// Fungsi saveToCloud (DIMODIFIKASI)
 bool saveToCloud(String uid) {
-  HTTPClient http;
-  http.begin(webAppURL);
-  http.addHeader("Content-Type", "application/json");
-  
   // Create JSON data dengan foto_id yang sudah digenerate
   DynamicJsonDocument doc(1024);
   doc["tanggal"] = currentDate;
@@ -409,37 +848,39 @@ bool saveToCloud(String uid) {
   Serial.print("Sending to cloud: ");
   Serial.println(jsonString);
   
-  int httpResponseCode = http.POST(jsonString);
+  String response = httpRequestWithRedirect(webAppURL, jsonString, true);
   
-  // Anggap berhasil jika response code 1xx, 2xx, atau 3xx
-  bool success = (httpResponseCode >= 100 && httpResponseCode < 400);
-  
-  if (httpResponseCode > 0) {
-    String response = http.getString();
-    Serial.println("HTTP Response: " + String(httpResponseCode));
+  if (response != "") {
+    Serial.println("HTTP Response received");
     Serial.println("Response: " + response);
     
-    if (success) {
-      Serial.println("Data saved to cloud successfully");
-    } else {
-      Serial.println("Failed to save to cloud, HTTP error: " + String(httpResponseCode));
+    // Parse response
+    DynamicJsonDocument resDoc(1024);
+    DeserializationError error = deserializeJson(resDoc, response);
+    
+    if (!error) {
+      String status = resDoc["status"].as<String>();
+      if (status == "success") {
+        Serial.println("Data saved to cloud successfully");
+        return true;
+      }
     }
     
-    http.end();
-    return success;
+    Serial.println("Failed to save to cloud");
+    return false;
   } else {
     Serial.println("Error in HTTP request");
-    http.end();
     return false;
   }
 }
 
+// Fungsi untuk send foto ID ke camera (DIMODIFIKASI)
 bool sendFotoIDToCamera() {
+  String postData = "foto_id=" + currentFotoID + "&uid=" + lastCardUID;
+  
   HTTPClient http;
   http.begin(esp32camURL);
   http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-  
-  String postData = "foto_id=" + currentFotoID + "&uid=" + lastCardUID;
   
   int httpResponseCode = http.POST(postData);
   bool success = (httpResponseCode >= 100 && httpResponseCode < 400);
