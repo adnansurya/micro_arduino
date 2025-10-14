@@ -102,6 +102,11 @@ void setup() {
   // Connect to WiFi
   connectToWiFi();
   
+  // Upload data backup jika ada dan WiFi terhubung
+  if (WiFi.status() == WL_CONNECTED && SD.begin(SS_PIN_SD)) {
+    uploadBackupData();
+  }
+  
   // Get today's date
   updateDateTime();
   todayDate = currentDate;
@@ -170,6 +175,158 @@ void loop() {
   processAttendance(cardUID);
   
   mfrc522.PICC_HaltA();
+}
+
+void uploadBackupData() {
+  if (!SD.exists("/backup.csv")) {
+    Serial.println("No backup file found.");
+    return;
+  }
+  
+  Serial.println("Found backup file, uploading data...");
+  
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Uploading");
+  lcd.setCursor(0, 1);
+  lcd.print("Backup Data...");
+  
+  dataFile = SD.open("/backup.csv", FILE_READ);
+  if (!dataFile) {
+    Serial.println("Error opening backup file for reading");
+    return;
+  }
+  
+  // Skip header
+  dataFile.readStringUntil('\n');
+  
+  int successCount = 0;
+  int totalCount = 0;
+  
+  while (dataFile.available()) {
+    String line = dataFile.readStringUntil('\n');
+    line.trim();
+    
+    if (line.length() == 0) continue;
+    
+    // Parse CSV line: Tanggal,Waktu,UID,Foto_ID
+    int firstComma = line.indexOf(',');
+    int secondComma = line.indexOf(',', firstComma + 1);
+    int thirdComma = line.indexOf(',', secondComma + 1);
+    
+    if (firstComma == -1 || secondComma == -1 || thirdComma == -1) {
+      Serial.println("Invalid backup line: " + line);
+      continue;
+    }
+    
+    String tanggal = line.substring(0, firstComma);
+    String waktu = line.substring(firstComma + 1, secondComma);
+    String uid = line.substring(secondComma + 1, thirdComma);
+    String foto_id = line.substring(thirdComma + 1);
+    
+    Serial.println("Uploading backup: " + tanggal + " " + waktu + " " + uid);
+    
+    // Update LCD progress
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Backup: ");
+    lcd.print(totalCount + 1);
+    lcd.setCursor(0, 1);
+    lcd.print("UID: ");
+    lcd.print(uid.substring(0, 11));
+    
+    // Upload to cloud
+    if (uploadBackupEntry(tanggal, waktu, uid, foto_id)) {
+      successCount++;
+      Serial.println("Backup entry uploaded successfully");
+    } else {
+      Serial.println("Failed to upload backup entry");
+      // Jika gagal, stop proses dan biarkan data tetap di backup
+      dataFile.close();
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Backup Upload");
+      lcd.setCursor(0, 1);
+      lcd.print("Partial Success");
+      delay(2000);
+      return;
+    }
+    
+    totalCount++;
+    delay(500); // Delay antara upload untuk tidak membebani server
+  }
+  
+  dataFile.close();
+  
+  // Jika semua data berhasil diupload, hapus file backup
+  if (successCount == totalCount && totalCount > 0) {
+    SD.remove("/backup.csv");
+    Serial.println("Backup file deleted successfully");
+    
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Backup Complete");
+    lcd.setCursor(0, 1);
+    lcd.print("Deleted: ");
+    lcd.print(totalCount);
+  } else if (totalCount > 0) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Backup Partial");
+    lcd.setCursor(0, 1);
+    lcd.print("Success: ");
+    lcd.print(successCount);
+    lcd.print("/");
+    lcd.print(totalCount);
+  } else {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("No Backup Data");
+    lcd.setCursor(0, 1);
+    lcd.print("To Upload");
+  }
+  
+  delay(3000);
+}
+
+bool uploadBackupEntry(String tanggal, String waktu, String uid, String foto_id) {
+  HTTPClient http;
+  http.begin(webAppURL);
+  http.addHeader("Content-Type", "application/json");
+  
+  // Create JSON data untuk backup
+  DynamicJsonDocument doc(1024);
+  doc["tanggal"] = tanggal;
+  doc["waktu"] = waktu;
+  doc["uid"] = uid;
+  doc["foto_id"] = foto_id;
+  doc["keterangan"] = "Backup data from SD card";
+  doc["is_backup"] = true; // Flag untuk menandai ini data backup
+  
+  String jsonString;
+  serializeJson(doc, jsonString);
+  
+  Serial.print("Uploading backup: ");
+  Serial.println(jsonString);
+  
+  int httpResponseCode = http.POST(jsonString);
+  bool success = (httpResponseCode >= 100 && httpResponseCode < 400);
+  
+  if (httpResponseCode > 0) {
+    String response = http.getString();
+    Serial.println("Backup HTTP Response: " + String(httpResponseCode));
+    
+    if (success) {
+      Serial.println("Backup entry uploaded successfully");
+    } else {
+      Serial.println("Failed to upload backup entry, HTTP error: " + String(httpResponseCode));
+    }
+  } else {
+    Serial.println("Error in backup HTTP request");
+  }
+  
+  http.end();
+  return success;
 }
 
 void processAttendance(String uid) {
