@@ -14,6 +14,11 @@
 #define RST_PIN 5
 #define SD_CS_PIN 15
 
+// LED Pin definitions
+#define LED_MERAH 13
+#define LED_KUNING 12
+#define LED_HIJAU 14
+
 // WiFi credentials
 const char* ssid = "MIKRO";
 const char* password = "1DEAlist";
@@ -33,18 +38,25 @@ String currentFotoID = "";
 void setup() {
   Serial.begin(115200);
 
+  // Initialize LEDs
+  pinMode(LED_MERAH, OUTPUT);
+  pinMode(LED_KUNING, OUTPUT);
+  pinMode(LED_HIJAU, OUTPUT);
 
+  // Startup sequence - all LEDs blink twice
+  startupLEDSequence();
 
   // Initialize components
-
   initializeRTC();
-
   connectWiFi();
   SPI.begin();
   initializeRFID();
   initializeSD();
 
   Serial.println("Sistem Absensi IoT Ready");
+  
+  // Standby mode - green LED on
+  setStandbyMode();
 }
 
 void loop() {
@@ -129,6 +141,9 @@ void readRFID() {
   currentUID.toUpperCase();
 
   Serial.println("Card detected: " + currentUID);
+  
+  // Card detected - green LED blink once
+  blinkLED(LED_HIJAU, 1, 300);
 
   // Generate unique Foto ID
   currentFotoID = generateFotoID();
@@ -155,10 +170,12 @@ void processAttendance() {
   String time = formatTime(now);
 
   // Save to local CSV
-  saveToLocalCSV(date, time, currentUID, currentFotoID);
+  bool sdSuccess = saveToLocalCSV(date, time, currentUID, currentFotoID);
 
   // Send to Google Apps Script
-  sendToGoogleAppsScript(date, time, currentUID, currentFotoID);
+  if (sdSuccess) {
+    sendToGoogleAppsScript(date, time, currentUID, currentFotoID);
+  }
 }
 
 String formatDate(DateTime dt) {
@@ -173,7 +190,7 @@ String formatTime(DateTime dt) {
   return String(buffer);
 }
 
-void saveToLocalCSV(String date, String time, String uid, String fotoID) {
+bool saveToLocalCSV(String date, String time, String uid, String fotoID) {
   dataFile = SD.open("/absensi.csv", FILE_APPEND);
   if (dataFile) {
     dataFile.print(date);
@@ -185,12 +202,16 @@ void saveToLocalCSV(String date, String time, String uid, String fotoID) {
     dataFile.println(fotoID);
     dataFile.close();
     Serial.println("Data saved to absensi.csv");
+    return true;
   } else {
     Serial.println("Error opening absensi.csv");
+    // Failed to save to backup - red LED on
+    setLEDError();
+    return false;
   }
 }
 
-void saveToBackupCSV(String date, String time, String uid) {
+bool saveToBackupCSV(String date, String time, String uid) {
   dataFile = SD.open("/backup.csv", FILE_APPEND);
   if (dataFile) {
     dataFile.print(date);
@@ -200,11 +221,16 @@ void saveToBackupCSV(String date, String time, String uid) {
     dataFile.println(uid);
     dataFile.close();
     Serial.println("Data saved to backup.csv");
+    // Success saving to backup - yellow LED blink 3 times
+    blinkLED(LED_KUNING, 3, 300);
+    return true;
   } else {
     Serial.println("Error opening backup.csv");
+    // Failed to save to backup - red LED on
+    setLEDError();
+    return false;
   }
 }
-
 
 void sendToGoogleAppsScript(String date, String time, String uid, String fotoID) {
   if (WiFi.status() == WL_CONNECTED) {
@@ -226,15 +252,16 @@ void sendToGoogleAppsScript(String date, String time, String uid, String fotoID)
 
     int httpResponseCode = http.POST(payload);
 
-
     Serial.print("HTTP Response code: ");
     Serial.println(httpResponseCode);
 
     if (httpResponseCode < 400) {
-      // Success - trigger ESP32-CAM to take photo
+      // Success - trigger ESP32-CAM to take photo and green LED blink 3 times
+      blinkLED(LED_HIJAU, 3, 300);
       triggerESPCam(fotoID);
     } else {
-      // Failed - save to backup
+      // Failed - yellow LED on
+      setLEDWarning();
       saveToBackupCSV(date, time, uid);
     }
 
@@ -246,6 +273,10 @@ void sendToGoogleAppsScript(String date, String time, String uid, String fotoID)
     String time = formatTime(now);
     saveToBackupCSV(date, time, currentUID);
   }
+  
+  // Return to standby mode
+  delay(1000);
+  setStandbyMode();
 }
 
 void triggerESPCam(String fotoID) {
@@ -259,6 +290,56 @@ void triggerESPCam(String fotoID) {
   Serial.println(httpResponseCode);
 
   http.end();
+}
+
+// LED Control Functions
+void startupLEDSequence() {
+  // All LEDs blink twice
+  for (int i = 0; i < 2; i++) {
+    digitalWrite(LED_MERAH, HIGH);
+    digitalWrite(LED_KUNING, HIGH);
+    digitalWrite(LED_HIJAU, HIGH);
+    delay(300);
+    digitalWrite(LED_MERAH, LOW);
+    digitalWrite(LED_KUNING, LOW);
+    digitalWrite(LED_HIJAU, LOW);
+    delay(300);
+  }
+}
+
+void setStandbyMode() {
+  // Turn off all LEDs except green
+  digitalWrite(LED_MERAH, LOW);
+  digitalWrite(LED_KUNING, LOW);
+  digitalWrite(LED_HIJAU, HIGH);
+}
+
+void blinkLED(int ledPin, int count, int duration) {
+  for (int i = 0; i < count; i++) {
+    digitalWrite(ledPin, HIGH);
+    delay(duration);
+    digitalWrite(ledPin, LOW);
+    if (i < count - 1) delay(duration);
+  }
+}
+
+void setLEDWarning() {
+  // Yellow LED on, others off
+  digitalWrite(LED_MERAH, LOW);
+  digitalWrite(LED_KUNING, HIGH);
+  digitalWrite(LED_HIJAU, LOW);
+}
+
+void setLEDError() {
+  // Red LED on, others off
+  digitalWrite(LED_MERAH, HIGH);
+  digitalWrite(LED_KUNING, LOW);
+  digitalWrite(LED_HIJAU, LOW);
+}
+
+void generalError() {
+  // Red LED blink 3 times for general errors
+  blinkLED(LED_MERAH, 3, 300);
 }
 
 String urlEncode(String str) {
