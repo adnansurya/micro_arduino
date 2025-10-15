@@ -281,7 +281,7 @@ void sendToGoogleAppsScript(String date, String time, String uid, String fotoID)
 
 void triggerESPCam(String fotoID) {
   HTTPClient http;
-  String url = "http://esp32cam.local/" + fotoID;
+  String url = "http://esp32cam.local/capture?foto_id=" + fotoID;
 
   http.begin(url);
   int httpResponseCode = http.GET();
