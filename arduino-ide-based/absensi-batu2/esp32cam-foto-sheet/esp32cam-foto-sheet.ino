@@ -5,10 +5,7 @@
 #include <HTTPClient.h>
 #include <base64.h>
 #include <ArduinoJson.h>
-
-// WiFi credentials
-const char* ssid = "MIKRO";
-const char* password = "1DEAlist";
+#include <WiFiManager.h>
 
 // Google Apps Script URL
 const char* scriptURL = "https://script.google.com/macros/s/AKfycbxn7MRT1RSf3AVQ_iqIbfcYe7tNFEL1T5sFIbskY-TS8QcuAuMFW9gxy9P0GFCVuwzA/exec";
@@ -33,6 +30,7 @@ const char* scriptURL = "https://script.google.com/macros/s/AKfycbxn7MRT1RSf3AVQ
 #define LED_FLASH 4
 
 WebServer server(80);
+WiFiManager wm;
 
 String currentFotoID = "";
 
@@ -51,7 +49,7 @@ void setup() {
       ;
   }
 
-  // Connect to WiFi
+  // Connect to WiFi using WiFiManager
   connectWiFi();
 
   // Setup mDNS
@@ -63,11 +61,14 @@ void setup() {
   // Setup web server routes dengan parameter GET
   server.on("/", handleRoot);
   server.on("/capture", handleCapture);  // Endpoint baru khusus untuk capture
+  server.on("/wifi", handleWifiConfig);  // Endpoint untuk konfigurasi WiFi
+  server.on("/reset", handleResetWifi);  // Endpoint untuk reset WiFi
   server.onNotFound(handleNotFound);
 
   server.begin();
   Serial.println("HTTP server started");
   Serial.println("Access via: http://esp32cam.local/capture?foto_id=YOUR_ID");
+  Serial.println("WiFi config: http://esp32cam.local/wifi");
   ledSequence(3, 100);
 }
 
@@ -120,38 +121,141 @@ bool initializeCamera() {
 }
 
 void connectWiFi() {
-  WiFi.begin(ssid, password);
-  Serial.print("Connecting to WiFi");
+  // Konfigurasi WiFiManager
+  wm.setDebugOutput(false); // Nonaktifkan debug output untuk mengurangi spam serial
+  wm.setConfigPortalTimeout(180); // Timeout 3 menit untuk config portal
+  
+  // Custom parameter jika diperlukan
+  // WiFiManagerParameter custom_param("param_id", "Param Label", "default", 10);
+  // wm.addParameter(&custom_param);
 
-  int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-    delay(1000);
-    Serial.print(".");
-    attempts++;
-  }
+  Serial.println("Menghubungkan ke WiFi...");
 
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nConnected to WiFi");
+  // Coba koneksi ke WiFi yang tersimpan
+  if (!wm.autoConnect("ESP32-CAM-AP", "password123")) {
+    Serial.println("Gagal terhubung dan timeout terjadi");
+    Serial.println("Reset diperlukan atau akses point 'ESP32-CAM-AP' masih tersedia");
+    ledSequence(5, 200); // Indikator mode AP
+  } else {
+    Serial.println("Berhasil terhubung ke WiFi!");
     Serial.print("IP Address: ");
     Serial.println(WiFi.localIP());
-  } else {
-    Serial.println("\nFailed to connect to WiFi");
+    ledSequence(2, 200); // Indikator berhasil konek
   }
 }
 
 void handleRoot() {
-  String html = "<html><head><title>ESP32-CAM Photo Capture</title></head><body>";
+  String html = "<html><head><title>ESP32-CAM Photo Capture</title>";
+  html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
+  html += "<style>";
+  html += "body { font-family: Arial, sans-serif; margin: 20px; background: #f0f0f0; }";
+  html += ".container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }";
+  html += "h1 { color: #333; }";
+  html += "code { background: #f4f4f4; padding: 5px; border-radius: 3px; }";
+  html += ".btn { background: #007bff; color: white; padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; display: inline-block; margin: 5px; }";
+  html += ".btn:hover { background: #0056b3; }";
+  html += ".btn-danger { background: #dc3545; }";
+  html += ".btn-danger:hover { background: #c82333; }";
+  html += ".wifi-info { background: #e9ecef; padding: 10px; border-radius: 5px; margin: 10px 0; }";
+  html += "</style></head><body>";
+  html += "<div class='container'>";
   html += "<h1>ESP32-CAM Photo Capture</h1>";
+  
+  // Info WiFi
+  html += "<div class='wifi-info'>";
+  html += "<strong>WiFi Status:</strong> " + String(WiFi.status() == WL_CONNECTED ? "Terhubung" : "Terputus") + "<br>";
+  if (WiFi.status() == WL_CONNECTED) {
+    html += "<strong>SSID:</strong> " + String(WiFi.SSID()) + "<br>";
+    html += "<strong>IP Address:</strong> " + WiFi.localIP().toString();
+  }
+  html += "</div>";
+  
   html += "<p>Gunakan endpoint berikut untuk menangkap foto:</p>";
-  html += "<code>http://" + WiFi.localIP().toString() + "/capture?foto_id=ID_ANDA</code>";
+  html += "<code>http://" + (WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : "esp32cam.local") + "/capture?foto_id=ID_ANDA</code>";
   html += "<br><br>";
   html += "<form action='/capture' method='GET'>";
-  html += "Foto ID: <input type='text' name='foto_id' value='TEST123'>";
-  html += "<input type='submit' value='Capture Photo'>";
+  html += "<strong>Foto ID:</strong> <input type='text' name='foto_id' value='TEST123' required>";
+  html += "<input type='submit' value='Capture Photo' class='btn'>";
   html += "</form>";
-  html += "</body></html>";
+  html += "<br>";
+  html += "<a href='/wifi' class='btn'>Konfigurasi WiFi</a>";
+  html += "<a href='/reset' class='btn btn-danger' onclick='return confirm(\"Yakin ingin reset WiFi?\")'>Reset WiFi</a>";
+  html += "</div></body></html>";
 
   server.send(200, "text/html", html);
+}
+
+void handleWifiConfig() {
+  String html = "<html><head><title>WiFi Configuration</title>";
+  html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
+  html += "<style>";
+  html += "body { font-family: Arial, sans-serif; margin: 20px; background: #f0f0f0; }";
+  html += ".container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }";
+  html += "input[type='text'], input[type='password'] { width: 100%; padding: 10px; margin: 5px 0; border: 1px solid #ddd; border-radius: 5px; }";
+  html += ".btn { background: #007bff; color: white; padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; display: inline-block; }";
+  html += ".btn:hover { background: #0056b3; }";
+  html += "</style></head><body>";
+  html += "<div class='container'>";
+  html += "<h1>Konfigurasi WiFi</h1>";
+  html += "<p>Device akan restart setelah konfigurasi WiFi.</p>";
+  html += "<form method='get' action='/wifisave'>";
+  html += "<input type='text' name='s' placeholder='SSID' required><br>";
+  html += "<input type='password' name='p' placeholder='Password' required><br>";
+  html += "<input type='submit' value='Simpan' class='btn'>";
+  html += "</form>";
+  html += "<br><a href='/'>Kembali ke Home</a>";
+  html += "</div></body></html>";
+  
+  server.send(200, "text/html", html);
+}
+
+void handleResetWifi() {
+  wm.resetSettings();
+  String html = "<html><head><title>Reset WiFi</title>";
+  html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
+  html += "<style>";
+  html += "body { font-family: Arial, sans-serif; margin: 20px; background: #f0f0f0; }";
+  html += ".container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }";
+  html += "</style></head><body>";
+  html += "<div class='container'>";
+  html += "<h1>WiFi Reset</h1>";
+  html += "<p>Settings WiFi telah direset. Device akan restart dalam 5 detik...</p>";
+  html += "</div></body></html>";
+  
+  server.send(200, "text/html", html);
+  delay(5000);
+  ESP.restart();
+}
+
+// Handler untuk menyimpan konfigurasi WiFi
+void handleWifiSave() {
+  Serial.println("Menyimpan konfigurasi WiFi...");
+  
+  String ssid = server.arg("s");
+  String password = server.arg("p");
+  
+  if (ssid.length() > 0) {
+    WiFi.begin(ssid.c_str(), password.c_str());
+    
+    String html = "<html><head><title>WiFi Save</title>";
+    html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
+    html += "<style>";
+    html += "body { font-family: Arial, sans-serif; margin: 20px; background: #f0f0f0; }";
+    html += ".container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }";
+    html += "</style></head><body>";
+    html += "<div class='container'>";
+    html += "<h1>Konfigurasi WiFi Disimpan</h1>";
+    html += "<p>Mencoba menghubungkan ke: " + ssid + "</p>";
+    html += "<p>Device akan restart...</p>";
+    html += "</div></body></html>";
+    
+    server.send(200, "text/html", html);
+    
+    delay(3000);
+    ESP.restart();
+  } else {
+    server.send(200, "text/plain", "SSID tidak boleh kosong");
+  }
 }
 
 void handleCapture() {
@@ -253,44 +357,11 @@ bool sendPhotoToGoogleAppsScript(String imageBase64, String fotoID) {
   return success;
 }
 
-String urlEncode(String str) {
-  String encodedString = "";
-  char c;
-  char code0;
-  char code1;
-
-  for (int i = 0; i < str.length(); i++) {
-    c = str.charAt(i);
-    if (c == ' ') {
-      encodedString += '+';
-    } else if (isalnum(c)) {
-      encodedString += c;
-    } else {
-      code1 = (c & 0xf) + '0';
-      if ((c & 0xf) > 9) {
-        code1 = (c & 0xf) - 10 + 'A';
-      }
-      c = (c >> 4) & 0xf;
-      code0 = c + '0';
-      if (c > 9) {
-        code0 = c - 10 + 'A';
-      }
-      encodedString += '%';
-      encodedString += code0;
-      encodedString += code1;
-    }
-  }
-
-  return encodedString;
-}
-
 void ledSequence(int blinks, int duration) { 
-  
   for(int i = 0; i < blinks; i++) {
     digitalWrite(LED_FLASH, HIGH);
     delay(duration);
     digitalWrite(LED_FLASH, LOW);
     if(i < blinks - 1) delay(duration);
   }
-  
 }

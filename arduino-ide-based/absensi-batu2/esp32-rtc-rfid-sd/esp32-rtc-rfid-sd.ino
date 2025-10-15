@@ -8,6 +8,7 @@
 #include <Wire.h>
 #include "RTClib.h"
 #include <ArduinoJson.h>
+#include <WiFiManager.h>
 
 // Pin definitions
 #define SS_PIN 4
@@ -48,13 +49,18 @@ void setup() {
 
   // Initialize components
   initializeRTC();
-  connectWiFi();
+  setupWifiManager();
   SPI.begin();
   initializeRFID();
   initializeSD();
 
+  // Process backup data on startup
+  blinkLED(LED_KUNING, 3, 300);
+  processBackupData();
+
   Serial.println("Sistem Absensi IoT Ready");
-  
+  blinkLED(LED_HIJAU, 1, 300);
+
   // Standby mode - green LED on
   setStandbyMode();
 }
@@ -141,9 +147,9 @@ void readRFID() {
   currentUID.toUpperCase();
 
   Serial.println("Card detected: " + currentUID);
-  
+
   // Card detected - green LED blink once
-  blinkLED(LED_HIJAU, 1, 300);
+  blinkLED(LED_HIJAU, 2, 300);
 
   // Generate unique Foto ID
   currentFotoID = generateFotoID();
@@ -273,7 +279,7 @@ void sendToGoogleAppsScript(String date, String time, String uid, String fotoID)
     String time = formatTime(now);
     saveToBackupCSV(date, time, currentUID);
   }
-  
+
   // Return to standby mode
   delay(1000);
   setStandbyMode();
@@ -290,6 +296,110 @@ void triggerESPCam(String fotoID) {
   Serial.println(httpResponseCode);
 
   http.end();
+}
+
+// Backup Data Processing Functions
+void processBackupData() {
+  Serial.println("Checking for backup data...");
+
+  if (!SD.exists("/backup.csv")) {
+    Serial.println("No backup file found");
+    return;
+  }
+
+  File backupFile = SD.open("/backup.csv", FILE_READ);
+  if (!backupFile) {
+    Serial.println("Failed to open backup.csv");
+    return;
+  }
+
+  // Skip header line
+  backupFile.readStringUntil('\n');
+
+  int backupCount = 0;
+  int successCount = 0;
+
+  // Read backup data line by line
+  while (backupFile.available()) {
+    String line = backupFile.readStringUntil('\n');
+    line.trim();
+
+    if (line.length() > 0) {
+      backupCount++;
+      Serial.println("Processing backup: " + line);
+
+      // Parse CSV line
+      int firstComma = line.indexOf(',');
+      int secondComma = line.indexOf(',', firstComma + 1);
+
+      if (firstComma != -1 && secondComma != -1) {
+        String date = line.substring(0, firstComma);
+        String time = line.substring(firstComma + 1, secondComma);
+        String uid = line.substring(secondComma + 1);
+
+        if (sendBackupToGoogleAppsScript(date, time, uid)) {
+          successCount++;
+          // Green LED blink for each successful backup upload
+          blinkLED(LED_HIJAU, 1, 200);
+        } else {
+          // Yellow LED blink for failed backup upload
+          blinkLED(LED_KUNING, 1, 200);
+        }
+      }
+    }
+  }
+
+  backupFile.close();
+
+  Serial.println("Backup processing completed: " + String(successCount) + "/" + String(backupCount) + " successful");
+
+  // If all backups were successfully sent, delete the backup file
+  if (successCount == backupCount && backupCount > 0) {
+    if (SD.remove("/backup.csv")) {
+      Serial.println("Backup file deleted successfully");
+      // Green LED blink 3 times for successful cleanup
+      blinkLED(LED_HIJAU, 3, 300);
+    } else {
+      Serial.println("Failed to delete backup file");
+      // Red LED blink for deletion error
+      blinkLED(LED_MERAH, 2, 300);
+    }
+  } else if (backupCount > 0) {
+    Serial.println("Some backups failed to send, keeping backup file");
+    // Yellow LED on for partial success
+    setLEDWarning();
+    delay(2000);
+  }
+}
+
+bool sendBackupToGoogleAppsScript(String date, String time, String uid) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi not connected for backup upload");
+    return false;
+  }
+
+  HTTPClient http;
+  http.begin(scriptURL);
+  http.addHeader("Content-Type", "application/json");
+
+  DynamicJsonDocument doc(2048);
+  doc["date"] = date;
+  doc["time"] = time;
+  doc["uid"] = uid;
+  doc["foto_id"] = "BACKUP_" + generateFotoID();  // Special foto_id for backups
+
+  String payload;
+  serializeJson(doc, payload);
+
+  Serial.println("Sending backup data: " + payload);
+
+  int httpResponseCode = http.POST(payload);
+  Serial.print("Backup HTTP Response code: ");
+  Serial.println(httpResponseCode);
+
+  http.end();
+
+  return (httpResponseCode < 400);
 }
 
 // LED Control Functions
@@ -342,33 +452,19 @@ void generalError() {
   blinkLED(LED_MERAH, 3, 300);
 }
 
-String urlEncode(String str) {
-  String encodedString = "";
-  char c;
-  char code0;
-  char code1;
+void setupWifiManager() {
+  WiFiManager wm;
 
-  for (int i = 0; i < str.length(); i++) {
-    c = str.charAt(i);
-    if (c == ' ') {
-      encodedString += '+';
-    } else if (isalnum(c)) {
-      encodedString += c;
-    } else {
-      code1 = (c & 0xf) + '0';
-      if ((c & 0xf) > 9) {
-        code1 = (c & 0xf) - 10 + 'A';
-      }
-      c = (c >> 4) & 0xf;
-      code0 = c + '0';
-      if (c > 9) {
-        code0 = c - 10 + 'A';
-      }
-      encodedString += '%';
-      encodedString += code0;
-      encodedString += code1;
-    }
+  bool res;
+  // res = wm.autoConnect(); // auto generated AP name from chipid
+  // res = wm.autoConnect("AutoConnectAP"); // anonymous ap
+  res = wm.autoConnect("ESP32 Absensi", "password123");  // password protected ap
+
+  if (!res) {
+    Serial.println("Failed to connect");
+    // ESP.restart();
+  } else {
+    //if you get here you have connected to the WiFi
+    Serial.println("connected...yeey :)");
   }
-
-  return encodedString;
 }
