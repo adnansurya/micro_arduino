@@ -31,6 +31,15 @@ void arah2Roda(int gerakan, int kecepatan) {
       analogWrite(ENB, pwmKanan);
       break;
 
+    case 2:  // Mundur
+      digitalWrite(IN1, LOW);
+      digitalWrite(IN2, HIGH);
+      digitalWrite(IN3, LOW);
+      digitalWrite(IN4, HIGH);
+      analogWrite(ENA, pwmKiri);
+      analogWrite(ENB, pwmKanan);
+      break;
+
     case 3:  // Belok kiri
       digitalWrite(IN1, LOW);
       digitalWrite(IN2, HIGH);
