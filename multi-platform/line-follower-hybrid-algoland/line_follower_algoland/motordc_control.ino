@@ -41,21 +41,42 @@ void arah2Roda(int gerakan, int kecepatan) {
       break;
 
     case 3:  // Belok kiri
-      digitalWrite(IN1, LOW);
-      digitalWrite(IN2, HIGH);
-      digitalWrite(IN3, HIGH);
-      digitalWrite(IN4, LOW);
-      analogWrite(ENA, pwmKiri);
+
+      if (manualMode) {
+        digitalWrite(IN1, HIGH);
+        digitalWrite(IN2, LOW);
+        digitalWrite(IN3, HIGH);
+        digitalWrite(IN4, LOW);
+        analogWrite(ENA, pwmKiri - manualGap);
+      } else {
+        digitalWrite(IN1, LOW);
+        digitalWrite(IN2, HIGH);
+        digitalWrite(IN3, HIGH);
+        digitalWrite(IN4, LOW);
+        analogWrite(ENA, pwmKiri);
+      }
+
       analogWrite(ENB, pwmKanan);
+
       break;
 
     case 4:  // Belok kanan
-      digitalWrite(IN1, HIGH);
-      digitalWrite(IN2, LOW);
-      digitalWrite(IN3, LOW);
-      digitalWrite(IN4, HIGH);
+      if (manualMode) {
+        digitalWrite(IN1, HIGH);
+        digitalWrite(IN2, LOW);
+        digitalWrite(IN3, HIGH);
+        digitalWrite(IN4, LOW);
+        analogWrite(ENB, pwmKanan - manualGap);
+      } else {
+        digitalWrite(IN1, HIGH);
+        digitalWrite(IN2, LOW);
+        digitalWrite(IN3, LOW);
+        digitalWrite(IN4, HIGH);
+        analogWrite(ENB, pwmKanan);
+      }
+
       analogWrite(ENA, pwmKiri);
-      analogWrite(ENB, pwmKanan);
+
       break;
 
     default:

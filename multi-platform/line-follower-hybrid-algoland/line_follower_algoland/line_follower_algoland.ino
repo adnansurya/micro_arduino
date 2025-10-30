@@ -2,6 +2,7 @@
 
 
 bool manualMode = false;
+int manualGap = 30;
 int currentSpeed = 120;
 
 // Pin untuk sensor infrared
@@ -71,11 +72,17 @@ void loop() {
     Serial.println(perintah);
 
     if (perintah == "mode:auto") {
+      if (manualMode) {
+        arah2Roda(0, 0);
+      }
       manualMode = false;
       Serial.println("MODE AUTO");
     }
 
     if (perintah == "mode:manual") {
+      if (!manualMode) {
+        arah2Roda(0, 0);
+      }
       manualMode = true;
       Serial.println("MODE MANUAL");
     }
@@ -88,6 +95,7 @@ void loop() {
         Serial.print("Speed Now: ");
         Serial.println(speedNow);
         currentSpeed = speedNow.toInt();
+        arah2Roda(0, 0);
 
 
       } else {
