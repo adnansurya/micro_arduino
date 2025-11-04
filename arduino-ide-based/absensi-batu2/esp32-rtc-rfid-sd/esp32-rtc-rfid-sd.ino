@@ -26,6 +26,8 @@ const char* password = "1DEAlist";
 
 // Google Apps Script URL
 const char* scriptURL = "https://script.google.com/macros/s/AKfycbxn7MRT1RSf3AVQ_iqIbfcYe7tNFEL1T5sFIbskY-TS8QcuAuMFW9gxy9P0GFCVuwzA/exec";
+// API untuk mendapatkan waktu dari internet
+const String TIME_API_URL = "http://worldtimeapi.org/api/timezone/Asia/Makassar";
 
 // Components
 MFRC522 mfrc522(SS_PIN, RST_PIN);
@@ -35,6 +37,11 @@ File dataFile;
 // Variables
 String currentUID = "";
 String currentFotoID = "";
+
+bool rtcAvailable = false;
+bool timeSynced = false;
+unsigned long lastTimeSync = 0;
+const unsigned long TIME_SYNC_INTERVAL = 24 * 60 * 60 * 1000;  // Sync setiap 24 jam
 
 void setup() {
   Serial.begin(115200);
@@ -53,6 +60,11 @@ void setup() {
   SPI.begin();
   initializeRFID();
   initializeSD();
+  
+
+  if (rtcAvailable) {
+    syncTimeFromAPI();
+  }
 
   // Process backup data on startup
   blinkLED(LED_KUNING, 3, 300);
@@ -71,6 +83,14 @@ void loop() {
     readRFID();
     delay(1000);
   }
+
+   // Sync waktu periodic setiap 24 jam (hanya jika online)
+  if (rtcAvailable && !timeSynced) {
+    unsigned long currentMillis = millis();
+    if (currentMillis - lastTimeSync > TIME_SYNC_INTERVAL) {
+      syncTimeFromAPI();
+    }
+  }
 }
 
 void initializeSD() {
@@ -86,15 +106,22 @@ void initializeSD() {
 }
 
 void initializeRTC() {
-  if (!rtc.begin()) {
-    Serial.println("Couldn't find RTC");
-    while (1)
-      ;
-  }
+  if (rtc.begin()) {
+    rtcAvailable = true;
+    Serial.println("✅ RTC DS3231 terhubung");
 
-  if (rtc.lostPower()) {
-    Serial.println("RTC lost power, setting time");
-    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+    // Cek jika RTC kehilangan power
+    if (rtc.lostPower()) {
+      Serial.println("⚠️ RTC kehilangan power, perlu sync waktu dari internet");
+    } else {
+      Serial.println("✅ RTC waktu tersimpan");
+      // Tampilkan waktu RTC saat ini
+      DateTime now = rtc.now();
+      Serial.print("🕒 Waktu RTC saat ini: ");
+      Serial.println(getDateTimeString(now));
+    }
+  } else {
+    Serial.println("❌ Gagal terhubung ke RTC DS3231");
   }
 }
 
@@ -467,4 +494,153 @@ void setupWifiManager() {
     //if you get here you have connected to the WiFi
     Serial.println("connected...yeey :)");
   }
+}
+
+bool syncTimeFromAPI() {
+  if (!rtcAvailable) {
+    Serial.println("❌ RTC tidak tersedia untuk sync waktu");
+    return false;
+  }
+
+  Serial.println("🕒 Mensinkronisasi waktu dari internet...");
+
+  HTTPClient http;
+  WiFiClient client;
+
+  // Gunakan HTTP (bukan HTTPS) untuk kemudahan
+  if (!http.begin(client, TIME_API_URL)) {
+    Serial.println("❌ Gagal terhubung ke time API");
+    return false;
+  }
+
+  int httpCode = http.GET();
+
+  if (httpCode == HTTP_CODE_OK) {
+    String payload = http.getString();
+    Serial.println("✅ Berhasil mendapatkan waktu dari API");
+
+    // Parse JSON response
+    DynamicJsonDocument doc(1024);
+    DeserializationError error = deserializeJson(doc, payload);
+
+    if (error) {
+      Serial.print("❌ Error parsing JSON: ");
+      Serial.println(error.c_str());
+      http.end();
+      return false;
+    }
+
+    // Extract waktu dari JSON response
+    // Format dari worldtimeapi.org: "2024-01-15T14:30:25.123456+07:00"
+    String datetimeStr = doc["datetime"].as<String>();
+    unsigned long unixtime = doc["unixtime"].as<unsigned long>();
+
+    Serial.print("📅 Waktu dari API: ");
+    Serial.println(datetimeStr);
+    Serial.print("⏱️ Unix time: ");
+    Serial.println(unixtime);
+
+    // Konversi unixtime ke DateTime
+    time_t rawtime = unixtime;
+    struct tm* timeinfo = localtime(&rawtime);
+
+    // Buat DateTime object
+    DateTime apiTime(
+      timeinfo->tm_year + 1900,  // tahun sejak 1900
+      timeinfo->tm_mon + 1,      // bulan 0-11 → 1-12
+      timeinfo->tm_mday,         // hari
+      timeinfo->tm_hour,         // jam
+      timeinfo->tm_min,          // menit
+      timeinfo->tm_sec           // detik
+    );
+
+    // Set RTC dengan waktu dari API
+    rtc.adjust(apiTime);
+
+    timeSynced = true;
+    lastTimeSync = millis();
+
+    Serial.print("✅ Waktu RTC disinkronisasi: ");
+    Serial.println(getDateTimeString(apiTime));
+
+    http.end();
+    return true;
+
+  } else {
+    Serial.printf("❌ Gagal mendapatkan waktu, HTTP code: %d\n", httpCode);
+    // Coba API alternatif
+    return syncTimeFromBackupAPI();
+  }
+
+  http.end();
+  return false;
+}
+
+bool syncTimeFromBackupAPI() {
+  Serial.println("🔄 Mencoba API waktu alternatif...");
+
+  const String backupAPI = "http://worldtimeapi.org/api/ip";  // API alternatif
+
+  HTTPClient http;
+  WiFiClient client;
+
+  if (!http.begin(client, backupAPI)) {
+    Serial.println("❌ Gagal terhubung ke backup time API");
+    return false;
+  }
+
+  int httpCode = http.GET();
+
+  if (httpCode == HTTP_CODE_OK) {
+    String payload = http.getString();
+
+    DynamicJsonDocument doc(1024);
+    DeserializationError error = deserializeJson(doc, payload);
+
+    if (error) {
+      Serial.print("❌ Error parsing JSON backup API: ");
+      Serial.println(error.c_str());
+      http.end();
+      return false;
+    }
+
+    String datetimeStr = doc["datetime"].as<String>();
+    unsigned long unixtime = doc["unixtime"].as<unsigned long>();
+
+    Serial.print("📅 Waktu dari backup API: ");
+    Serial.println(datetimeStr);
+
+    time_t rawtime = unixtime  + 28800;
+    struct tm* timeinfo = localtime(&rawtime);
+
+    DateTime apiTime(
+      timeinfo->tm_year + 1900,
+      timeinfo->tm_mon + 1,
+      timeinfo->tm_mday,
+      timeinfo->tm_hour,
+      timeinfo->tm_min,
+      timeinfo->tm_sec);
+
+    rtc.adjust(apiTime);
+
+    timeSynced = true;
+    lastTimeSync = millis();
+
+    Serial.print("✅ Waktu RTC disinkronisasi dari backup API: ");
+    Serial.println(getDateTimeString(apiTime));
+
+    http.end();
+    return true;
+  }
+
+  http.end();
+  return false;
+}
+
+String getDateTimeString(DateTime dt) {
+  char buffer[20];
+  sprintf(buffer, "%04d-%02d-%02d %02d:%02d:%02d",
+          dt.year(), dt.month(), dt.day(),
+          dt.hour(), dt.minute(), dt.second());
+  return String(buffer);
 }
