@@ -2,20 +2,21 @@
 #include <WiFiClientSecure.h>
 #include <UniversalTelegramBot.h>
 #include <LiquidCrystal_I2C.h>
+#include <WiFiManager.h>
 
-// Wifi network station credentials
-#define WIFI_SSID "WARKOP LATEMMAMALA"
-#define WIFI_PASSWORD "OKTOBER10"
+#define AP_SETUP "HIMATIKOM (Tebak Jarak)"
+
 // Telegram BOT Token (Get from Botfather)
 #define BOT_TOKEN "8529296741:AAHv0KwoZN7teUl9TLvLYhCvwathTG7oyhU"
 
 String CHAT_ID = "7917806728";  // Ganti dengan Chat ID pengguna (tempat bot akan mengirim pesan)
 
 // --- KONFIGURASI PIN & GAME ---
-const int trigPin = D5;        // Sesuaikan pin jika perlu (misalnya D1 = GPIO5, D2 = GPIO4, dst.)
-const int echoPin = D6;       // Sesuaikan pin jika perlu
+const int trigPin = D5;         // Sesuaikan pin jika perlu (misalnya D1 = GPIO5, D2 = GPIO4, dst.)
+const int echoPin = D6;         // Sesuaikan pin jika perlu
 const long MAX_DISTANCE = 200;  // Batas jarak maksimum (cm)
-const long GAME_TIME = 10000;  // Waktu permainan (10 detik)
+const long MIN_DISTANCE = 50;
+const long GAME_TIME = 10000;   // Waktu permainan (10 detik)
 
 // Inisialisasi LCD I2C
 LiquidCrystal_I2C lcd(0x27, 16, 2);  // Sesuaikan alamat jika perlu (0x27/0x3F)
@@ -23,6 +24,7 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);  // Sesuaikan alamat jika perlu (0x27/0x3F)
 // --- VARIABEL GLOBAL ---
 WiFiClientSecure securedClient;
 UniversalTelegramBot bot(BOT_TOKEN, securedClient);
+WiFiManager wm;
 
 bool gameActive = false;
 long targetDistance = 0;
@@ -55,30 +57,39 @@ void setup() {
   // Seed random generator (menggunakan waktu boot, kurang acak tapi lebih baik dari A0 di ESP)
   randomSeed(micros());
 
+  lcd.clear();
+  lcd.setCursor(3,0);
+  lcd.print("Game Tebak");
+  lcd.setCursor(5,1);
+  lcd.print("Jarak");
+
+  delay(5000);
+
   // Hubungkan ke Wi-Fi
   lcd.clear();
-  lcd.print("Menghubungkan...");
-  Serial.print("Menghubungkan ke WiFi: ");
-  Serial.println(WIFI_SSID);
-
-  WiFi.mode(WIFI_STA);
+  lcd.print("Set Up AP:"); 
+  lcd.setCursor(0, 1);
+  lcd.print(AP_SETUP);
+  
+  bool res;
+  res = wm.autoConnect(AP_SETUP);  // password protected ap
   securedClient.setInsecure();  // Nonaktifkan verifikasi SSL untuk kemudahan (hati-hati)
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-    lcd.print(".");
+  if (!res) {
+    Serial.println("Failed to connect");
+    lcd.clear();
+    lcd.print("Wifi Not Found");
+    // ESP.restart();
+  } else {
+    //if you get here you have connected to the WiFi
+    Serial.println("connected...yeey :)");
+    lcd.clear();
+    lcd.print("Connected to:");
+    lcd.setCursor(0,1);
+    lcd.print(wm.getWiFiSSID());
   }
 
-  Serial.println("");
-  Serial.print("Terhubung! Alamat IP: ");
-  Serial.println(WiFi.localIP());
-  lcd.clear();
-  lcd.print("WiFi Terhubung!");
-  lcd.setCursor(0, 1);
-  lcd.print(WiFi.localIP());
-  delay(2000);
+  delay(3000);
 
   // Tampilkan pesan standby
   standbyDisplay();
@@ -125,27 +136,29 @@ void startGame() {
   gameActive = true;
 
   // 1. Tentukan Jarak Target
-  targetDistance = (long)random(1, MAX_DISTANCE + 1);
+  targetDistance = (long)random(MIN_DISTANCE, MAX_DISTANCE + 1);
 
   lcd.clear();
-  lcd.print("Target Jarak:");
+  lcd.print("Berdiri Jarak:");
   lcd.setCursor(0, 1);
   lcd.print(targetDistance);
   lcd.print(" cm");
 
   // Kirim target ke Telegram (PENTING: JANGAN LAKUKAN INI jika target harus rahasia)
   // Di sini, kita asumsikan target ditampilkan di LCD dan objek harus diletakkan.
-  bot.sendMessage(CHAT_ID, "Permainan dimulai! Target: " + String(targetDistance) + " cm. Anda punya 10 detik. Siap-siap!", "");
+  bot.sendMessage(CHAT_ID, "Permainan dimulai! \nBerdirilah di Jarak: " + String(targetDistance) + " cm. \nAnda punya 10 detik. Siap-siap!", "");
 
-  Serial.print("Target: ");
+  Serial.print("Target:     ");
   Serial.println(targetDistance);
 
   // 2. Fase Permainan
   unsigned long startTime = millis();
   unsigned long timeLeft = GAME_TIME;
 
+  lcd.setCursor(0, 0);
+  lcd.print("Target:     ");
   lcd.setCursor(10, 0);
-  lcd.print("Waktu:");
+  lcd.print("Waktu");
 
   // Loop selama waktu permainan belum habis
   while (millis() - startTime < GAME_TIME) {
@@ -174,11 +187,10 @@ void startGame() {
   actualDistance = getDistance();
   long difference = abs(targetDistance - actualDistance);
 
-  lcd.clear();
-  lcd.print("T: ");
-  lcd.print(targetDistance);
-  lcd.print(" A: ");
+  lcd.clear(); 
+  lcd.print("Anda: ");
   lcd.print(actualDistance);
+  lcd.print(" cm");
 
   // 4. Kirim Hasil ke Telegram
   String resultMessage = "Waktu Habis!\n";
@@ -195,6 +207,7 @@ void startGame() {
     lcd.setCursor(0, 1);
     lcd.print("Selisih: ");
     lcd.print(difference);
+    lcd.print(" cm");
   }
 
   bot.sendMessage(CHAT_ID, resultMessage, "");
@@ -231,7 +244,7 @@ void handleNewMessages(int numNewMessages) {
     } else if (text == "/start") {
       String welcome = "Halo! Saya adalah Bot Game Tebak Jarak. Kirim /main untuk memulai game.";
       bot.sendMessage(chat_id, welcome, "");
-    }
+    } 
   }
 }
 
