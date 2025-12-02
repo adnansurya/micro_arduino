@@ -40,6 +40,10 @@ long targetDistance = 0;
 long actualDistance = 0;
 long duration;
 
+// --- VARIABEL KALIBRASI BARU ---
+bool calibrationActive = false;       // <-- Tambahkan ini
+const long CALIBRATION_TIME = 20000;  // 20 detik
+
 long lastTimeBotUpdate = 0;
 const int botRequestDelay = 1000;  // Cek bot setiap 1 detik
 
@@ -250,10 +254,28 @@ void handleNewMessages(int numNewMessages) {
     String from_name = bot.messages[i].from_name;
     String username = bot.messages[i].from_id;  // Username Telegram
 
+    // 0. Game/Kalibrasi Sedang Berlangsung (Cek dulu)
+    if (gameActive || calibrationActive) {
+      if (text != "/start" && text != "BATAL") {  // Izinkan /start dan BATAL untuk game
+                                                  // Konversi hasil conditional operator menjadi objek String
+        String messagePart1 = (gameActive ? "Permainan sedang berlangsung! " : "Kalibrasi sedang aktif! ");
+
+        // Lakukan penggabungan dengan objek String
+        bot.sendMessage(chat_id, messagePart1 + "Mohon tunggu hingga selesai.", "");
+        continue;  // Lanjutkan ke pesan berikutnya
+      }
+    }
+
     // 1. Perintah START
     if (text == "/start") {
       String welcome = "Halo " + from_name + "! Saya adalah Bot Game Tebak Jarak. Kirim /main untuk memulai game.";
       bot.sendMessage(chat_id, welcome, "");
+    }
+
+    // 2. Perintah KALIBRASI (BARU)
+    else if (text == "/kalibrasi" && !gameActive && !calibrationActive) {
+      CHAT_ID = chat_id;  // Simpan chat ID saat ini
+      calibrationMode();
     }
 
     // 2. Perintah MAIN (Memulai Input)
@@ -323,9 +345,9 @@ void sendDataToSpreadsheet(long diff) {
     Serial.println("Gagal mengirim data: WiFi terputus.");
     return;
   }
-  
+
   HTTPClient http;
-  
+
 
   // Siapkan data dalam format JSON
   String payload = "{";
@@ -375,4 +397,50 @@ void loop() {
     }
     lastTimeBotUpdate = millis();
   }
+}
+
+// =========================================================================
+// FUNGSI MODE KALIBRASI
+// =========================================================================
+void calibrationMode() {
+  calibrationActive = true;
+  long calibrationStartTime = millis();
+
+  bot.sendMessage(CHAT_ID, "**Mode Kalibrasi Aktif** selama 20 detik. \nLihat pembacaan jarak pada LCD.", "");
+  Serial.println("--- Mode Kalibrasi Dimulai ---");
+
+  lcd.clear();
+  lcd.print("KALIBRASI (20s)");
+
+  // Loop selama waktu kalibrasi belum habis
+  while (millis() - calibrationStartTime < CALIBRATION_TIME) {
+    long currentDistance = getDistance();  // Ambil jarak saat ini
+
+    // Tampilkan pada LCD (real-time)
+    lcd.setCursor(0, 1);
+    lcd.print("Jarak: ");
+    lcd.print(currentDistance);
+    lcd.print(" cm     ");  // Spasi ekstra untuk menghapus sisa karakter
+
+    Serial.print("Jarak Real-time: ");
+    Serial.println(currentDistance);
+
+    // Cek pesan Telegram (untuk mengakhiri kalibrasi jika perlu)
+    if (millis() > lastTimeBotUpdate + botRequestDelay) {
+      int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+      while (numNewMessages) {
+        handleNewMessages(numNewMessages);  // Mengizinkan /main atau /batal
+        numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+      }
+      lastTimeBotUpdate = millis();
+    }
+  }
+
+  // Kalibrasi Selesai
+  bot.sendMessage(CHAT_ID, "**Mode Kalibrasi Selesai!**", "");
+  Serial.println("--- Mode Kalibrasi Selesai ---");
+
+  calibrationActive = false;
+  // Kembali ke tampilan standby
+  standbyDisplay();
 }
