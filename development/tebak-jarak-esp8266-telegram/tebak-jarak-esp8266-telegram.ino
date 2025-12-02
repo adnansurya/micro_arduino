@@ -3,8 +3,17 @@
 #include <UniversalTelegramBot.h>
 #include <LiquidCrystal_I2C.h>
 #include <WiFiManager.h>
+#include <ESP8266HTTPClient.h>
 
+
+#define GAME_NAME "Tebak Jarak"
 #define AP_SETUP "HIMATIKOM (Tebak Jarak)"
+#define APPS_SCRIPT_URL "https://script.google.com/macros/s/AKfycbwc-W8LzhZEsySWBSY-skmOaZ-173OLcsLg1PgGqsJA23L9GlahC6ykBbMG0t966MuhWw/exec"
+
+// --- VARIABEL GLOBAL DATA PEMAIN ---
+String playerName = "";
+String playerWA = "";          // Nomor WhatsApp (hanya untuk penyimpanan)
+String playerTelegramID = "";  // Username Telegram (jika ada)
 
 // Telegram BOT Token (Get from Botfather)
 #define BOT_TOKEN "8529296741:AAHv0KwoZN7teUl9TLvLYhCvwathTG7oyhU"
@@ -16,7 +25,7 @@ const int trigPin = D5;         // Sesuaikan pin jika perlu (misalnya D1 = GPIO5
 const int echoPin = D6;         // Sesuaikan pin jika perlu
 const long MAX_DISTANCE = 200;  // Batas jarak maksimum (cm)
 const long MIN_DISTANCE = 50;
-const long GAME_TIME = 10000;   // Waktu permainan (10 detik)
+const long GAME_TIME = 10000;  // Waktu permainan (10 detik)
 
 // Inisialisasi LCD I2C
 LiquidCrystal_I2C lcd(0x27, 16, 2);  // Sesuaikan alamat jika perlu (0x27/0x3F)
@@ -58,22 +67,22 @@ void setup() {
   randomSeed(micros());
 
   lcd.clear();
-  lcd.setCursor(3,0);
+  lcd.setCursor(3, 0);
   lcd.print("Game Tebak");
-  lcd.setCursor(5,1);
+  lcd.setCursor(5, 1);
   lcd.print("Jarak");
 
   delay(5000);
 
   // Hubungkan ke Wi-Fi
   lcd.clear();
-  lcd.print("Set Up AP:"); 
+  lcd.print("Set Up AP:");
   lcd.setCursor(0, 1);
   lcd.print(AP_SETUP);
-  
+
   bool res;
   res = wm.autoConnect(AP_SETUP);  // password protected ap
-  securedClient.setInsecure();  // Nonaktifkan verifikasi SSL untuk kemudahan (hati-hati)
+  securedClient.setInsecure();     // Nonaktifkan verifikasi SSL untuk kemudahan (hati-hati)
 
   if (!res) {
     Serial.println("Failed to connect");
@@ -85,7 +94,7 @@ void setup() {
     Serial.println("connected...yeey :)");
     lcd.clear();
     lcd.print("Connected to:");
-    lcd.setCursor(0,1);
+    lcd.setCursor(0, 1);
     lcd.print(wm.getWiFiSSID());
   }
 
@@ -187,7 +196,7 @@ void startGame() {
   actualDistance = getDistance();
   long difference = abs(targetDistance - actualDistance);
 
-  lcd.clear(); 
+  lcd.clear();
   lcd.print("Anda: ");
   lcd.print(actualDistance);
   lcd.print(" cm");
@@ -214,8 +223,16 @@ void startGame() {
 
   Serial.println(resultMessage);
 
+  // 5. Kirim data ke Spreadsheet
+  sendDataToSpreadsheet(difference);
+
   delay(5000);         // Tahan tampilan hasil
   gameActive = false;  // Akhiri game
+
+  // 6. Reset Variabel Pemain untuk game berikutnya
+  playerName = "";
+  playerWA = "";
+  playerTelegramID = "";
 
   // Kembali ke tampilan standby
   standbyDisplay();
@@ -224,28 +241,124 @@ void startGame() {
 // =========================================================================
 // FUNGSI PENANGANAN PESAN BOT
 // =========================================================================
+// FUNGSI PENANGANAN PESAN BOT
 void handleNewMessages(int numNewMessages) {
-  Serial.print("Ada ");
-  Serial.print(numNewMessages);
-  Serial.println(" pesan baru");
-
   for (int i = 0; i < numNewMessages; i++) {
     String chat_id = bot.messages[i].chat_id;
     String text = bot.messages[i].text;
+    String from_id = bot.messages[i].from_id;
+    String from_name = bot.messages[i].from_name;
+    String username = bot.messages[i].from_id;  // Username Telegram
 
-    Serial.println(text);
-
-    if (text == "/main" && !gameActive) {
-      CHAT_ID = chat_id;
-      bot.sendMessage(chat_id, "Memulai permainan tebak jarak...", "");
-      startGame();
-    } else if (text == "/main" && gameActive) {
-      bot.sendMessage(chat_id, "Permainan sedang berlangsung! Mohon tunggu.", "");
-    } else if (text == "/start") {
-      String welcome = "Halo! Saya adalah Bot Game Tebak Jarak. Kirim /main untuk memulai game.";
+    // 1. Perintah START
+    if (text == "/start") {
+      String welcome = "Halo " + from_name + "! Saya adalah Bot Game Tebak Jarak. Kirim /main untuk memulai game.";
       bot.sendMessage(chat_id, welcome, "");
-    } 
+    }
+
+    // 2. Perintah MAIN (Memulai Input)
+    else if (text == "/main" && !gameActive) {
+      CHAT_ID = chat_id;            // Simpan chat ID saat ini
+      playerTelegramID = username;  // Simpan Telegram ID (username)
+
+      // Kirim Keyboard Kustom untuk memandu input
+      String keyboardJson = "[[\"BATAL\"]]";
+      bot.sendMessageWithReplyKeyboard(chat_id,
+                                       "**Siap memulai!**\n\nMasukkan **Nama Lengkap Anda**:",
+                                       "", keyboardJson, true);
+
+    }
+
+    // 3. Fase Input Nama
+    else if (text != "/main" && !gameActive && playerName.isEmpty() && chat_id == CHAT_ID) {
+      if (text == "BATAL") {
+        playerName = "";  // Reset
+        bot.sendMessage(chat_id, "Permintaan dibatalkan. Kirim /main untuk memulai lagi.", "", true);
+        return;
+      }
+      playerName = text;
+
+      // Minta input WA
+      String keyboardJson = "[[\"BATAL\"]]";
+      bot.sendMessageWithReplyKeyboard(chat_id,
+                                       "Terima kasih, *" + playerName + "*. Sekarang masukkan **Nomor WhatsApp** Anda (Contoh: 081234567890):",
+                                       "", keyboardJson, true);
+    }
+
+    // 4. Fase Input WA & Mulai Game
+    else if (text != "/main" && !gameActive && !playerName.isEmpty() && playerWA.isEmpty() && chat_id == CHAT_ID) {
+      if (text == "BATAL") {
+        playerName = "";  // Reset
+        playerWA = "";
+        bot.sendMessage(chat_id, "Permintaan dibatalkan. Kirim /main untuk memulai lagi.", "");
+        return;
+      }
+      playerWA = text;
+
+      // Reset keyboard setelah input selesai
+      bot.sendMessage(chat_id, "Data pemain tersimpan! Memulai permainan tebak jarak...", "");
+
+      startGame();
+
+    }
+
+    // 5. Game Sedang Berlangsung
+    else if (gameActive) {
+      bot.sendMessage(chat_id, "Permainan sedang berlangsung! Mohon tunggu skor Anda keluar.", "");
+    }
   }
+}
+
+// =========================================================================
+// FUNGSI PENGIRIMAN DATA KE GOOGLE APPS SCRIPT
+// =========================================================================
+void sendDataToSpreadsheet(long diff) {
+  if (diff == -1) {
+    // Jangan kirim jika terlalu jauh
+    Serial.println("Tidak mengirim data karena jarak terlalu jauh.");
+    return;
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Gagal mengirim data: WiFi terputus.");
+    return;
+  }
+  
+  HTTPClient http;
+  
+
+  // Siapkan data dalam format JSON
+  String payload = "{";
+  // 1. Tambahkan parameter GAME_NAME
+  payload += "\"game\":\"" + String(GAME_NAME) + "\",";
+  // 2. Tambahkan data pemain dan skor
+  payload += "\"nama\":\"" + playerName + "\",";
+  payload += "\"wa\":\"" + playerWA + "\",";
+  payload += "\"skor\":\"" + String(diff) + "\",";
+  payload += "\"sosmed1id\":\"" + playerTelegramID + "\",";
+  payload += "\"sosmed2id\":\"" + CHAT_ID + "\"}";
+
+  Serial.print("Mengirim data ke Apps Script: ");
+  Serial.println(payload);
+
+  http.begin(securedClient, APPS_SCRIPT_URL);
+  http.addHeader("Content-Type", "application/json");
+
+  int httpResponseCode = http.POST(payload);
+
+  if (httpResponseCode > 0) {
+    Serial.print("Apps Script Response: ");
+    Serial.println(httpResponseCode);
+    String response = http.getString();
+    Serial.println(response);
+    bot.sendMessage(CHAT_ID, "**Skor berhasil disimpan** ke *leaderboard*!", "");
+  } else {
+    Serial.print("Error saat mengirim data: ");
+    Serial.println(httpResponseCode);
+    bot.sendMessage(CHAT_ID, "**Gagal menyimpan skor** ke *leaderboard* (Error: " + String(httpResponseCode) + ").", "");
+  }
+
+  http.end();
 }
 
 // =========================================================================
