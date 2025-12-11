@@ -108,7 +108,11 @@ void loop() {
 void initializeSD() {
   if (!SD.begin(SD_CS_PIN)) {
     Serial.println("SD Card Mount Failed");
-    return;
+    sendDebug("initializeSD", "SD Card Mount Failed");
+    while(1){
+      blinkLED(LED_MERAH, 1, 1500);
+    }
+       
   }
   Serial.println("SD Card Mounted");
 
@@ -125,15 +129,18 @@ void initializeRTC() {
     // Cek jika RTC kehilangan power
     if (rtc.lostPower()) {
       Serial.println("⚠️ RTC kehilangan power, perlu sync waktu dari internet");
+      sendDebug("initializeRTC", "RTC kehilangan power, perlu sync waktu dari internet");
     } else {
       Serial.println("✅ RTC waktu tersimpan");
       // Tampilkan waktu RTC saat ini
       DateTime now = rtc.now();
       Serial.print("🕒 Waktu RTC saat ini: ");
       Serial.println(getDateTimeString(now));
+      sendDebug("initializeRTC", getDateTimeString(now));
     }
   } else {
     Serial.println("❌ Gagal terhubung ke RTC DS3231");
+    sendDebug("initializeRTC", "Gagal terhubung ke RTC DS3231");
   }
 }
 
@@ -250,6 +257,7 @@ bool saveToLocalCSV(String date, String time, String uid, String fotoID) {
     return true;
   } else {
     Serial.println("Error opening absensi.csv");
+    sendDebug("saveToLocalCSV", "Error opening absensi.csv");
     // Failed to save to backup - red LED on
     setLEDError();
     return false;
@@ -271,6 +279,7 @@ bool saveToBackupCSV(String date, String time, String uid) {
     return true;
   } else {
     Serial.println("Error opening backup.csv");
+    sendDebug("saveToBackupCSV", "Error opening backup.csv");
     // Failed to save to backup - red LED on
     setLEDError();
     return false;
@@ -317,12 +326,49 @@ void sendToGoogleAppsScript(String date, String time, String uid, String fotoID)
     DateTime now = rtc.now();
     String date = formatDate(now);
     String time = formatTime(now);
+    setLEDWarning();
     saveToBackupCSV(date, time, currentUID);
   }
 
   // Return to standby mode
   delay(1000);
   setStandbyMode();
+}
+
+void sendDebug(String label, String error) {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+
+    http.begin(scriptURL);
+    http.addHeader("Content-Type", "application/json");
+
+    DynamicJsonDocument doc(4096);
+    doc["action"] = "debug";
+    doc["label"] = label;
+    doc["error"] = error;
+
+    String payload;
+    serializeJson(doc, payload);
+
+    Serial.println("Payload size: " + String(payload.length()));
+
+    int httpResponseCode = http.POST(payload);
+
+    Serial.print("HTTP Response code: ");
+    Serial.println(httpResponseCode);
+
+    if (httpResponseCode > -1 && httpResponseCode < 400) {
+      // Success - trigger ESP32-CAM to take photo and green LED blink 3 times
+      Serial.println("DEBUG SENT");
+    } else {
+      // Failed - yellow LED on
+      Serial.println("DEBUG SENDING FAILED");
+    }
+
+    http.end();
+  } else {
+    Serial.println("WiFi not connected");
+  }
 }
 
 void triggerESPCam(String fotoID) {
@@ -344,17 +390,17 @@ void processBackupData() {
 
   if (!SD.exists("/backup.csv")) {
     Serial.println("No backup file found");
+    sendDebug("processBackupData", "No backup file found");
     return;
   }
 
   File backupFile = SD.open("/backup.csv", FILE_READ);
   if (!backupFile) {
     Serial.println("Failed to open backup.csv");
+    sendDebug("processBackupData", "Failed to open backup.csv");
     return;
   }
-
-  // Skip header line
-  backupFile.readStringUntil('\n');
+ 
 
   int backupCount = 0;
   int successCount = 0;
@@ -368,6 +414,9 @@ void processBackupData() {
     line.trim();
 
     if (line.length() > 0) {
+      if(line.indexOf("Tanggal,Waktu,UID") > -1 ){
+        continue;
+      }
       backupCount++;
       Serial.println("Processing backup: " + line);
 
@@ -395,6 +444,7 @@ void processBackupData() {
   backupFile.close();
 
   Serial.println("Backup processing completed: " + String(successCount) + "/" + String(backupCount) + " successful");
+  sendDebug("processBackupData", "Backup processing completed: " + String(successCount) + "/" + String(backupCount) + " successful");
 
   // If all backups were successfully sent, delete the backup file
   if (successCount == backupCount && backupCount > 0) {
@@ -404,11 +454,14 @@ void processBackupData() {
       blinkLED(LED_HIJAU, 3, 300);
     } else {
       Serial.println("Failed to delete backup file");
+      sendDebug("processBackupData", "Failed to delete backup file");
+
       // Red LED blink for deletion error
       blinkLED(LED_MERAH, 2, 300);
     }
   } else if (backupCount > 0) {
     Serial.println("Some backups failed to send, keeping backup file");
+    sendDebug("processBackupData", "Some backups failed to send, keeping backup file");
     // Yellow LED on for partial success
     setLEDWarning();
     delay(2000);
@@ -500,6 +553,7 @@ void setupWifiManager() {
   bool res;
   // res = wm.autoConnect(); // auto generated AP name from chipid
   // res = wm.autoConnect("AutoConnectAP"); // anonymous ap
+  wm.setConfigPortalTimeout(60);
   res = wm.autoConnect("ESP32 Absensi", "password123");  // password protected ap
 
   if (!res) {
@@ -514,6 +568,7 @@ void setupWifiManager() {
 bool syncTimeFromAPI() {
   if (!rtcAvailable) {
     Serial.println("❌ RTC tidak tersedia untuk sync waktu");
+    sendDebug("syncTimeFromAPI", "RTC tidak tersedia untuk sync waktu");
     return false;
   }
 
@@ -525,6 +580,7 @@ bool syncTimeFromAPI() {
   // Gunakan HTTP (bukan HTTPS) untuk kemudahan
   if (!http.begin(client, TIME_API_URL)) {
     Serial.println("❌ Gagal terhubung ke time API");
+    sendDebug("syncTimeFromAPI", "Gagal terhubung ke time API");
     return false;
   }
 
@@ -542,6 +598,7 @@ bool syncTimeFromAPI() {
       Serial.print("❌ Error parsing JSON: ");
       Serial.println(error.c_str());
       http.end();
+      sendDebug("syncTimeFromAPI", "Error parsing JSON");
       return false;
     }
 
@@ -601,6 +658,7 @@ bool syncTimeFromBackupAPI() {
 
   if (!http.begin(client, backupAPI)) {
     Serial.println("❌ Gagal terhubung ke backup time API");
+    sendDebug("syncTimeFromBackupAPI", "Gagal terhubung ke backup time API");
     return false;
   }
 
@@ -616,6 +674,7 @@ bool syncTimeFromBackupAPI() {
       Serial.print("❌ Error parsing JSON backup API: ");
       Serial.println(error.c_str());
       http.end();
+      sendDebug("syncTimeFromBackupAPI", "Error parsing JSON");
       return false;
     }
 
