@@ -43,6 +43,8 @@ bool timeSynced = false;
 unsigned long lastTimeSync = 0;
 const unsigned long TIME_SYNC_INTERVAL = 24 * 60 * 60 * 1000;  // Sync setiap 24 jam
 
+WiFiManager wm;
+
 void setup() {
   Serial.begin(115200);
 
@@ -60,7 +62,7 @@ void setup() {
   SPI.begin();
   initializeRFID();
   initializeSD();
-  
+
 
   if (rtcAvailable) {
     syncTimeFromAPI();
@@ -84,11 +86,21 @@ void loop() {
     delay(1000);
   }
 
-   // Sync waktu periodic setiap 24 jam (hanya jika online)
+  // Sync waktu periodic setiap 24 jam (hanya jika online)
   if (rtcAvailable && !timeSynced) {
     unsigned long currentMillis = millis();
     if (currentMillis - lastTimeSync > TIME_SYNC_INTERVAL) {
       syncTimeFromAPI();
+    }
+  }
+
+  if (Serial.available() > 0) {
+    String comms = Serial.readStringUntil('\n');
+    if (comms == "reset-wifi") {
+      wm.resetSettings();
+      delay(1000);
+      Serial.println("RESET WIFI SETTINGS");
+      ESP.restart();
     }
   }
 }
@@ -265,6 +277,7 @@ bool saveToBackupCSV(String date, String time, String uid) {
   }
 }
 
+
 void sendToGoogleAppsScript(String date, String time, String uid, String fotoID) {
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
@@ -288,7 +301,7 @@ void sendToGoogleAppsScript(String date, String time, String uid, String fotoID)
     Serial.print("HTTP Response code: ");
     Serial.println(httpResponseCode);
 
-    if (httpResponseCode < 400) {
+    if (httpResponseCode > -1 && httpResponseCode < 400) {
       // Success - trigger ESP32-CAM to take photo and green LED blink 3 times
       blinkLED(LED_HIJAU, 3, 300);
       triggerESPCam(fotoID);
@@ -349,6 +362,9 @@ void processBackupData() {
   // Read backup data line by line
   while (backupFile.available()) {
     String line = backupFile.readStringUntil('\n');
+    Serial.print("BACKUP LINE ");
+    Serial.print(backupCount);
+    Serial.println(" : " + line);
     line.trim();
 
     if (line.length() > 0) {
@@ -426,7 +442,7 @@ bool sendBackupToGoogleAppsScript(String date, String time, String uid) {
 
   http.end();
 
-  return (httpResponseCode < 400);
+  return (httpResponseCode > -1 && httpResponseCode < 400);
 }
 
 // LED Control Functions
@@ -480,7 +496,6 @@ void generalError() {
 }
 
 void setupWifiManager() {
-  WiFiManager wm;
 
   bool res;
   // res = wm.autoConnect(); // auto generated AP name from chipid
@@ -541,7 +556,7 @@ bool syncTimeFromAPI() {
     Serial.println(unixtime);
 
     // Konversi unixtime ke DateTime
-    time_t rawtime = unixtime;
+    time_t rawtime = unixtime + 28800;
     struct tm* timeinfo = localtime(&rawtime);
 
     // Buat DateTime object
@@ -610,7 +625,7 @@ bool syncTimeFromBackupAPI() {
     Serial.print("📅 Waktu dari backup API: ");
     Serial.println(datetimeStr);
 
-    time_t rawtime = unixtime  + 28800;
+    time_t rawtime = unixtime + 28800;
     struct tm* timeinfo = localtime(&rawtime);
 
     DateTime apiTime(
