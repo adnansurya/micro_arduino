@@ -104,7 +104,7 @@ bool initializeCamera() {
   if (psramFound()) {
     config.frame_size = FRAMESIZE_SVGA;
     config.jpeg_quality = 12;
-    config.fb_count = 2;
+    config.fb_count = 1;
   } else {
     config.frame_size = FRAMESIZE_SVGA;
     config.jpeg_quality = 12;
@@ -265,23 +265,37 @@ void handleCapture() {
   if (currentFotoID.length() > 0) {
     Serial.println("Received Foto ID via GET: " + currentFotoID);
 
-    // Capture photo
+    // 1. Nyalakan Flash dan beri delay agar sensor beradaptasi dengan cahaya
     digitalWrite(LED_FLASH, HIGH);
+    delay(500); // Delay 500ms sangat disarankan untuk kestabilan exposure
+
+    // 2. LOGIKA ANTI-DUPLIKAT: Buang frame sisa dari buffer PSRAM
+    camera_fb_t* fb_old = esp_camera_fb_get();
+    if (fb_old) {
+      esp_camera_fb_return(fb_old); // Buang frame lama
+    }
+
+    // 3. AMBIL FOTO SEBENARNYA
     camera_fb_t* fb = esp_camera_fb_get();
     if (!fb) {
+      digitalWrite(LED_FLASH, LOW); // Pastikan flash mati jika gagal
       server.send(500, "text/plain", "Camera capture failed");
       return;
     }
 
-    // Convert photo to base64 menggunakan library
+    // Langsung matikan flash setelah capture berhasil agar tidak panas
+    digitalWrite(LED_FLASH, LOW);
+
+    // 4. Proses foto ke Base64
+    Serial.println("Converting photo to base64...");
     String photoBase64 = base64::encode(fb->buf, fb->len);
+    
+    // Kembalikan buffer segera setelah selesai dikonversi
     esp_camera_fb_return(fb);
     
     Serial.println("Photo captured: " + String(photoBase64.length()) + " characters");
-    delay(1000);
-    digitalWrite(LED_FLASH, LOW);
 
-    // Send photo to Google Apps Script
+    // 5. Kirim foto ke Google Apps Script
     bool success = sendPhotoToGoogleAppsScript(photoBase64, currentFotoID);
 
     if (success) {
