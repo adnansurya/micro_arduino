@@ -1,50 +1,58 @@
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <SPI.h>
 #include <MFRC522.h>
-// #include <LiquidCrystal_I2C.h>
+#include <LiquidCrystal_I2C.h>
+
+// --- KONFIGURASI DEBUG/HARDWARE ---
+bool useLCD = false; // Set ke true jika LCD fisik sudah dipasang
 
 // --- KONFIGURASI WIFI ---
-const char* ssid = "MIKRO1";  // SSID default Wokwi
-const char* password = "1DEAlist1";  
-// Masukkan Deployment ID dari Apps Script Anda
-String scriptID = "AKfycbyVV633Z-j-Aqa1PuVEbegz_lXmaU2C581cWtD3UCEr1_GCitDXNQ7SHzEB6T7PRQvbKw"; 
+const char* ssid = "WARKOP LATEMMAMALA";
+const char* password = "februari2026"; 
+String scriptID = "AKfycbxHx_dy1aNAhKhkR7ZTckXKQ5_l8uxo38fvIQ5RTP2I1vLMsjhy1vEcItT1pJIHzJN65A"; 
 
 // --- KONFIGURASI PIN ---
 #define SS_PIN  4
 #define RST_PIN 5
 MFRC522 rfid(SS_PIN, RST_PIN);
-// LiquidCrystal_I2C lcd(0x27, 16, 2);
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// --- FUNGSI SIMULASI LCD KE SERIAL ---
+void simulateLCD(String line1, String line2 = "") {
+  Serial.println("\n[--- SIMULASI LCD 16x2 ---]");
+  Serial.println("| " + line1 + (line1.length() < 16 ? String(std::string(16 - line1.length(), ' ').c_str()) : "") + " |");
+  Serial.println("| " + line2 + (line2.length() < 16 ? String(std::string(16 - line2.length(), ' ').c_str()) : "") + " |");
+  Serial.println("[-------------------------]\n");
+}
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
   SPI.begin();
   rfid.PCD_Init();
   
-  // lcd.init();
-  // lcd.backlight();
-  // lcd.print("Hubungkan WiFi..");
+  if (useLCD) {
+    lcd.init();
+    lcd.backlight();
+  }
 
+  simulateLCD("Hubungkan WiFi..");
+  
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
   
-//   lcd.clear();
-//   lcd.print("Sistem Ready");
-//   lcd.setCursor(0, 1);
-//   lcd.print("Tap Kartu Anda");
+  simulateLCD("Sistem Ready", "Tap Kartu Anda");
 }
 
-
 void loop() {
-  // Cek jika ada kartu baru
   if (!rfid.PICC_IsNewCardPresent() || !rfid.PICC_ReadCardSerial()) {
     return;
   }
 
-  // Ambil UID Kartu
   String uidString = "";
   for (byte i = 0; i < rfid.uid.size; i++) {
     uidString += String(rfid.uid.uidByte[i] < 0x10 ? "0" : "");
@@ -52,69 +60,97 @@ void loop() {
   }
   uidString.toUpperCase();
 
-  Serial.println("UID Terdeteksi: " + uidString);
-  // lcd.clear();
-  // lcd.print("UID:");
-  // lcd.print(uidString);
-  // lcd.setCursor(0,1);
-  // lcd.print("Memproses...");
+  simulateLCD("UID: " + uidString, "Memproses...");
 
   sendDataToScript(uidString);
 
-  // Delay agar tidak terbaca berulang kali
-  delay(3000); 
-  // lcd.clear();
-  // lcd.print("Sistem Ready");
-  // lcd.setCursor(0, 1);
-  // lcd.print("Tap Kartu Anda");
+  delay(3000); // Jeda agar user sempat membaca simulasi LCD
+
+  simulateLCD("Sistem Ready", "Tap Kartu Anda");
 }
 
 void sendDataToScript(String uid) {
   if (WiFi.status() == WL_CONNECTED) {
+    WiFiClientSecure client;
+    client.setInsecure();
+    client.setTimeout(10000); 
+
     HTTPClient http;
-    // Format URL untuk GET request
     String url = "https://script.google.com/macros/s/" + scriptID + "/exec?uid=" + uid;
     
-    http.begin(url.c_str());
-    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-    
-    int httpCode = http.GET();
-    String payload = http.getString();
-
-    if (httpCode > 0) {
-      Serial.println("Respon: " + payload);
-      displayStatus(payload);
-    } else {
-      Serial.println("ERROR KONEKSI");
-      // lcd.clear();
-      // lcd.print("Error Koneksi");
+    if (http.begin(client, url)) {
+      http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+      int httpCode = http.GET();
+      
+      if (httpCode > 0) {
+        String payload = http.getString();
+        displayStatus(payload, uid);
+      } else {
+        Serial.println("HTTP Error: " + http.errorToString(httpCode));
+        simulateLCD("Error Koneksi", "Gagal ke Script");
+      }
+      http.end();
     }
-    http.end();
   }
 }
 
-void displayStatus(String res) {
-  // lcd.clear();
+void displayStatus(String res, String uid) {
+  // 1. KONDISI: KARTU TIDAK DIKENAL
   if (res == "TIDAK_DIKENAL") {
-    // lcd.print("Kartu Tidak");
-    // lcd.setCursor(0, 1);
-    // lcd.print("Terdaftar!");
-  } 
-  else if (res.startsWith("IN:")) {
-    String laci = res.substring(3);
-    // lcd.print("Silakan Titip");
-    // lcd.setCursor(0, 1);
-    // lcd.print("Laci: " + laci);
-  } 
-  else if (res.startsWith("OUT:")) {
-    String laci = res.substring(4);
-    // lcd.print("Silakan Ambil");
-    // lcd.setCursor(0, 1);
-    // lcd.print("Laci: " + laci);
+    if (useLCD) {
+      lcd.clear();
+      lcd.print("UID:" + uid);
+      lcd.setCursor(0, 1);
+      lcd.print("TIDAK DIKENALI!");
+    }
+    simulateLCD("UID:" + uid, "TIDAK DIKENALI!");
+    delay(3000); 
+    return;
+  }
+
+  // 2. KONDISI: KARTU DIKENAL (Format: NIM|NAMA|ACTION|LACI)
+  // Kita pecah string berdasarkan karakter '|'
+  int firstPipe  = res.indexOf('|');
+  int secondPipe = res.indexOf('|', firstPipe + 1);
+  int thirdPipe  = res.indexOf('|', secondPipe + 1);
+
+  if (firstPipe != -1 && secondPipe != -1 && thirdPipe != -1) {
+    String nim    = res.substring(0, firstPipe);
+    String nama   = res.substring(firstPipe + 1, secondPipe);
+    String action = res.substring(secondPipe + 1, thirdPipe);
+    String laci   = res.substring(thirdPipe + 1);
+
+    // TAMPILAN TAHAP 1: Nama & NIM (Selama 3 Detik)
+    if (useLCD) {
+      lcd.clear();
+      lcd.print(nama.substring(0, 16)); // Potong jika nama > 16 karakter
+      lcd.setCursor(0, 1);
+      lcd.print(nim);
+    }
+    simulateLCD(nama, nim);
+    delay(3000); 
+
+    // TAMPILAN TAHAP 2: Action & Nomor Laci
+    String line1 = (action == "TAP IN") ? "Titip di Laci:" : "Ambil dr Laci:";
+    String line2 = "Nomor: " + laci;
+
+    if (useLCD) {
+      lcd.clear();
+      lcd.print(line1);
+      lcd.setCursor(0, 1);
+      lcd.print(line2);
+    }
+    simulateLCD(line1, line2);
+    delay(3000); 
   } 
   else if (res == "PENUH") {
-    // lcd.print("Maaf, Laci");
-    // lcd.setCursor(0, 1);
-    // lcd.print("Sudah Penuh!");
+    if (useLCD) {
+      lcd.clear();
+      lcd.print("Maaf, Laci");
+      lcd.setCursor(0, 1);
+      lcd.print("Sudah Penuh!");
+    }
+    simulateLCD("Maaf, Laci", "Sudah Penuh!");
+    delay(3000);
   }
 }
