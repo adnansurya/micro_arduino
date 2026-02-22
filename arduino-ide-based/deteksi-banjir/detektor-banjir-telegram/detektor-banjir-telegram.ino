@@ -88,7 +88,7 @@ void loop() {
   // 4. Baca Sensor Lain
   int rainRead = digitalRead(rainPin);
   currentRainStatus = (rainRead == LOW) ? "HUJAN" : "KERING";
-  isFloatActive = (digitalRead(floatPin) == LOW); 
+  isFloatActive = (!digitalRead(floatPin) == LOW); 
 
   tampilSerial();
 
