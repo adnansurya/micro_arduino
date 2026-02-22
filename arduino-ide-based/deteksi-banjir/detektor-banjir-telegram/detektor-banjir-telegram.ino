@@ -15,6 +15,9 @@ const int echoPin = 18;
 const int rainPin = 19;
 const int floatPin = 21;
 const int buzzerPin = 22;
+const int ledHijau  = 25;
+const int ledKuning = 26;
+const int ledMerah  = 27;
 
 // Variabel Status
 String lastRainStatus = "";
@@ -30,6 +33,9 @@ void setup() {
   pinMode(echoPin, INPUT);
   pinMode(rainPin, INPUT);
   pinMode(floatPin, INPUT_PULLUP);
+  pinMode(ledHijau, OUTPUT);
+  pinMode(ledKuning, OUTPUT);
+  pinMode(ledMerah, OUTPUT);
   pinMode(buzzerPin, OUTPUT);
   
   // Koneksi WiFi
@@ -48,20 +54,34 @@ void loop() {
   duration = pulseIn(echoPin, HIGH);
   distance = duration * 0.034 / 2;
 
-  // Tentukan Status Jarak
+  // Logika Status dan Kontrol LED/Buzzer
   String currentWaterStatus = "";
-  if (distance <= 20) currentWaterStatus = "AMAN";
-  else if (distance > 20 && distance <= 40) currentWaterStatus = "SIAGA";
+  
+  if (distance <= 20) {
+    currentWaterStatus = "AMAN";
+    digitalWrite(ledHijau, HIGH);
+    digitalWrite(ledKuning, LOW);
+    digitalWrite(ledMerah, LOW);
+    digitalWrite(buzzerPin, LOW);
+  } 
+  else if (distance > 20 && distance <= 40) {
+    currentWaterStatus = "SIAGA";
+    digitalWrite(ledHijau, LOW);
+    digitalWrite(ledKuning, HIGH);
+    digitalWrite(ledMerah, LOW);
+    digitalWrite(buzzerPin, LOW);
+  } 
   else {
     currentWaterStatus = "BAHAYA";
-    digitalWrite(buzzerPin, HIGH); // Buzzer Aktif
+    digitalWrite(ledHijau, LOW);
+    digitalWrite(ledKuning, LOW);
+    digitalWrite(ledMerah, HIGH);
+    digitalWrite(buzzerPin, HIGH); // Buzzer aktif hanya di kondisi Bahaya
   }
-  
-  if (currentWaterStatus != "BAHAYA") digitalWrite(buzzerPin, LOW);
 
-  // Cek Perubahan Status Ultrasonic
+  // Kirim Notif Telegram jika status berubah
   if (currentWaterStatus != lastWaterStatus) {
-    bot.sendMessage(CHAT_ID, "Status Air: " + currentWaterStatus + "\nJarak: " + String(distance) + "cm", "");
+    bot.sendMessage(CHAT_ID, "⚠️ Update Level Air: " + currentWaterStatus + " (" + String(distance) + "cm)", "");
     lastWaterStatus = currentWaterStatus;
   }
 
