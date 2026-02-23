@@ -113,7 +113,7 @@ void loop() {
   currentRainStatus = (rainValue < RAIN_THRESHOLD) ? "HUJAN" : "KERING";
 
   // 4. Baca Float Switch
-  isFloatActive = (digitalRead(floatPin) == LOW); 
+  isFloatActive = (digitalRead(floatPin) == HIGH); 
 
   tampilSerial(rainValue);
 
