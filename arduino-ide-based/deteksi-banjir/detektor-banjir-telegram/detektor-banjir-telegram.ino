@@ -6,11 +6,10 @@
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 
-// --- KONFIGURASI FISIK ALAT ---
-// Ganti angka ini sesuai tinggi pemasangan sensor Anda dalam cm
-const float TINGGI_PEMASANGAN_SENSOR = 100.0; 
+// --- KONFIGURASI ---
+float TINGGI_DASAR_KALIBRASI = 0; // Akan diisi otomatis saat setup
+const int RAIN_THRESHOLD = 2000;   // Sesuaikan nilai ini (0-4095). Semakin kecil angkanya, semakin sensitif terhadap air.
 
-// --- Konfigurasi Telegram & NTP ---
 #define BOTtoken "1389983359:AAHCbBbsuglCOthFan2L02EFKRBJtSCHI38"
 #define CHAT_ID "108488036"
 
@@ -20,7 +19,7 @@ NTPClient timeClient(ntpUDP, "id.pool.ntp.org", 28800); // WITA
 // --- Pin Sensor & Aktuator ---
 const int trigPin = 5;
 const int echoPin = 18;
-const int rainPin = 19;
+const int rainAnalogPin = 34; // Gunakan pin ADC (contoh GPIO 34)
 const int floatPin = 21;
 const int buzzerPin = 22;
 const int ledHijau  = 25;
@@ -39,11 +38,20 @@ bool isFloatActive = false;
 WiFiClientSecure client;
 UniversalTelegramBot bot(BOTtoken, client);
 
+// Fungsi untuk membaca jarak ultrasonic
+float ambilJarak() {
+  digitalWrite(trigPin, LOW); delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH); delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+  long duration = pulseIn(echoPin, HIGH);
+  float hasil = duration * 0.034 / 2;
+  return hasil;
+}
+
 void setup() {
   Serial.begin(115200);
   pinMode(trigPin, OUTPUT);
   pinMode(echoPin, INPUT);
-  pinMode(rainPin, INPUT);
   pinMode(floatPin, INPUT_PULLUP);
   pinMode(buzzerPin, OUTPUT);
   pinMode(ledHijau, OUTPUT);
@@ -57,23 +65,37 @@ void setup() {
   
   client.setInsecure();
   timeClient.begin();
+  timeClient.update();
+
+  // --- PROSES KALIBRASI ---
+  Serial.println("Sedang Kalibrasi Jarak Dasar...");
+  delay(2000); // Tunggu sensor stabil
+  
+  // Ambil rata-rata 5 kali pembacaan agar akurat
+  float totalJarak = 0;
+  for(int i=0; i<5; i++) {
+    totalJarak += ambilJarak();
+    delay(200);
+  }
+  TINGGI_DASAR_KALIBRASI = totalJarak / 5;
+
+  Serial.print("Kalibrasi Selesai. Tinggi Sensor: ");
+  Serial.println(TINGGI_DASAR_KALIBRASI);
+
+  // Kirim Notifikasi Kalibrasi ke Telegram
+  String pesanKalibrasi = "✅ *Sistem Online & Terkalibrasi*\n";
+  pesanKalibrasi += "Waktu: `" + timeClient.getFormattedTime() + "`\n";
+  pesanKalibrasi += "Tinggi Pemasangan: *" + String(TINGGI_DASAR_KALIBRASI) + " cm*";
+  bot.sendMessage(CHAT_ID, pesanKalibrasi, "Markdown");
 }
 
 void loop() {
-  // 1. Baca Jarak dari Sensor Ultrasonic
-  digitalWrite(trigPin, LOW); delayMicroseconds(2);
-  digitalWrite(trigPin, HIGH); delayMicroseconds(10);
-  digitalWrite(trigPin, LOW);
-  long duration = pulseIn(echoPin, HIGH);
-  jarakBacaan = duration * 0.034 / 2;
-
-  // 2. RUMUS KETINGGIAN AIR
-  tinggiAir = TINGGI_PEMASANGAN_SENSOR - jarakBacaan;
-  
-  // Mencegah nilai minus jika ada error pembacaan
+  // 1. Baca Ketinggian Air
+  jarakBacaan = ambilJarak();
+  tinggiAir = TINGGI_DASAR_KALIBRASI - jarakBacaan;
   if (tinggiAir < 0) tinggiAir = 0;
 
-  // 3. Logika Status Berdasarkan Ketinggian Air (Update Sesuai Kebutuhan)
+  // 2. Logika Status Ketinggian
   if (tinggiAir <= 20) {
     currentStatus = "AMAN";
     updateIndikator(HIGH, LOW, LOW, LOW);
@@ -85,14 +107,17 @@ void loop() {
     updateIndikator(LOW, LOW, HIGH, HIGH);
   }
 
-  // 4. Baca Sensor Lain
-  int rainRead = digitalRead(rainPin);
-  currentRainStatus = (rainRead == LOW) ? "HUJAN" : "KERING";
-  isFloatActive = (!digitalRead(floatPin) == LOW); 
+  // 3. Baca Rain Sensor (Analog)
+  int rainValue = analogRead(rainAnalogPin);
+  // Pada Rain Sensor, semakin basah nilainya semakin KECIL
+  currentRainStatus = (rainValue < RAIN_THRESHOLD) ? "HUJAN" : "KERING";
 
-  tampilSerial();
+  // 4. Baca Float Switch
+  isFloatActive = (digitalRead(floatPin) == LOW); 
 
-  // 5. Notifikasi Telegram (Hanya jika Float Mengapung & Status Berubah)
+  tampilSerial(rainValue);
+
+  // 5. Notifikasi Telegram Banjir
   if (isFloatActive) {
     if (currentStatus != lastWaterStatus) {
       String pesan = "⚠️ *PERINGATAN BANJIR!*\n";
@@ -100,7 +125,6 @@ void loop() {
       pesan += "Status: *" + currentStatus + "*\n";
       pesan += "Tinggi Air: *" + String(tinggiAir) + " cm*\n";
       pesan += "Float Switch: *TERANGKAT*";
-      
       bot.sendMessage(CHAT_ID, pesan, "Markdown");
       lastWaterStatus = currentStatus;
     }
@@ -108,12 +132,11 @@ void loop() {
     lastWaterStatus = ""; 
   }
 
-  // 6. Notifikasi Rain Sensor
+  // 6. Notifikasi Telegram Cuaca
   if (currentRainStatus != lastRainStatus) {
     String pesanHujan = "🌦️ *INFO CUACA*\n";
     pesanHujan += "Waktu: `" + timeClient.getFormattedTime() + "`\n";
     pesanHujan += "Kondisi: *" + currentRainStatus + "*";
-    
     bot.sendMessage(CHAT_ID, pesanHujan, "Markdown");
     lastRainStatus = currentRainStatus;
   }
@@ -129,12 +152,12 @@ void updateIndikator(int h, int k, int m, int b) {
   digitalWrite(buzzerPin, b);
 }
 
-void tampilSerial() {
+void tampilSerial(int rv) {
   Serial.println("\n--- MONITORING LEVEL AIR ---");
   Serial.print("Waktu       : "); Serial.println(timeClient.getFormattedTime());
-  Serial.print("Jarak Sensor: "); Serial.print(jarakBacaan); Serial.println(" cm");
-  Serial.print("TINGGI AIR  : "); Serial.print(tinggiAir); Serial.println(" cm");
-  Serial.print("Status      : "); Serial.println(currentStatus);
+  Serial.print("Tinggi Ref  : "); Serial.print(TINGGI_DASAR_KALIBRASI); Serial.println(" cm");
+  Serial.print("Tinggi Air  : "); Serial.print(tinggiAir); Serial.println(" cm");
+  Serial.print("Analog Rain : "); Serial.print(rv); Serial.print(" ("); Serial.print(currentRainStatus); Serial.println(")");
   Serial.print("Float SW    : "); Serial.println(isFloatActive ? "ON" : "OFF");
   Serial.println("----------------------------");
 }
