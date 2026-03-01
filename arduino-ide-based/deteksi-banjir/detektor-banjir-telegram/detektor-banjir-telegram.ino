@@ -8,7 +8,7 @@
 
 // --- KONFIGURASI ---
 float TINGGI_DASAR_KALIBRASI = 0; // Akan diisi otomatis saat setup
-const int RAIN_THRESHOLD = 2000;   // Sesuaikan nilai ini (0-4095). Semakin kecil angkanya, semakin sensitif terhadap air.
+const int RAIN_THRESHOLD = 1500;   // Sesuaikan nilai ini (0-4095). Semakin kecil angkanya, semakin sensitif terhadap air.
 
 #define BOTtoken "1389983359:AAHCbBbsuglCOthFan2L02EFKRBJtSCHI38"
 #define CHAT_ID "108488036"
@@ -104,7 +104,12 @@ void loop() {
     updateIndikator(LOW, HIGH, LOW, LOW);
   } else {
     currentStatus = "BAHAYA";
-    updateIndikator(LOW, LOW, HIGH, HIGH);
+    if(isFloatActive){
+      updateIndikator(LOW, LOW, HIGH, HIGH);
+    }else{
+      updateIndikator(LOW, LOW, HIGH, LOW);
+    }
+    
   }
 
   // 3. Baca Rain Sensor (Analog)
@@ -161,3 +166,4 @@ void tampilSerial(int rv) {
   Serial.print("Float SW    : "); Serial.println(isFloatActive ? "ON" : "OFF");
   Serial.println("----------------------------");
 }
+
