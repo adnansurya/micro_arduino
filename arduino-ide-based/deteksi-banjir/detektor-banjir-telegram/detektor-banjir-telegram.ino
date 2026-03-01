@@ -7,24 +7,24 @@
 #include <WiFiUdp.h>
 
 // --- KONFIGURASI ---
-float TINGGI_DASAR_KALIBRASI = 0; // Akan diisi otomatis saat setup
+float TINGGI_DASAR_KALIBRASI = 0;  // Akan diisi otomatis saat setup
 const int RAIN_THRESHOLD = 1500;   // Sesuaikan nilai ini (0-4095). Semakin kecil angkanya, semakin sensitif terhadap air.
 
-#define BOTtoken "1389983359:AAHCbBbsuglCOthFan2L02EFKRBJtSCHI38"
-#define CHAT_ID "108488036"
+#define BOTtoken "6861877568:AAGNr_cYS0zmsdPIfBYot4m412GdDtTCGLY"
+#define CHAT_ID "1077984567"
 
 WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, "id.pool.ntp.org", 28800); // WITA
+NTPClient timeClient(ntpUDP, "id.pool.ntp.org", 28800);  // WITA
 
 // --- Pin Sensor & Aktuator ---
 const int trigPin = 5;
 const int echoPin = 18;
-const int rainAnalogPin = 34; // Gunakan pin ADC (contoh GPIO 34)
+const int rainAnalogPin = 34;  // Gunakan pin ADC (contoh GPIO 34)
 const int floatPin = 21;
 const int buzzerPin = 22;
-const int ledHijau  = 25;
+const int ledHijau = 25;
 const int ledKuning = 26;
-const int ledMerah  = 27;
+const int ledMerah = 27;
 
 // --- Variabel Global ---
 String lastRainStatus = "";
@@ -40,8 +40,10 @@ UniversalTelegramBot bot(BOTtoken, client);
 
 // Fungsi untuk membaca jarak ultrasonic
 float ambilJarak() {
-  digitalWrite(trigPin, LOW); delayMicroseconds(2);
-  digitalWrite(trigPin, HIGH); delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
   digitalWrite(trigPin, LOW);
   long duration = pulseIn(echoPin, HIGH);
   float hasil = duration * 0.034 / 2;
@@ -49,6 +51,7 @@ float ambilJarak() {
 }
 
 void setup() {
+  
   Serial.begin(115200);
   pinMode(trigPin, OUTPUT);
   pinMode(echoPin, INPUT);
@@ -58,22 +61,26 @@ void setup() {
   pinMode(ledKuning, OUTPUT);
   pinMode(ledMerah, OUTPUT);
 
+  beep(1, 500);
+
   WiFiManager wm;
   if (!wm.autoConnect("ESP32_Pendeteksi_Banjir")) {
+    beep(5, 500);
     ESP.restart();
   }
-  
+   beep(2, 500);
+
   client.setInsecure();
   timeClient.begin();
   timeClient.update();
 
   // --- PROSES KALIBRASI ---
   Serial.println("Sedang Kalibrasi Jarak Dasar...");
-  delay(2000); // Tunggu sensor stabil
-  
+  delay(2000);  // Tunggu sensor stabil
+
   // Ambil rata-rata 5 kali pembacaan agar akurat
   float totalJarak = 0;
-  for(int i=0; i<5; i++) {
+  for (int i = 0; i < 5; i++) {
     totalJarak += ambilJarak();
     delay(200);
   }
@@ -87,6 +94,7 @@ void setup() {
   pesanKalibrasi += "Waktu: `" + timeClient.getFormattedTime() + "`\n";
   pesanKalibrasi += "Tinggi Pemasangan: *" + String(TINGGI_DASAR_KALIBRASI) + " cm*";
   bot.sendMessage(CHAT_ID, pesanKalibrasi, "Markdown");
+  beep(3, 500);
 }
 
 void loop() {
@@ -104,12 +112,11 @@ void loop() {
     updateIndikator(LOW, HIGH, LOW, LOW);
   } else {
     currentStatus = "BAHAYA";
-    if(isFloatActive){
+    if (isFloatActive) {
       updateIndikator(LOW, LOW, HIGH, HIGH);
-    }else{
+    } else {
       updateIndikator(LOW, LOW, HIGH, LOW);
     }
-    
   }
 
   // 3. Baca Rain Sensor (Analog)
@@ -118,7 +125,7 @@ void loop() {
   currentRainStatus = (rainValue < RAIN_THRESHOLD) ? "HUJAN" : "KERING";
 
   // 4. Baca Float Switch
-  isFloatActive = (digitalRead(floatPin) == HIGH); 
+  isFloatActive = (digitalRead(floatPin) == HIGH);
 
   tampilSerial(rainValue);
 
@@ -134,7 +141,7 @@ void loop() {
       lastWaterStatus = currentStatus;
     }
   } else {
-    lastWaterStatus = ""; 
+    lastWaterStatus = "";
   }
 
   // 6. Notifikasi Telegram Cuaca
@@ -147,7 +154,7 @@ void loop() {
   }
 
   timeClient.update();
-  delay(2000); 
+  delay(2000);
 }
 
 void updateIndikator(int h, int k, int m, int b) {
@@ -159,11 +166,29 @@ void updateIndikator(int h, int k, int m, int b) {
 
 void tampilSerial(int rv) {
   Serial.println("\n--- MONITORING LEVEL AIR ---");
-  Serial.print("Waktu       : "); Serial.println(timeClient.getFormattedTime());
-  Serial.print("Tinggi Ref  : "); Serial.print(TINGGI_DASAR_KALIBRASI); Serial.println(" cm");
-  Serial.print("Tinggi Air  : "); Serial.print(tinggiAir); Serial.println(" cm");
-  Serial.print("Analog Rain : "); Serial.print(rv); Serial.print(" ("); Serial.print(currentRainStatus); Serial.println(")");
-  Serial.print("Float SW    : "); Serial.println(isFloatActive ? "ON" : "OFF");
+  Serial.print("Waktu       : ");
+  Serial.println(timeClient.getFormattedTime());
+  Serial.print("Tinggi Ref  : ");
+  Serial.print(TINGGI_DASAR_KALIBRASI);
+  Serial.println(" cm");
+  Serial.print("Tinggi Air  : ");
+  Serial.print(tinggiAir);
+  Serial.println(" cm");
+  Serial.print("Analog Rain : ");
+  Serial.print(rv);
+  Serial.print(" (");
+  Serial.print(currentRainStatus);
+  Serial.println(")");
+  Serial.print("Float SW    : ");
+  Serial.println(isFloatActive ? "ON" : "OFF");
   Serial.println("----------------------------");
 }
 
+void beep(int period, int milis) {
+  for (int i; i < period; i++) {
+    digitalWrite(buzzerPin, HIGH);
+    delay(milis);
+    digitalWrite(buzzerPin, LOW);
+    delay(milis);
+  }
+}
