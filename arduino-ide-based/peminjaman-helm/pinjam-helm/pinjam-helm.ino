@@ -3,11 +3,11 @@
 #include <HTTPClient.h>
 #include <SPI.h>
 #include <MFRC522.h>
-#include <Wire.h> 
+#include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
 // --- LIBRARY WIFIMANAGER ---
-#include <WiFiManager.h> 
+#include <WiFiManager.h>
 
 // --- KONFIGURASI SCRIPT ---
 String scriptID = "AKfycbxHx_dy1aNAhKhkR7ZTckXKQ5_l8uxo38fvIQ5RTP2I1vLMsjhy1vEcItT1pJIHzJN65A";
@@ -16,7 +16,7 @@ String scriptID = "AKfycbxHx_dy1aNAhKhkR7ZTckXKQ5_l8uxo38fvIQ5RTP2I1vLMsjhy1vEcI
 #define SS_PIN 4
 #define RST_PIN 5
 
-int laci[] = {25, 26, 27, 14};
+int laci[] = { 25, 26, 27, 14 };
 MFRC522 rfid(SS_PIN, RST_PIN);
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
@@ -32,7 +32,7 @@ void setup() {
 
   // --- INISIALISASI WIFIMANAGER ---
   WiFiManager wm;
-  
+
   lcd.setCursor(0, 1);
   lcd.print("Cek Koneksi...");
 
@@ -53,7 +53,7 @@ void setup() {
   // Setup Pin Laci
   for (int i = 0; i < 4; i++) {
     pinMode(laci[i], OUTPUT);
-    digitalWrite(laci[i], HIGH); 
+    digitalWrite(laci[i], HIGH);
   }
 
   lcd.clear();
@@ -76,10 +76,10 @@ void loop() {
 
   lcd.clear();
   lcd.print("Memproses...");
-  
+
   sendDataToScript(uidString);
 
-  delay(2000); 
+  delay(2000);
   lcd.clear();
   lcd.print("Sistem Ready");
   lcd.setCursor(0, 1);
@@ -90,7 +90,7 @@ void sendDataToScript(String uid) {
   if (WiFi.status() == WL_CONNECTED) {
     WiFiClientSecure client;
     client.setInsecure();
-    
+
     HTTPClient http;
     String url = "https://script.google.com/macros/s/" + scriptID + "/exec?uid=" + uid;
 
@@ -138,10 +138,12 @@ void displayStatus(String res, String uid) {
       lcd.print("MASTER ACCESS");
       lcd.setCursor(0, 1);
       lcd.print("OPEN ALL KEYS");
-      for (int i = 0; i < 4; i++) digitalWrite(laci[i], LOW);
-      delay(10000);
-      for (int i = 0; i < 4; i++) digitalWrite(laci[i], HIGH);
-      return; 
+      for (int i = 0; i < 4; i++) {
+        digitalWrite(laci[i], LOW);
+        delay(5000);
+        digitalWrite(laci[i], HIGH);
+      }
+      return;
     }
 
     lcd.clear();
@@ -161,8 +163,7 @@ void displayStatus(String res, String uid) {
       delay(10000);
       digitalWrite(laci[indexLaci], HIGH);
     }
-  } 
-  else if (res == "PENUH") {
+  } else if (res == "PENUH") {
     lcd.clear();
     lcd.print("Maaf, Laci");
     lcd.setCursor(0, 1);
