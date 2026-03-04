@@ -5,8 +5,6 @@
 #include <MFRC522.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
-
-// --- LIBRARY WIFIMANAGER ---
 #include <WiFiManager.h>
 
 // --- KONFIGURASI SCRIPT ---
@@ -15,8 +13,14 @@ String scriptID = "AKfycbxHx_dy1aNAhKhkR7ZTckXKQ5_l8uxo38fvIQ5RTP2I1vLMsjhy1vEcI
 // --- KONFIGURASI PIN ---
 #define SS_PIN 4
 #define RST_PIN 5
-
 int laci[] = { 25, 26, 27, 14 };
+
+// --- VARIABEL NON-BLOCKING ---
+unsigned long relayOffTime[4] = { 0, 0, 0, 0 };  // Waktu kapan masing-masing laci harus mati
+const unsigned long DURASI_BUKA = 10000;         // 10 detik
+
+unsigned long lcdResetTime = 0;  // Kapan LCD harus kembali ke "Ready"
+
 MFRC522 rfid(SS_PIN, RST_PIN);
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
@@ -27,33 +31,16 @@ void setup() {
 
   lcd.init();
   lcd.backlight();
-  lcd.setCursor(0, 0);
   lcd.print("Sistem Booting..");
 
-  // --- INISIALISASI WIFIMANAGER ---
   WiFiManager wm;
-
-  lcd.setCursor(0, 1);
-  lcd.print("Cek Koneksi...");
-
-  // Jika gagal konek, ESP32 akan membuat AP bernama "Sistem-Loker-Helm"
-  // Buka HP, konek ke WiFi tersebut, lalu buka browser ke 192.168.4.1
   if (!wm.autoConnect("Sistem-Loker-Helm")) {
-    lcd.clear();
-    lcd.print("Gagal Setup");
-    delay(3000);
     ESP.restart();
   }
 
-  // Jika sampai sini, berarti sudah terkoneksi
-  lcd.clear();
-  lcd.print("WiFi Terhubung!");
-  delay(2000);
-
-  // Setup Pin Laci
   for (int i = 0; i < 4; i++) {
     pinMode(laci[i], OUTPUT);
-    digitalWrite(laci[i], HIGH);
+    digitalWrite(laci[i], HIGH);  // Relay OFF (Active Low)
   }
 
   lcd.clear();
@@ -63,7 +50,34 @@ void setup() {
 }
 
 void loop() {
-  if (!rfid.PICC_IsNewCardPresent() || !rfid.PICC_ReadCardSerial()) {
+  unsigned long currentMillis = millis();
+
+  // --- LOGIKA NON-BLOCKING RELAY & LCD RESET ---
+  bool anyRelayActive = false;
+  for (int i = 0; i < 4; i++) {
+    if (relayOffTime[i] > 0) {
+      if (currentMillis >= relayOffTime[i]) {
+        digitalWrite(laci[i], HIGH);
+        relayOffTime[i] = 0;
+        Serial.println("Laci " + String(i + 1) + " Terkunci.");
+      } else {
+        anyRelayActive = true;  // Masih ada laci yang terbuka
+      }
+    }
+  }
+
+  // Jika tidak ada laci aktif dan sudah waktunya reset LCD
+  if (!anyRelayActive && lcdResetTime > 0 && currentMillis >= lcdResetTime) {
+    lcd.clear();
+    lcd.print("Sistem Ready");
+    lcd.setCursor(0, 1);
+    lcd.print("Tap Kartu Anda");
+    lcd.backlight();
+    lcdResetTime = 0;  // Reset timer LCD agar tidak clear terus-menerus
+  }
+
+  // Scan RFID
+  if (!rfid.PICC_IsNewCardPresent()){ !rfid.PICC_ReadCardSerial()) {
     return;
   }
 
@@ -79,37 +93,28 @@ void loop() {
 
   sendDataToScript(uidString);
 
-  delay(2000);
-  lcd.clear();
-  lcd.print("Sistem Ready");
-  lcd.setCursor(0, 1);
-  lcd.print("Tap Kartu Anda");
+  // Berikan jeda sedikit agar LCD tidak langsung balik ke "Ready" sebelum user baca respon
+  // Tapi tetap gunakan non-blocking jika ingin benar-benar responsif
 }
 
 void sendDataToScript(String uid) {
   if (WiFi.status() == WL_CONNECTED) {
     WiFiClientSecure client;
     client.setInsecure();
-
     HTTPClient http;
     String url = "https://script.google.com/macros/s/" + scriptID + "/exec?uid=" + uid;
 
     if (http.begin(client, url)) {
       http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
       int httpCode = http.GET();
-
       if (httpCode > 0) {
-        String payload = http.getString();
-        displayStatus(payload, uid);
+        displayStatus(http.getString(), uid);
       } else {
         lcd.clear();
         lcd.print("Error Server");
       }
       http.end();
     }
-  } else {
-    lcd.clear();
-    lcd.print("WiFi Terputus");
   }
 }
 
@@ -119,7 +124,6 @@ void displayStatus(String res, String uid) {
     lcd.print("UID:" + uid);
     lcd.setCursor(0, 1);
     lcd.print("TIDAK DIKENALI!");
-    delay(5000);
     return;
   }
 
@@ -133,41 +137,43 @@ void displayStatus(String res, String uid) {
     String action = res.substring(secondPipe + 1, thirdPipe);
     String laciStr = res.substring(thirdPipe + 1);
 
+    // MASTER CARD LOGIC
     if (nama == "Mastercard") {
       lcd.clear();
       lcd.print("MASTER ACCESS");
       lcd.setCursor(0, 1);
-      lcd.print("OPEN ALL KEYS");
+      lcd.print("ALL OPEN 10S");
+
       for (int i = 0; i < 4; i++) {
         digitalWrite(laci[i], LOW);
-        delay(5000);
-        digitalWrite(laci[i], HIGH);
+        relayOffTime[i] = millis() + DURASI_BUKA;
       }
+      lcdResetTime = millis() + DURASI_BUKA + 500;  // Reset LCD 0.5 detik setelah relay mati
       return;
     }
 
+    // USER LOGIC
     lcd.clear();
     lcd.print(nama.substring(0, 16));
     lcd.setCursor(0, 1);
-    lcd.print(nim);
-    delay(2000);
+    lcd.print(action);  // Tampilkan TAP IN / TAP OUT
 
-    lcd.clear();
-    lcd.print((action == "TAP IN") ? "Titip di Laci:" : "Ambil dr Laci:");
-    lcd.setCursor(0, 1);
-    lcd.print("Nomor: " + laciStr);
-
+    // --- LOGIKA USER BIASA ---
     int indexLaci = laciStr.toInt() - 1;
     if (indexLaci >= 0 && indexLaci < 4) {
       digitalWrite(laci[indexLaci], LOW);
-      delay(10000);
-      digitalWrite(laci[indexLaci], HIGH);
+      relayOffTime[indexLaci] = millis() + DURASI_BUKA;
+      lcdResetTime = millis() + DURASI_BUKA + 500;
+
+      lcd.clear();
+      lcd.print(nama.substring(0, 16));
+      lcd.setCursor(0, 1);
+      lcd.print("Laci: " + laciStr + " (" + action + ")");
     }
   } else if (res == "PENUH") {
     lcd.clear();
     lcd.print("Maaf, Laci");
     lcd.setCursor(0, 1);
     lcd.print("Sudah Penuh!");
-    delay(3000);
   }
 }
