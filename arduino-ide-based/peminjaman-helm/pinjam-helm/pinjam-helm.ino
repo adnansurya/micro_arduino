@@ -6,9 +6,10 @@
 #include <Wire.h> 
 #include <LiquidCrystal_I2C.h>
 
-// --- KONFIGURASI WIFI ---
-const char* ssid = "MIKRO1";
-const char* password = "1DEAlist1";
+// --- LIBRARY WIFIMANAGER ---
+#include <WiFiManager.h> 
+
+// --- KONFIGURASI SCRIPT ---
 String scriptID = "AKfycbxHx_dy1aNAhKhkR7ZTckXKQ5_l8uxo38fvIQ5RTP2I1vLMsjhy1vEcItT1pJIHzJN65A";
 
 // --- KONFIGURASI PIN ---
@@ -27,18 +28,32 @@ void setup() {
   lcd.init();
   lcd.backlight();
   lcd.setCursor(0, 0);
-  lcd.print("Hubungkan WiFi..");
+  lcd.print("Sistem Booting..");
 
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
+  // --- INISIALISASI WIFIMANAGER ---
+  WiFiManager wm;
+  
+  lcd.setCursor(0, 1);
+  lcd.print("Cek Koneksi...");
+
+  // Jika gagal konek, ESP32 akan membuat AP bernama "Sistem-Loker-Helm"
+  // Buka HP, konek ke WiFi tersebut, lalu buka browser ke 192.168.4.1
+  if (!wm.autoConnect("Sistem-Loker-Helm")) {
+    lcd.clear();
+    lcd.print("Gagal Setup");
+    delay(3000);
+    ESP.restart();
   }
 
-  // Setup Pin Laci (Relay biasanya Active Low, sesuaikan jika perlu)
+  // Jika sampai sini, berarti sudah terkoneksi
+  lcd.clear();
+  lcd.print("WiFi Terhubung!");
+  delay(2000);
+
+  // Setup Pin Laci
   for (int i = 0; i < 4; i++) {
     pinMode(laci[i], OUTPUT);
-    digitalWrite(laci[i], HIGH); // Pastikan terkunci di awal
+    digitalWrite(laci[i], HIGH); 
   }
 
   lcd.clear();
@@ -88,10 +103,13 @@ void sendDataToScript(String uid) {
         displayStatus(payload, uid);
       } else {
         lcd.clear();
-        lcd.print("Error Koneksi");
+        lcd.print("Error Server");
       }
       http.end();
     }
+  } else {
+    lcd.clear();
+    lcd.print("WiFi Terputus");
   }
 }
 
@@ -105,7 +123,6 @@ void displayStatus(String res, String uid) {
     return;
   }
 
-  // Parsing Data: NIM|NAMA|ACTION|LACI
   int firstPipe = res.indexOf('|');
   int secondPipe = res.indexOf('|', firstPipe + 1);
   int thirdPipe = res.indexOf('|', secondPipe + 1);
@@ -116,21 +133,17 @@ void displayStatus(String res, String uid) {
     String action = res.substring(secondPipe + 1, thirdPipe);
     String laciStr = res.substring(thirdPipe + 1);
 
-    // LOGIKA MASTER CARD
     if (nama == "Mastercard") {
       lcd.clear();
       lcd.print("MASTER ACCESS");
       lcd.setCursor(0, 1);
       lcd.print("OPEN ALL KEYS");
-      
-      // Buka semua laci
       for (int i = 0; i < 4; i++) digitalWrite(laci[i], LOW);
-      delay(10000); // Durasi terbuka
+      delay(10000);
       for (int i = 0; i < 4; i++) digitalWrite(laci[i], HIGH);
       return; 
     }
 
-    // LOGIKA USER BIASA
     lcd.clear();
     lcd.print(nama.substring(0, 16));
     lcd.setCursor(0, 1);
@@ -154,5 +167,6 @@ void displayStatus(String res, String uid) {
     lcd.print("Maaf, Laci");
     lcd.setCursor(0, 1);
     lcd.print("Sudah Penuh!");
+    delay(3000);
   }
 }
