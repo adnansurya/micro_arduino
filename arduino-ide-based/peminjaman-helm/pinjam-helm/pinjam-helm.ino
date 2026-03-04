@@ -31,9 +31,10 @@ void setup() {
 
   lcd.init();
   lcd.backlight();
-  lcd.print("Sistem Booting..");
+  // lcd.print("Sistem Booting..");
 
   WiFiManager wm;
+  
   if (!wm.autoConnect("Sistem-Loker-Helm")) {
     ESP.restart();
   }
@@ -51,6 +52,7 @@ void setup() {
 
 void loop() {
   unsigned long currentMillis = millis();
+  bool triggerRestart = false;
 
   // --- LOGIKA NON-BLOCKING RELAY & LCD RESET ---
   bool anyRelayActive = false;
@@ -60,24 +62,27 @@ void loop() {
         digitalWrite(laci[i], HIGH);
         relayOffTime[i] = 0;
         Serial.println("Laci " + String(i + 1) + " Terkunci.");
+        triggerRestart = true; // Tandai bahwa siklus laci sudah selesai
       } else {
         anyRelayActive = true;  // Masih ada laci yang terbuka
       }
     }
   }
 
-  // Jika tidak ada laci aktif dan sudah waktunya reset LCD
+  if (triggerRestart && !anyRelayActive) {
+    ESP.restart();
+  }
+
   if (!anyRelayActive && lcdResetTime > 0 && currentMillis >= lcdResetTime) {
     lcd.clear();
     lcd.print("Sistem Ready");
     lcd.setCursor(0, 1);
     lcd.print("Tap Kartu Anda");
-    lcd.backlight();
-    lcdResetTime = 0;  // Reset timer LCD agar tidak clear terus-menerus
+    lcdResetTime = 0;
   }
 
   // Scan RFID
-  if (!rfid.PICC_IsNewCardPresent()){ !rfid.PICC_ReadCardSerial()) {
+  if (!rfid.PICC_IsNewCardPresent() || !rfid.PICC_ReadCardSerial()) {
     return;
   }
 
@@ -112,6 +117,8 @@ void sendDataToScript(String uid) {
       } else {
         lcd.clear();
         lcd.print("Error Server");
+        delay(2000);
+        ESP.restart();
       }
       http.end();
     }
