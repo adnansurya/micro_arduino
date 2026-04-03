@@ -27,8 +27,8 @@ UniversalTelegramBot bot(BOT_TOKEN, client);
 unsigned long lastNotifyTime = 0;
 unsigned long lastSerialUpdate = 0;
 int lastStatus = -1;
+String lastCriticalSensor = ""; // Untuk melacak jika sensor yang bermasalah berpindah posisi
 
-// --- FUNGSI SINKRONISASI (HANYA SAAT STARTUP) ---
 void syncDataAtStartup() {
   Serial.println("\n=====================================");
   Serial.println("  SINKRONISASI KONFIGURASI CLOUD    ");
@@ -47,26 +47,17 @@ void syncDataAtStartup() {
       thresholdAman = doc["thresholds"]["jarak_aman"] | 40;
       thresholdBahaya = doc["thresholds"]["jarak_bahaya"] | 25;
       
-      Serial.println("[SETTINGS]");
-      Serial.printf("  > Batas Kuning : %d cm\n", thresholdAman);
-      Serial.printf("  > Batas Merah  : %d cm\n", thresholdBahaya);
-
       receiverList.clear();
-      Serial.println("[RECEIVERS]");
       JsonArray arr = doc["receivers"].as<JsonArray>();
       for (JsonVariant v : arr) {
-        String id = v.as<String>();
-        receiverList.push_back(id);
-        Serial.printf("  - ID: %s\n", id.c_str());
+        receiverList.push_back(v.as<String>());
       }
-      Serial.println("\nStatus: Sinkronisasi Berhasil.");
+      Serial.println("Status: Sinkronisasi Berhasil.");
     }
   } else {
     Serial.printf("Gagal Sync. HTTP Error: %d\n", httpCode);
   }
   http.end();
-  Serial.println("=====================================\n");
-  delay(1000);
 }
 
 long readDistance(int trig, int echo) {
@@ -79,21 +70,17 @@ long readDistance(int trig, int echo) {
 
 void setup() {
   Serial.begin(115200);
-  
   pinMode(LED_HIJAU, OUTPUT); pinMode(LED_KUNING, OUTPUT); pinMode(LED_MERAH, OUTPUT); pinMode(BUZZER, OUTPUT);
   pinMode(TRIG_KIRI, OUTPUT); pinMode(ECHO_KIRI, INPUT);
   pinMode(TRIG_TENGAH, OUTPUT); pinMode(ECHO_TENGAH, INPUT);
   pinMode(TRIG_KANAN, OUTPUT); pinMode(ECHO_KANAN, INPUT);
 
   WiFiManager wm;
-  if (!wm.autoConnect("Detektor_Amblas_AP")) {
-    ESP.restart();
-  }
+  if (!wm.autoConnect("Detektor_Amblas_AP")) { ESP.restart(); }
   
   client.setInsecure();
   syncDataAtStartup();
   
-  Serial.println("Monitoring Jarak (cm):");
   Serial.println("KIRI\tTENGAH\tKANAN\tSTATUS");
   Serial.println("-------------------------------------");
 }
@@ -103,36 +90,38 @@ void loop() {
   long dT = readDistance(TRIG_TENGAH, ECHO_TENGAH);
   long dKa = readDistance(TRIG_KANAN, ECHO_KANAN);
   
-  long minD = min(dK, min(dT, dKa));
+  // Tentukan sensor mana yang paling rendah
+  long minD = dK;
+  String sensorName = "Kiri";
+
+  if (dT < minD) { minD = dT; sensorName = "Tengah"; }
+  if (dKa < minD) { minD = dKa; sensorName = "Kanan"; }
+
   int currentStatus = 0; 
   String statusTxt = "AMAN";
   String msg = "";
 
-  // Logika Threshold
+  // Logika Threshold & Pembuatan Pesan
   if (minD < thresholdBahaya) { 
     currentStatus = 2; 
     statusTxt = "BAHAYA";
-    msg = "🚨 EMERGENCY: Truk Amblas! Jarak: " + String(minD) + " cm"; 
+    msg = "🚨 EMERGENCY: Sasis bagian " + sensorName + " AMBLAS! (Jarak: " + String(minD) + " cm)"; 
   }
   else if (minD <= thresholdAman) { 
     currentStatus = 1; 
     statusTxt = "WASPADA";
-    msg = "⚠️ WARNING: Jarak Rendah (" + String(minD) + " cm)"; 
+    msg = "⚠️ WARNING: Sasis bagian " + sensorName + " rendah. (Jarak: " + String(minD) + " cm)"; 
   }
 
-  // Tampilkan di Serial Monitor setiap 500ms
+  // Monitor Serial Realtime
   if (millis() - lastSerialUpdate > 500) {
-    Serial.print(dK); Serial.print("\t");
-    Serial.print(dT); Serial.print("\t");
-    Serial.print(dKa); Serial.print("\t");
-    Serial.println(statusTxt);
+    Serial.printf("%ld\t%ld\t%ld\t%s (%s)\n", dK, dT, dKa, statusTxt.c_str(), sensorName.c_str());
     lastSerialUpdate = millis();
   }
 
   // --- Output Hardware ---
   if (currentStatus == 2) { 
-    digitalWrite(LED_MERAH, 1); digitalWrite(LED_KUNING, 0); digitalWrite(LED_HIJAU, 0); 
-    digitalWrite(BUZZER, 1); 
+    digitalWrite(LED_MERAH, 1); digitalWrite(LED_KUNING, 0); digitalWrite(LED_HIJAU, 0); digitalWrite(BUZZER, 1); 
   }
   else if (currentStatus == 1) { 
     digitalWrite(LED_MERAH, 0); digitalWrite(LED_KUNING, 1); digitalWrite(LED_HIJAU, 0); 
@@ -142,21 +131,23 @@ void loop() {
       bz = millis();
     }
   } else { 
-    digitalWrite(LED_MERAH, 0); digitalWrite(LED_KUNING, 0); digitalWrite(LED_HIJAU, 1); 
-    digitalWrite(BUZZER, 0); 
+    digitalWrite(LED_MERAH, 0); digitalWrite(LED_KUNING, 0); digitalWrite(LED_HIJAU, 1); digitalWrite(BUZZER, 0); 
   }
 
   // --- Telegram Broadcast ---
+  // Kirim jika: Status berubah, ATAU Sensor yang bermasalah berpindah posisi, ATAU interval 15 detik terpenuhi
   if (currentStatus != 0) {
-    if (currentStatus != lastStatus || millis() - lastNotifyTime > 15000) {
+    if (currentStatus != lastStatus || sensorName != lastCriticalSensor || millis() - lastNotifyTime > 15000) {
       for (String id : receiverList) {
         bot.sendMessage(id, msg, "");
       }
       lastNotifyTime = millis();
       lastStatus = currentStatus;
+      lastCriticalSensor = sensorName;
     }
   } else {
     lastStatus = 0;
+    lastCriticalSensor = "";
   }
 
   delay(100); 
