@@ -7,14 +7,14 @@
 #include <vector>
 
 // --- CONFIG ---
-const char* BOT_TOKEN = "ISI_TOKEN_BOT_ANDA";
-const char* SCRIPT_URL = "ISI_URL_WEB_APP_APPS_SCRIPT";
+const char* BOT_TOKEN = "8720903466:AAFYSSQ62jIluthCvF4BS6kNhaLQSfxzQNI";
+const char* SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxfsCkUydDZzfXuNT1_JbqxMttbv9xD0XOqfiyQ8bJ7r3g-LZvf-iDPNe1cx76GZoQ00g/exec";
 
 // Pin JSN-SR04T & Output
-const int TRIG_KIRI = 12, ECHO_KIRI = 13;
-const int TRIG_TENGAH = 14, ECHO_TENGAH = 27;
-const int TRIG_KANAN = 26, ECHO_KANAN = 25;
-const int LED_HIJAU = 18, LED_KUNING = 19, LED_MERAH = 21, BUZZER = 22;
+const int TRIG_TENGAH = 12, ECHO_TENGAH = 13;
+const int TRIG_KANAN = 14, ECHO_KANAN = 27;
+const int TRIG_KIRI = 26, ECHO_KIRI = 25;
+const int LED_HIJAU = 21, LED_KUNING = 19, LED_MERAH = 18, BUZZER = 22;
 
 // Variabel Global
 std::vector<String> receiverList;
