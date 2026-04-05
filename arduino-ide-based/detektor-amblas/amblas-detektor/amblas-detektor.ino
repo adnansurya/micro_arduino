@@ -27,7 +27,23 @@ UniversalTelegramBot bot(BOT_TOKEN, client);
 unsigned long lastNotifyTime = 0;
 unsigned long lastSerialUpdate = 0;
 int lastStatus = -1;
-String lastCriticalSensor = ""; // Untuk melacak jika sensor yang bermasalah berpindah posisi
+String lastCriticalSensor = ""; 
+
+// Fungsi pembantu untuk mengedipkan semua indikator
+void blinkAll(int repeat, int duration) {
+  for (int i = 0; i < repeat; i++) {
+    digitalWrite(LED_HIJAU, HIGH);
+    digitalWrite(LED_KUNING, HIGH);
+    digitalWrite(LED_MERAH, HIGH);
+    digitalWrite(BUZZER, HIGH);
+    delay(duration);
+    digitalWrite(LED_HIJAU, LOW);
+    digitalWrite(LED_KUNING, LOW);
+    digitalWrite(LED_MERAH, LOW);
+    digitalWrite(BUZZER, LOW);
+    if (i < repeat - 1) delay(duration);
+  }
+}
 
 void syncDataAtStartup() {
   Serial.println("\n=====================================");
@@ -75,11 +91,28 @@ void setup() {
   pinMode(TRIG_TENGAH, OUTPUT); pinMode(ECHO_TENGAH, INPUT);
   pinMode(TRIG_KANAN, OUTPUT); pinMode(ECHO_KANAN, INPUT);
 
+  // 1. Kedip sekali saat awal alat dinyalakan (Power ON)
+  blinkAll(1, 500);
+
   WiFiManager wm;
-  if (!wm.autoConnect("Detektor_Amblas_AP")) { ESP.restart(); }
+  wm.setConfigPortalTimeout(60); // Optional: timeout jika tidak ada input di portal AP
+  if (!wm.autoConnect("Detektor_Amblas_AP")) { 
+    Serial.println("Gagal tersambung WiFi, Restart...");
+    delay(3000);
+    ESP.restart(); 
+  }
+  
+  // 2. Kedip dua kali setelah tersambung WiFi
+  blinkAll(2, 200);
   
   client.setInsecure();
   syncDataAtStartup();
+
+  // 3. Kirim pesan inisiasi ke semua receiver di list
+  String initMsg = "✅ Sistem Detektor Amblas Aktif\nWiFi: " + WiFi.SSID() + "\nIP: " + WiFi.localIP().toString();
+  for (String id : receiverList) {
+    bot.sendMessage(id, initMsg, "");
+  }
   
   Serial.println("KIRI\tTENGAH\tKANAN\tSTATUS");
   Serial.println("-------------------------------------");
@@ -90,7 +123,6 @@ void loop() {
   long dT = readDistance(TRIG_TENGAH, ECHO_TENGAH);
   long dKa = readDistance(TRIG_KANAN, ECHO_KANAN);
   
-  // Tentukan sensor mana yang paling rendah
   long minD = dK;
   String sensorName = "Kiri";
 
@@ -101,25 +133,22 @@ void loop() {
   String statusTxt = "AMAN";
   String msg = "";
 
-  // Logika Threshold & Pembuatan Pesan
   if (minD < thresholdBahaya) { 
     currentStatus = 2; 
     statusTxt = "BAHAYA";
-    msg = "🚨 EMERGENCY: Sasis bagian " + sensorName + " AMBLAS! (Jarak: " + String(minD) + " cm)"; 
+    msg = "🚨 EMERGENCY: Chasis bagian " + sensorName + " AMBLAS! (Jarak: " + String(minD) + " cm)"; 
   }
   else if (minD <= thresholdAman) { 
     currentStatus = 1; 
     statusTxt = "WASPADA";
-    msg = "⚠️ WARNING: Sasis bagian " + sensorName + " rendah. (Jarak: " + String(minD) + " cm)"; 
+    msg = "⚠️ WARNING: Chasis bagian " + sensorName + " rendah. (Jarak: " + String(minD) + " cm)"; 
   }
 
-  // Monitor Serial Realtime
   if (millis() - lastSerialUpdate > 500) {
     Serial.printf("%ld\t%ld\t%ld\t%s (%s)\n", dK, dT, dKa, statusTxt.c_str(), sensorName.c_str());
     lastSerialUpdate = millis();
   }
 
-  // --- Output Hardware ---
   if (currentStatus == 2) { 
     digitalWrite(LED_MERAH, 1); digitalWrite(LED_KUNING, 0); digitalWrite(LED_HIJAU, 0); digitalWrite(BUZZER, 1); 
   }
@@ -134,8 +163,6 @@ void loop() {
     digitalWrite(LED_MERAH, 0); digitalWrite(LED_KUNING, 0); digitalWrite(LED_HIJAU, 1); digitalWrite(BUZZER, 0); 
   }
 
-  // --- Telegram Broadcast ---
-  // Kirim jika: Status berubah, ATAU Sensor yang bermasalah berpindah posisi, ATAU interval 15 detik terpenuhi
   if (currentStatus != 0) {
     if (currentStatus != lastStatus || sensorName != lastCriticalSensor || millis() - lastNotifyTime > 15000) {
       for (String id : receiverList) {
