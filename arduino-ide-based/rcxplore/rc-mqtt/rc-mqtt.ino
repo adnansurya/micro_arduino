@@ -2,130 +2,109 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <WiFiClientSecure.h>
-// --- Konfigurasi WiFi ---
+
+// --- Config ---
 const char* ssid = "WARKOP LATEMMAMALA";
 const char* password = "maret2026";
-#define LED_BUILTIN 2 // On most ESP32 Dev boards
-
-// --- Konfigurasi MQTT EMQX ---
 const char* mqtt_server = "q31161f1.ala.asia-southeast1.emqxsl.com";
 const int mqtt_port = 8883;
 const char* mqtt_user = "MIKRO";
 const char* mqtt_pass = "1DEAlist";
-const char* topic_sub = "rc/control/Unit_01"; // Sesuaikan ID Unit
 
-// --- Pin Hardware ---
-const int RELAY_PIN = 26;  // Pin ke Relay
-const int BUZZER_PIN = LED_BUILTIN; // Pin ke Buzzer/LED Indikator
+const char* topic_sub = "rc/control/Unit_1";  // Topik Terima Perintah
+const char* topic_pub = "rc/update/Unit_1";   // Topik Kirim Update Sisa Waktu
+const char* UNIT_ID = "1";
 
-// --- Variabel Global ---
+const int RELAY_PIN = 26; 
+const int BUZZER_PIN = 27;
+
 WiFiClientSecure espClient;
 PubSubClient client(espClient);
-long remainingTime = 0; // Dalam detik
+
+long remainingTime = 0;
 bool isActive = false;
 unsigned long lastTick = 0;
 
 void setup_wifi() {
-  delay(10);
-  Serial.print("\nConnecting to ");
-  Serial.println(ssid);
+  Serial.print("\nConnecting to WiFi...");
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
+    delay(500); Serial.print(".");
   }
-  Serial.println("\nWiFi connected");
+  Serial.println("\nWiFi Connected");
 }
 
-// Callback saat data masuk dari MQTT (GAS)
 void callback(char* topic, byte* payload, unsigned int length) {
-  Serial.print("Message arrived [");
-  Serial.print(topic);
-  Serial.print("] ");
-
   StaticJsonDocument<200> doc;
   deserializeJson(doc, payload, length);
 
-  // Logika menerima perintah dari GAS
-  if (doc.containsKey("power")) {
-    int pwr = doc["power"];
-    if (pwr == 1) {
-      remainingTime = doc["timer"]; // Ambil durasi dalam detik
-      isActive = true;
-      digitalWrite(RELAY_PIN, LOW); // Relay ON
-      Serial.printf("Billing Start: %ld detik\n", remainingTime);
-    } else {
-      stopSystem();
-    }
+  if (doc.containsKey("power") && doc["power"] == 1) {
+    remainingTime = doc["timer"];
+    isActive = true;
+    digitalWrite(RELAY_PIN, LOW); // ON
+    Serial.printf("START: %ld detik\n", remainingTime);
+    sendUpdate(remainingTime); // Update awal ke GAS
   }
+}
+
+void sendUpdate(long sisa) {
+  StaticJsonDocument<100> doc;
+  doc["unitID"] = UNIT_ID;
+  doc["sisa"] = sisa;
+  char buffer[100];
+  serializeJson(doc, buffer);
+  client.publish(topic_pub, buffer);
 }
 
 void reconnect() {
   while (!client.connected()) {
-    Serial.print("Attempting MQTT connection...");
-    // ID Client unik untuk setiap ESP32
-    if (client.connect("ESP32_RC_01", mqtt_user, mqtt_pass)) {
-      Serial.println("connected");
+    Serial.print("MQTT Connecting...");
+    if (client.connect("ESP32_RC_UNIT1", mqtt_user, mqtt_pass)) {
+      Serial.println("Connected");
       client.subscribe(topic_sub);
     } else {
-      Serial.print("failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");
       delay(5000);
     }
   }
 }
 
-void stopSystem() {
-  isActive = false;
-  remainingTime = 0;
-  digitalWrite(RELAY_PIN, HIGH); // Relay OFF
-  digitalWrite(BUZZER_PIN, LOW);
-  Serial.println("System Stopped/Finished");
-}
-
 void setup() {
   Serial.begin(115200);
-  
-  // Konfigurasi Pin
   pinMode(RELAY_PIN, OUTPUT);
   pinMode(BUZZER_PIN, OUTPUT);
-  
-  // State Awal (Mati)
-  digitalWrite(RELAY_PIN, HIGH); 
-  digitalWrite(BUZZER_PIN, LOW);
+  digitalWrite(RELAY_PIN, HIGH); // Awal OFF
 
   setup_wifi();
-  espClient.setInsecure();
+  espClient.setInsecure(); // Bypass SSL Certificate
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(callback);
 }
 
 void loop() {
-  if (!client.connected()) {
-    reconnect();
-  }
+  if (!client.connected()) reconnect();
   client.loop();
 
-  // --- Logika Timer Offline (Tanpa tergantung internet terus-menerus) ---
   unsigned long currentMillis = millis();
   if (isActive && currentMillis - lastTick >= 1000) {
     lastTick = currentMillis;
     remainingTime--;
 
-    // Warning: Bunyi bip jika waktu < 60 detik
-    if (remainingTime <= 60 && remainingTime > 0) {
-      digitalWrite(BUZZER_PIN, !digitalRead(BUZZER_PIN)); // Toggle buzzer
+    // Update Spreadsheet tiap 60 detik, saat 30 detik, dan saat 0
+    if (remainingTime % 60 == 0 || remainingTime == 30 || remainingTime == 0) {
+      sendUpdate(remainingTime);
     }
 
-    // Cut-off jika waktu habis
-    if (remainingTime <= 0) {
-      stopSystem();
+    // Buzzer Warning < 60 detik
+    if (remainingTime <= 60 && remainingTime > 0) {
+      digitalWrite(BUZZER_PIN, !digitalRead(BUZZER_PIN));
     }
-    
-    // Debug sisa waktu ke serial
-    if (remainingTime % 10 == 0) { 
-      Serial.printf("Sisa Waktu: %ld detik\n", remainingTime);
+
+    // Cut-off
+    if (remainingTime <= 0) {
+      isActive = false;
+      digitalWrite(RELAY_PIN, HIGH); // OFF
+      digitalWrite(BUZZER_PIN, LOW);
+      Serial.println("Time Up!");
     }
   }
 }
