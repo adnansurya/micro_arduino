@@ -1,32 +1,47 @@
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
+#include "GravityTDS.h"
 
-// Inisialisasi LCD I2C (Alamat biasanya 0x27 atau 0x3F)
+// --- KONFIGURASI LCD ---
+// Alamat I2C umum 0x27. Pin SDA di 2, SCL di 3 (Pro Micro)
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
-// --- PIN DEFINITION ---
-const int pinTDS    = A0;  // Sensor TDS
-const int pinPH     = A1;  // Sensor pH
-const int ledHijau  = 5;   // LED Hijau (Pindah ke pin 5)
-const int ledKuning = 6;   // LED Kuning (Pindah ke pin 6)
-const int ledMerah  = 7;   // LED Merah (Pindah ke pin 7)
+// --- KONFIGURASI TDS ---
+#define TdsSensorPin A0
+GravityTDS gravityTds;
+float temperature = 25.0; 
+float tdsValue = 0;
 
-// Pin 2 (SDA) dan Pin 3 (SCL) digunakan otomatis oleh <Wire.h> untuk LCD
+// --- KONFIGURASI PIN LAIN ---
+const int pinPH     = A1;
+const int ledHijau  = 5;
+const int ledKuning = 6;
+const int ledMerah  = 7;
 
-// Batas Parameter (Silakan sesuaikan dengan standar coolant Anda)
-float batasTdsMax = 500.0; // Contoh batas TDS
-float batasPhMin  = 7.0;   // Contoh pH minimal
-float batasPhMax  = 9.0;   // Contoh pH maksimal
+// --- PARAMETER AMBANG BATAS (Silakan sesuaikan) ---
+const float batasTdsNormal = 500.0; // Contoh: Di atas 500 PPM dianggap problem
+const float phMinNormal    = 7.0;
+const float phMaxNormal    = 9.0;
 
 void setup() {
+  Serial.begin(115200);
+
+  // Inisialisasi LED
   pinMode(ledHijau, OUTPUT);
   pinMode(ledKuning, OUTPUT);
   pinMode(ledMerah, OUTPUT);
-  
+
+  // Inisialisasi TDS (Library Gravity)
+  gravityTds.setPin(TdsSensorPin);
+  gravityTds.setAref(5.0);      
+  gravityTds.setAdcRange(1024); 
+  gravityTds.begin();
+
+  // Inisialisasi LCD
   lcd.init();
   lcd.backlight();
 
-  // Tampilan Awal (Splash Screen)
+  // Splash Screen
   lcd.setCursor(2, 0);
   lcd.print("AHAS Digital");
   lcd.setCursor(0, 1);
@@ -36,23 +51,34 @@ void setup() {
 }
 
 void loop() {
-  // Pembacaan Sensor (Sederhana - Perlu rumus kalibrasi spesifik sensor Anda)
-  float nilaiTDS = analogRead(pinTDS) * (1000.0 / 1023.0); // Dummy conversion
-  float nilaiPH = analogRead(pinPH) * (14.0 / 1023.0);    // Dummy conversion
+  lcd.clear();
+  // 1. PROSES PEMBACAAN TDS (PPM)
+  gravityTds.setTemperature(temperature); 
+  gravityTds.update();
+  tdsValue = gravityTds.getTdsValue(); 
 
-  bool tdsNormal = (nilaiTDS <= batasTdsMax);
-  bool phNormal  = (nilaiPH >= batasPhMin && nilaiPH <= batasPhMax);
+  // 2. PROSES PEMBACAAN PH
+  int nilaiRawPH = analogRead(pinPH);
+  float nilaiPH = nilaiRawPH * (14.0 / 1023.0);
 
-  // Tampilkan Nilai di LCD
+  // 3. LOGIKA EVALUASI
+  bool tdsNormal = (tdsValue <= batasTdsNormal);
+  bool phNormal  = (nilaiPH >= phMinNormal && nilaiPH <= phMaxNormal);
+
+  // 4. TAMPILAN LCD
+  // Baris 1: Menampilkan Angka
   lcd.setCursor(0, 0);
   lcd.print("TDS:");
-  lcd.print((int)nilaiTDS);
-  lcd.print(" pH:");
+  lcd.print((int)tdsValue);
+  // lcd.print("ppm "); // Menampilkan satuan ppm
+  
+  lcd.setCursor(9, 0);
+  lcd.print("pH:");
   lcd.print(nilaiPH, 1);
 
+  // Baris 2: Menampilkan Status
   lcd.setCursor(0, 1);
 
-  // Logika Kondisi
   if (tdsNormal && phNormal) {
     // SEMUA NORMAL
     lcd.print("STATUS: NORMAL  ");
@@ -75,5 +101,5 @@ void loop() {
     digitalWrite(ledMerah, LOW);
   }
 
-  delay(1000); // Update setiap 1 detik
+  delay(1000);
 }
