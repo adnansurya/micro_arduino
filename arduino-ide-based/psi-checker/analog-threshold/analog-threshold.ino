@@ -1,9 +1,9 @@
 // --- Konfigurasi Pin ---
 const int pinSensorPSI = A0;   // Pin Signal (In) sensor
-const int pinLedMerah  = 8;
-const int pinLedBiru   = 9;
-const int pinLedHijau  = 10;
-const int pinBuzzer    = 11;
+const int pinLedMerah  = 5;
+const int pinLedBiru   = 7;
+const int pinLedHijau  = 6;
+const int pinBuzzer    = 8;
 
 // --- Konfigurasi Batas Tegangan (Volt) ---
 const float voltMinimal = 1.5; // Ubah nilai ini sesuai batas PSI rendah (0.0 - 5.0 Volt)
