@@ -2,10 +2,10 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <WiFiClientSecure.h>
+#include <WiFiManager.h> // Library WiFiManager ditambahkan
 
 // --- Konfigurasi WiFi ---
-const char* ssid = "WARKOP LATEMMAMALA";
-const char* password = "maret2026";
+// ssid dan password dihapus karena sudah dihandle WiFiManager
 
 // --- Konfigurasi MQTT EMQX ---
 const char* mqtt_server = "q31161f1.ala.asia-southeast1.emqxsl.com";
@@ -15,14 +15,13 @@ const char* mqtt_pass = "1DEAlist";
 
 // --- Identitas Unit ---
 const char* UNIT_ID = "1";
-const char* topic_sub = "rc/control/Unit_1";  // Mendengarkan perintah (Start/Pause/Stop)
-const char* topic_pub = "rc/update/Unit_1";   // Mengirim status/sisa waktu ke GAS
+const char* topic_sub = "rc/control/Unit_1";
+const char* topic_pub = "rc/update/Unit_1";
 
 // --- Pin Hardware ---
 const int RELAY_PIN = 26;
 const int LED_PIN = 25;
 const int BUZZER_PIN = 27;
-
 
 // --- Variabel Global ---
 WiFiClientSecure espClient;
@@ -32,18 +31,6 @@ long remainingTime = 0;
 bool isActive = false;
 bool isPaused = false;
 unsigned long lastTick = 0;
-
-void setup_wifi() {
-  delay(10);
-  Serial.print("\nConnecting to WiFi: ");
-  Serial.println(ssid);
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("\nWiFi connected");
-}
 
 // Fungsi mengirim data ke Google Sheets via MQTT Webhook
 void sendUpdateToGAS(long sisa) {
@@ -61,42 +48,33 @@ void stopSystem() {
   isActive = false;
   isPaused = false;
   remainingTime = 0;
-  digitalWrite(RELAY_PIN, HIGH);  // Relay OFF
+  digitalWrite(RELAY_PIN, HIGH);
   digitalWrite(LED_PIN, LOW);
-  digitalWrite(BUZZER_PIN, LOW);  // Buzzer OFF
-  sendUpdateToGAS(0);             // Kirim status 0 (Selesai)
+  digitalWrite(BUZZER_PIN, LOW);
+  sendUpdateToGAS(0);
   Serial.println("System Stopped.");
 }
 
-// Callback menerima pesan dari Telegram -> GAS -> EMQX
 void callback(char* topic, byte* payload, unsigned int length) {
-  Serial.print("Message arrived [");
-  Serial.print(topic);
-  Serial.print("] ");
-
   StaticJsonDocument<256> doc;
   deserializeJson(doc, payload, length);
-
   String action = doc["action"];
 
   if (action == "start") {
-    remainingTime = doc["timer"];  // durasi dalam detik
+    remainingTime = doc["timer"];
     isActive = true;
     isPaused = false;
-    digitalWrite(RELAY_PIN, LOW);  // Relay ON
+    digitalWrite(RELAY_PIN, LOW);
     digitalWrite(LED_PIN, HIGH);
     sendUpdateToGAS(remainingTime);
-    Serial.println("Action: START");
   } else if (action == "pause") {
     isPaused = true;
-    digitalWrite(RELAY_PIN, HIGH);  // Relay OFF
+    digitalWrite(RELAY_PIN, HIGH);
     digitalWrite(LED_PIN, LOW);
-    Serial.println("Action: PAUSE");
   } else if (action == "resume") {
     isPaused = false;
-    digitalWrite(RELAY_PIN, LOW);  // Relay ON
+    digitalWrite(RELAY_PIN, LOW);
     digitalWrite(LED_PIN, HIGH);
-    Serial.println("Action: RESUME");
   } else if (action == "stop") {
     stopSystem();
   }
@@ -114,7 +92,6 @@ void reconnect() {
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");
       delay(5000);
     }
   }
@@ -127,16 +104,29 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
   pinMode(BUZZER_PIN, OUTPUT);
 
-  // Posisi awal: Relay Mati (Active Low)
   digitalWrite(RELAY_PIN, HIGH);
   digitalWrite(LED_PIN, LOW);
   digitalWrite(BUZZER_PIN, LOW);
 
-  setup_wifi();
+  // --- Integrasi WiFiManager ---
+  WiFiManager wm;
 
-  // Konfigurasi SSL (Insecure karena menggunakan EMQX Cloud/Self-Signed)
+  // Hapus baris di bawah ini jika tidak ingin reset settingan WiFi setiap kali nyala
+  // wm.resetSettings(); 
+
+  // Menampilkan Portal Konfigurasi jika WiFi tidak ditemukan
+  // Nama AP yang muncul: "ESP32_Config_Unit_1"
+  bool res;
+  res = wm.autoConnect("ESP32_Config_Unit_1"); 
+
+  if(!res) {
+      Serial.println("Gagal terhubung ke WiFi");
+      // ESP.restart();
+  } else {
+      Serial.println("WiFi Connected via WiFiManager!");
+  }
+
   espClient.setInsecure();
-
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(callback);
 }
@@ -149,25 +139,20 @@ void loop() {
 
   unsigned long currentMillis = millis();
 
-  // Logika Timer: Berjalan hanya jika ACTIVE dan TIDAK PAUSE
   if (isActive && !isPaused && (currentMillis - lastTick >= 1000)) {
     lastTick = currentMillis;
     remainingTime--;
 
-    // 1. Update berkala ke Spreadsheet tiap 60 detik, atau saat 30 detik terakhir
     if (remainingTime % 60 == 0 || remainingTime == 30 || remainingTime == 0) {
       sendUpdateToGAS(remainingTime);
     }
 
-    // 2. Warning Buzzer (Bunyi putus-putus jika waktu < 1 menit)
     if (remainingTime <= 60 && remainingTime > 0) {
       digitalWrite(BUZZER_PIN, !digitalRead(BUZZER_PIN));
     }
 
-    // 3. Auto Cut-Off jika waktu habis
     if (remainingTime <= 0) {
       stopSystem();
-      Serial.println("Time's Up! Relay cut-off.");
     }
   }
 }
