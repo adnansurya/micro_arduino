@@ -7,6 +7,8 @@
 #include <ArduinoJson.h>
 #include "qrcode.h"
 
+
+
 TFT_eSPI tft = TFT_eSPI();
 QRCode qrcode;
 
@@ -25,6 +27,19 @@ Page currentPage = MENU;
 #define COLOR_ORANGE  0xE400 
 #define COLOR_RED     0xC000 
 
+// ==========================================
+//        KONFIGURASI HARGA & TAKARAN
+// ==========================================
+#define NAMA_PRODUK_1  "300 ml"
+#define HARGA_PRODUK_1  3000
+
+#define NAMA_PRODUK_2  "400 ml"
+#define HARGA_PRODUK_2  4000
+
+#define NAMA_PRODUK_3  "500 ml"
+#define HARGA_PRODUK_3  5000
+// ==========================================
+
 struct Button {
   int x, y, w, h;
   char label[15];
@@ -32,9 +47,11 @@ struct Button {
   int amount;
 };
 
-Button btn1 = { 30, 100, 260, 75, "500 ml",  COLOR_BLUE,   2000 };
-Button btn2 = { 30, 190, 260, 75, "750 ml",  COLOR_GREEN,  3000 };
-Button btn3 = { 30, 280, 260, 75, "1 LITER", COLOR_ORANGE, 4000 };
+// Sekarang tombol mengambil data dari konfigurasi di atas
+Button btn1 = { 30, 100, 260, 75, NAMA_PRODUK_1, COLOR_BLUE,   HARGA_PRODUK_1 };
+Button btn2 = { 30, 190, 260, 75, NAMA_PRODUK_2, COLOR_GREEN,  HARGA_PRODUK_2 };
+Button btn3 = { 30, 280, 260, 75, NAMA_PRODUK_3, COLOR_ORANGE, HARGA_PRODUK_3 };
+
 Button btnBack = { 30, 410, 260, 50, "BATAL", COLOR_RED, 0 };
 
 void setup() {
