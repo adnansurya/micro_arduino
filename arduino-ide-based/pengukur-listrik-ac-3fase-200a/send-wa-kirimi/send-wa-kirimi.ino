@@ -2,8 +2,8 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 
-const char* ssid = "Wokwi-GUEST";
-const char* password = "";
+const char* ssid = "MIKRO";
+const char* password = "1DEAlist";
 const char* apiUrl = "https://api.kirimi.id/v1/send-message";
 
 // Variabel untuk menampung input
