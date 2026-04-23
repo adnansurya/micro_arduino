@@ -89,42 +89,52 @@ void loop() {
 void requestMidtrans(Button b) {
   currentPage = LOADING;
   tft.fillScreen(COLOR_BG);
-  drawHeader("Proses", "Menghubungkan ke Bank...");
-  
-  // Animasi Loading sederhana
-  tft.fillRoundRect(30, 150, 260, 20, 10, 0xD6BA);
-  
+  drawHeader("Proses", "Menghubungkan...");
+
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
-    // Mengikuti redirect (penting untuk Google Apps Script)
-    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-    http.begin(appScriptUrl);
-    http.addHeader("Content-Type", "application/json");
+    WiFiClientSecure client;
+    client.setInsecure(); 
 
-    // Payload JSON
-    String jsonPayload = "{\"amount\":" + String(b.amount) + ", \"product\":\"" + String(b.label) + "\"}";
-    
-    int httpResponseCode = http.POST(jsonPayload);
+    // Susun URL untuk GET: URL?amount=2000&product=500ml
+    // Gunakan String(b.label) dan pastikan tidak ada spasi di label (atau gunakan urlencode)
+    String urlWithParams = String(appScriptUrl) + "?amount=" + String(b.amount) + "&product=" + String(b.label);
+    urlWithParams.replace(" ", "%20"); // Mengatasi spasi pada nama produk
+
+    Serial.println("Requesting URL: " + urlWithParams);
+
+    http.begin(client, urlWithParams);
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+
+    // Kirim dengan GET
+    int httpResponseCode = http.GET();
 
     if (httpResponseCode > 0) {
       String response = http.getString();
-      DynamicJsonDocument doc(2048);
-      deserializeJson(doc, response);
+      Serial.println("Response: " + response);
 
-      // Ambil URL QRIS (biasanya di actions index 0 untuk gopay/qris)
-      const char* qrUrl = doc["actions"][0]["url"];
-      
-      if (qrUrl) {
-        openQRPage(b, qrUrl);
+      if (response.indexOf("<html") != -1) {
+        showError("Masih Error 400/HTML");
       } else {
-        showError("QRIS Tak Tersedia");
+        DynamicJsonDocument doc(4096);
+        DeserializationError error = deserializeJson(doc, response);
+        
+        if (!error) {
+          // Sesuaikan dengan struktur response Midtrans Anda
+          const char* qrUrl = doc["actions"][0]["url"];
+          if (qrUrl) {
+            openQRPage(b, qrUrl);
+          } else {
+            showError("QR URL Tidak Ditemukan");
+          }
+        } else {
+          showError("Gagal Baca JSON");
+        }
       }
     } else {
-      showError("Server Error: " + String(httpResponseCode));
+      showError("Koneksi Gagal: " + String(httpResponseCode));
     }
     http.end();
-  } else {
-    showError("WiFi Terputus");
   }
 }
 
@@ -194,18 +204,23 @@ bool checkBtn(int tx, int ty, Button b) {
 }
 
 void generateQRCode(const char* msg) {
-  uint8_t qrcodeData[qrcode_getBufferSize(3)];
-  qrcode_initText(&qrcode, qrcodeData, 3, 0, msg);
-  int scale = 6; 
+  uint8_t qrcodeData[qrcode_getBufferSize(5)];
+  // Gunakan ECC Low (0) agar pola QR lebih sederhana & mudah discan
+  qrcode_initText(&qrcode, qrcodeData, 5, 0, msg);
+  
+  int scale = 5; // Coba angka 4 jika terlalu besar, atau 5 jika layar cukup luas
   int size = qrcode.size * scale;
   int xOffset = (320 - size) / 2;
   int yOffset = 180; 
-  tft.fillRect(xOffset - 10, yOffset - 10, size + 20, size + 20, TFT_WHITE);
-  tft.drawRect(xOffset - 11, yOffset - 11, size + 22, size + 22, COLOR_SUB);
+
+  // PENTING: Tambahkan "Quiet Zone" (Frame putih lebih lebar)
+  tft.fillRect(xOffset - 15, yOffset - 15, size + 30, size + 30, TFT_WHITE);
+  
   for (uint8_t y = 0; y < qrcode.size; y++) {
     for (uint8_t x = 0; x < qrcode.size; x++) {
       if (qrcode_getModule(&qrcode, x, y)) {
-        tft.fillRect(x * scale + xOffset, y * scale + yOffset, scale, scale, COLOR_HEADER);
+        // Gambar blok hitam
+        tft.fillRect(x * scale + xOffset, y * scale + yOffset, scale, scale, TFT_BLACK);
       }
     }
   }
