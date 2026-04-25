@@ -86,30 +86,86 @@ void loop() {
 
 void startTrx(Button b) {
   currentPage = LOADING;
-  tft.fillScreen(0xFFFF);
-  tft.setCursor(60, 200);
-  tft.print("Requesting QR...");
+  tft.fillScreen(COLOR_BG);
+  
+  // Tampilkan Header dan Pesan Loading yang lebih estetik
+  drawHeader("Proses", "Mohon tunggu...");
+  
+  tft.setTextColor(COLOR_SUB);
+  tft.setTextSize(2);
+  tft.setCursor(30, 150);
+  tft.print("Menghubungkan ke bank");
+  
+  // Animasi visual sederhana (titik-titik)
+  tft.print("."); delay(100); tft.print("."); delay(100); tft.print(".");
+
+  if (WiFi.status() != WL_CONNECTED) {
+    showError("WiFi Terputus!");
+    return;
+  }
 
   WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;
+  
   String url = String(appScriptUrl) + "?amount=" + String(b.amount) + "&product=" + String(b.label);
   url.replace(" ", "%20");
 
   http.begin(client, url);
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  http.setTimeout(15000); // Timeout 15 detik
 
-  if (http.GET() > 0) {
-    DynamicJsonDocument doc(2048);
-    deserializeJson(doc, http.getString());
-    const char* qr = doc["actions"][0]["url"];
-    const char* id = doc["order_id"];
-    if (qr && id) {
-      currentOrderId = String(id);
-      showQR(b, qr);
+  int httpCode = http.GET();
+  
+  if (httpCode > 0) {
+    String payload = http.getString();
+    
+    // Proteksi jika response bukan JSON (misal error HTML dari Google)
+    if (payload.indexOf("<html") != -1) {
+      showError("Server Error (400)");
+    } else {
+      DynamicJsonDocument doc(2048);
+      DeserializationError error = deserializeJson(doc, payload);
+
+      if (error) {
+        showError("Data Gagal Dimuat");
+      } else {
+        // Ambil data QR dan ID
+        const char* qr = doc["actions"][0]["url"];
+        const char* id = doc["order_id"];
+        
+        if (qr && id) {
+          currentOrderId = String(id);
+          showQR(b, qr);
+        } else {
+          showError("QR Tidak Tersedia");
+        }
+      }
     }
+  } else {
+    // Jika httpCode negatif, berarti gagal koneksi (misal -1 atau -11)
+    showError("Gagal Server: " + String(httpCode));
   }
+  
   http.end();
+}
+
+// Fungsi Baru untuk Menampilkan Error Screen
+void showError(String msg) {
+  tft.fillScreen(COLOR_BG);
+  drawHeader("Gagal", "Terjadi kesalahan:");
+  
+  tft.setTextColor(COLOR_RED);
+  tft.setTextSize(2);
+  tft.setCursor(30, 120);
+  tft.print(msg);
+  
+  tft.setTextColor(COLOR_SUB);
+  tft.setCursor(30, 200);
+  tft.print("Kembali ke menu...");
+  
+  delay(3000); // Beri waktu user membaca pesan
+  drawMenuPage();
 }
 
 void checkStatus() {
@@ -123,16 +179,76 @@ void checkStatus() {
     DynamicJsonDocument doc(1024);
     deserializeJson(doc, http.getString());
     String status = doc["transaction_status"];
+    
     if (status == "settlement" || status == "capture") {
-      tft.fillScreen(0xFFFF);
-      tft.setCursor(60, 200);
-      tft.setTextColor(TFT_GREEN);
-      tft.print("LUNAS! MENGALIR...");
-      delay(5000);  // Simulasi nyala pompa
+      currentPage = SUCCESS; // Set state ke sukses
+      showSuccessScreen();   // Panggil tampilan sukses yang menarik
+      
+      // LOGIKA NYALA POMPA
+      // digitalWrite(27, LOW); // Contoh: Aktifkan Relay (sesuaikan logic HIGH/LOW)
+      
+      // Progress Bar Simulasi Air Mengalir
+      for (int i = 0; i <= 100; i++) {
+        drawProgressBar(i, "Mengalirkan Air...");
+        delay(50); // Sesuaikan durasi mengalir di sini
+      }
+      
+      // digitalWrite(27, HIGH); // Matikan Relay
+      delay(2000); // Tahan sebentar pesan selesainya
       drawMenuPage();
     }
   }
   http.end();
+}
+
+
+void showSuccessScreen() {
+  tft.fillScreen(COLOR_BG);
+  
+  // 1. Gambar Ikon Centang (Checkmark)
+  int centerX = 160;
+  int centerY = 150;
+  int radius = 40;
+  
+  // Lingkaran Hijau
+  tft.fillCircle(centerX, centerY, radius, COLOR_GREEN);
+  tft.fillCircle(centerX, centerY, radius - 4, 0xFFFF); // Outline putih tengah
+  tft.fillCircle(centerX, centerY, radius - 8, COLOR_GREEN);
+  
+  // Simbol Centang Putih (Manual Line)
+  tft.drawLine(centerX - 15, centerY, centerX - 5, centerY + 10, 0xFFFF);
+  tft.drawLine(centerX - 14, centerY, centerX - 5, centerY + 11, 0xFFFF); // Tebalkan
+  tft.drawLine(centerX - 5, centerY + 10, centerX + 20, centerY - 15, 0xFFFF);
+  tft.drawLine(centerX - 5, centerY + 11, centerX + 20, centerY - 14, 0xFFFF); // Tebalkan
+
+  // 2. Teks Status
+  tft.setTextColor(COLOR_HEADER);
+  tft.setTextSize(3);
+  tft.setTextDatum(MC_DATUM); // Set titik acuan ke tengah (Middle Center)
+  tft.drawString("PEMBAYARAN", 160, 230);
+  tft.setTextColor(COLOR_GREEN);
+  tft.drawString("BERHASIL!", 160, 265);
+}
+
+void drawProgressBar(int pc, String msg) {
+  int barW = 240;
+  int barH = 20;
+  int barX = (320 - barW) / 2;
+  int barY = 320;
+
+  // Gambar Frame Progress
+  tft.drawRoundRect(barX - 2, barY - 2, barW + 4, barH + 4, 5, COLOR_SUB);
+  
+  // Isi Progress
+  int progressW = (pc * barW) / 100;
+  tft.fillRoundRect(barX, barY, progressW, barH, 3, COLOR_BLUE);
+  
+  // Teks Informasi di bawah bar
+  tft.fillRect(0, barY + 30, 320, 30, COLOR_BG); // Clear area teks sebelumnya
+  tft.setTextColor(COLOR_SUB);
+  tft.setTextSize(2);
+  tft.setTextDatum(TC_DATUM);
+  tft.drawString(msg, 160, barY + 30);
 }
 
 // --- UI FUNCTIONS ---
@@ -181,8 +297,8 @@ void showQR(Button b, const char* url) {
   // Render QR
   uint8_t qrData[qrcode_getBufferSize(5)];
   qrcode_initText(&qrcode, qrData, 5, 0, url);
-  int s = 5, xO = (320 - (qrcode.size * s)) / 2, yO = 130;
-  tft.fillRect(xO - 10, yO - 10, (qrcode.size * s) + 20, (qrcode.size * s) + 20, 0xFFFF);
+  int s = 5, xO = (320 - (qrcode.size * s)) / 2, yO = 180;
+  tft.fillRect(xO - 15, yO - 15, (qrcode.size * s) + 30, (qrcode.size * s) + 30, 0xFFFF);
   for (uint8_t y = 0; y < qrcode.size; y++)
     for (uint8_t x = 0; x < qrcode.size; x++)
       if (qrcode_getModule(&qrcode, x, y)) tft.fillRect(x * s + xO, y * s + yO, s, s, 0x0000);
