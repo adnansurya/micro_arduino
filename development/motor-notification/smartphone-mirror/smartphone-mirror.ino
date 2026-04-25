@@ -8,7 +8,7 @@
 
 TFT_eSPI tft = TFT_eSPI();
 
-// --- VARIABEL WARNA (TEMA) ---
+// --- VARIABEL WARNA (TEMA PUTIH) ---
 uint16_t COLOR_BG      = TFT_WHITE;     
 uint16_t COLOR_TEXT    = TFT_BLACK;     
 uint16_t COLOR_ACCENT  = TFT_BLUE;      
@@ -18,8 +18,9 @@ uint16_t COLOR_TITLE   = 0x03E0;
 uint16_t COLOR_ARTIST  = 0x4208;        
 uint16_t COLOR_STATUS  = TFT_MAGENTA;   
 uint16_t COLOR_VOL     = 0x001F;        
-uint16_t COLOR_BAR_BG  = 0xD6BA;        // Abu-abu muda untuk latar bar
-uint16_t COLOR_BAR_FILL = 0x07FF;       // Cyan cerah untuk isi bar
+uint16_t COLOR_BAR_BG  = 0xD6BA;        
+uint16_t COLOR_BAR_FILL = 0x07FF;       
+uint16_t COLOR_DATE    = 0x7BEF; 
 
 #define SERVICE_UUID           "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 #define CHARACTERISTIC_UUID_RX "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
@@ -32,6 +33,7 @@ String navInstr = "", navDist = "", navEta = "";
 String musicState = "pause";
 int volumeLevel = 0;
 long positionSec = 0, durationSec = 0;
+time_t lastUnixTime = 0; // Simpan timestamp secara global
 String inputBuffer = "";
 bool refreshDisplay = true;
 bool isNavigating = false;
@@ -85,7 +87,7 @@ void updateDisplay() {
   }
 
   // 3. Panel Musik
-  int musicY = isNavigating ? 180 : 135;
+  int musicY = isNavigating ? 180 : 130;
   tft.setTextColor(COLOR_TITLE);
   tft.setTextSize(2);
   String shortTitle = title.length() > 16 ? title.substring(0, 14) + ".." : title;
@@ -101,35 +103,35 @@ void updateDisplay() {
   String statusTxt = (musicState == "play") ? "NOW PLAYING" : "PAUSED (" + formatTime(positionSec) + "/" + formatTime(durationSec) + ")";
   tft.drawCentreString(statusTxt, tft.width() / 2, musicY + 60, 1);
 
-  // 4. Panel Volume (Interaktif dengan Bar)
-  int volY = 270;
+  // 4. Panel Volume
+  int volY = 265;
   tft.setTextColor(COLOR_VOL);
   tft.setTextSize(1);
   tft.drawCentreString("VOLUME " + String(volumeLevel) + "%", tft.width() / 2, volY, 1);
+  tft.fillRoundRect((tft.width() - 160) / 2, volY + 15, 160, 8, 4, COLOR_BAR_BG);
+  int progress = map(volumeLevel, 0, 100, 0, 160);
+  if (progress > 0) tft.fillRoundRect((tft.width() - 160) / 2, volY + 15, progress, 8, 4, COLOR_BAR_FILL);
 
-  // Background Bar
-  int barWidth = 160;
-  int barHeight = 10;
-  int barX = (tft.width() - barWidth) / 2;
-  int barY = volY + 15;
-  tft.fillRoundRect(barX, barY, barWidth, barHeight, 4, COLOR_BAR_BG);
-  
-  // Isi Bar (Progress)
-  int progress = map(volumeLevel, 0, 100, 0, barWidth);
-  if (progress > 0) {
-    tft.fillRoundRect(barX, barY, progress, barHeight, 4, COLOR_BAR_FILL);
+  // 5. TANGGAL (Paling Bawah)
+  if (lastUnixTime > 0) {
+    struct tm *tmp = localtime(&lastUnixTime);
+    const char* hari[] = {"Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"};
+    const char* bulan[] = {"Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"};
+    char dateBuf[40];
+    sprintf(dateBuf, "%s, %02d %s %d", hari[tmp->tm_wday], tmp->tm_mday, bulan[tmp->tm_mon], tmp->tm_year + 1900);
+    tft.setTextColor(COLOR_DATE);
+    tft.setTextSize(1);
+    tft.drawCentreString(dateBuf, tft.width() / 2, 305, 1);
   }
 }
-
-// --- FUNGSI SISANYA TETAP SAMA ---
 
 void processBuffer(String data) {
   Serial.println(data);
   if (data.indexOf("setTime(") != -1) {
     int startIdx = data.indexOf("(") + 1;
     int endIdx = data.indexOf(")");
-    time_t t = data.substring(startIdx, endIdx).toInt();
-    struct tm *tmp = localtime(&t);
+    lastUnixTime = data.substring(startIdx, endIdx).toInt(); // Update timestamp global
+    struct tm *tmp = localtime(&lastUnixTime);
     char buf[10];
     sprintf(buf, "%02d:%02d", tmp->tm_hour, tmp->tm_min);
     currentTime = String(buf);
