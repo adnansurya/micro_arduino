@@ -15,7 +15,7 @@ TFT_eSPI tft = TFT_eSPI();
 BLECharacteristic *pCharacteristicTX;
 bool deviceConnected = false;
 String artist = "-", title = "-", currentTime = "00:00";
-String navInstr = "", navDist = "";
+String navInstr = "", navDist = "", navEta = "";
 int volumeLevel = 0;
 String inputBuffer = "";
 bool refreshDisplay = true;
@@ -28,13 +28,9 @@ void drawStandbyPage() {
   tft.setTextColor(TFT_DARKGREY);
   tft.setTextSize(2);
   tft.drawCentreString("DISCONNECTED", tft.width() / 2, 100, 1);
-  
   tft.setTextSize(1);
   tft.setTextColor(TFT_BLUE);
   tft.drawCentreString("Waiting for Gadgetbridge...", tft.width() / 2, 140, 1);
-  
-  // Icon Bluetooth sederhana (Opsional)
-  tft.drawRect(tft.width()/2 - 10, 170, 20, 30, TFT_BLUE);
 }
 
 void updateDisplay() {
@@ -52,21 +48,34 @@ void updateDisplay() {
   tft.drawCentreString(currentTime, tft.width() / 2, 20, 1);
   tft.drawFastHLine(20, 65, tft.width() - 40, TFT_BLUE);
 
-  // 2. Panel Navigasi
+  // 2. Panel Navigasi (Font Diperbesar & Support ETA)
   if (isNavigating) {
-    tft.fillRoundRect(10, 75, tft.width()-20, 80, 5, TFT_DARKCYAN);
+    tft.fillRoundRect(5, 75, tft.width()-10, 100, 8, TFT_DARKCYAN);
     tft.setTextColor(TFT_WHITE);
     tft.setTextSize(1);
-    tft.drawString("NAVIGATION", 20, 85);
+    tft.drawString("NAVIGASI", 15, 85);
+    
+    // Jarak
     tft.setTextSize(2);
-    tft.drawCentreString(navDist, tft.width() / 2, 100, 1);
-    tft.setTextSize(1);
-    String shortInstr = navInstr.length() > 25 ? navInstr.substring(0, 22) + ".." : navInstr;
-    tft.drawCentreString(shortInstr, tft.width() / 2, 125, 1);
+    tft.setTextColor(TFT_YELLOW);
+    tft.drawString(navDist, 15, 100);
+    
+    // Instruksi (Font Diperbesar ke Size 2)
+    tft.setTextColor(TFT_WHITE);
+    tft.setTextSize(2);
+    String shortInstr = navInstr.length() > 18 ? navInstr.substring(0, 16) + ".." : navInstr;
+    tft.drawCentreString(shortInstr, tft.width() / 2, 130, 1);
+
+    // ETA (Muncul jika tersedia)
+    if (navEta != "") {
+      tft.setTextSize(1);
+      tft.setTextColor(TFT_SILVER);
+      tft.drawRightString("ETA: " + navEta, tft.width() - 15, 85, 1);
+    }
   }
 
   // 3. Panel Musik
-  int musicY = isNavigating ? 175 : 110;
+  int musicY = isNavigating ? 195 : 120;
   tft.setTextColor(TFT_GREEN);
   tft.setTextSize(2);
   String shortTitle = title.length() > 16 ? title.substring(0, 14) + ".." : title;
@@ -76,27 +85,26 @@ void updateDisplay() {
   tft.setTextSize(1);
   tft.drawCentreString(artist, tft.width() / 2, musicY + 30, 1);
 
-  // 4. Volume (Update sesuai log "audio": "v")
+  // 4. Volume (Update Langsung)
   tft.setTextColor(TFT_CYAN);
-  tft.drawCentreString("VOLUME: " + String(volumeLevel) + "%", tft.width() / 2, 290, 1);
+  tft.setTextSize(1);
+  tft.drawCentreString("VOLUME", tft.width() / 2, 275, 1);
+  tft.setTextSize(3);
+  tft.drawCentreString(String(volumeLevel) + "%", tft.width() / 2, 290, 1);
 }
 
-// --- CALLBACK SERVER (Koneksi) ---
+// --- CALLBACK SERVER ---
 
 class MyServerCallbacks: public BLEServerCallbacks {
-    void onConnect(BLEServer* pServer) {
-      deviceConnected = true;
-      refreshDisplay = true;
-    }
+    void onConnect(BLEServer* pServer) { deviceConnected = true; refreshDisplay = true; }
     void onDisconnect(BLEServer* pServer) {
       deviceConnected = false;
       refreshDisplay = true;
-      pServer->getAdvertising()->start(); // Mulai iklan lagi agar bisa re-connect
+      pServer->getAdvertising()->start();
     }
 };
 
 void processBuffer(String data) {
-  Serial.println(data);
   if (data.indexOf("setTime(") != -1) {
     int startIdx = data.indexOf("(") + 1;
     int endIdx = data.indexOf(")");
@@ -125,13 +133,12 @@ void processBuffer(String data) {
       else if (type == "nav") {
         navInstr = doc["instr"] | "";
         navDist = doc["distance"] | "";
+        navEta = doc["eta"] | ""; // Menangkap ETA
         isNavigating = (navInstr != "");
         refreshDisplay = true;
       }
-      // PERBAIKAN VOLUME: Mengikuti log GB({"t":"audio","v":33.0})
       else if (type == "audio") {
-        volumeLevel = doc["v"];
-        Serial.println(volumeLevel);
+        volumeLevel = doc["v"]; // Sesuai permintaan: direct assignment
         refreshDisplay = true;
       }
     }
@@ -155,7 +162,7 @@ void setup() {
   
   BLEDevice::init("Bangle.js");
   BLEServer *pServer = BLEDevice::createServer();
-  pServer->setCallbacks(new MyServerCallbacks()); // Tambahkan callback koneksi
+  pServer->setCallbacks(new MyServerCallbacks());
 
   BLEService *pService = pServer->createService(SERVICE_UUID);
   pCharacteristicTX = pService->createCharacteristic(CHARACTERISTIC_UUID_TX, BLECharacteristic::PROPERTY_NOTIFY);
@@ -167,7 +174,7 @@ void setup() {
   pService->start();
   pServer->getAdvertising()->start();
   
-  updateDisplay(); // Tampilkan halaman standby pertama kali
+  updateDisplay();
 }
 
 void loop() {
