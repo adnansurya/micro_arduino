@@ -9,15 +9,17 @@
 TFT_eSPI tft = TFT_eSPI();
 
 // --- VARIABEL WARNA (TEMA) ---
-uint16_t COLOR_BG      = TFT_WHITE;     // Latar belakang utama
-uint16_t COLOR_TEXT    = TFT_BLACK;     // Teks jam dan umum
-uint16_t COLOR_ACCENT  = TFT_BLUE;      // Garis pemisah
-uint16_t COLOR_NAV_BG  = 0xE71C;        // Abu-abu muda kebiruan (Light Cyan-ish)
-uint16_t COLOR_NAV_TXT = 0x0010;        // Biru sangat tua untuk teks nav
-uint16_t COLOR_TITLE   = 0x03E0;        // Hijau tua agar kontras di putih
-uint16_t COLOR_ARTIST  = 0x4208;        // Abu-abu tua
-uint16_t COLOR_STATUS  = TFT_MAGENTA;   // Warna status play/pause
-uint16_t COLOR_VOL     = 0x001F;        // Biru murni
+uint16_t COLOR_BG      = TFT_WHITE;     
+uint16_t COLOR_TEXT    = TFT_BLACK;     
+uint16_t COLOR_ACCENT  = TFT_BLUE;      
+uint16_t COLOR_NAV_BG  = 0xE71C;        
+uint16_t COLOR_NAV_TXT = 0x0010;        
+uint16_t COLOR_TITLE   = 0x03E0;        
+uint16_t COLOR_ARTIST  = 0x4208;        
+uint16_t COLOR_STATUS  = TFT_MAGENTA;   
+uint16_t COLOR_VOL     = 0x001F;        
+uint16_t COLOR_BAR_BG  = 0xD6BA;        // Abu-abu muda untuk latar bar
+uint16_t COLOR_BAR_FILL = 0x07FF;       // Cyan cerah untuk isi bar
 
 #define SERVICE_UUID           "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 #define CHARACTERISTIC_UUID_RX "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
@@ -76,7 +78,6 @@ void updateDisplay() {
       tft.drawRightString("ETA: " + navEta, tft.width() - 15, 82, 1);
     }
   } else {
-    // Tampilan jika navigasi tidak tersedia
     tft.drawRoundRect(5, 75, tft.width()-10, 40, 8, COLOR_NAV_BG);
     tft.setTextColor(COLOR_ARTIST);
     tft.setTextSize(1);
@@ -85,31 +86,39 @@ void updateDisplay() {
 
   // 3. Panel Musik
   int musicY = isNavigating ? 180 : 135;
-  
-  // Judul Lagu
   tft.setTextColor(COLOR_TITLE);
   tft.setTextSize(2);
   String shortTitle = title.length() > 16 ? title.substring(0, 14) + ".." : title;
   tft.drawCentreString(shortTitle, tft.width() / 2, musicY, 1);
   
-  // Nama Artist
   tft.setTextColor(COLOR_ARTIST);
   tft.setTextSize(2);
   String shortArtist = artist.length() > 18 ? artist.substring(0, 16) + ".." : artist;
   tft.drawCentreString(shortArtist, tft.width() / 2, musicY + 30, 1);
 
-  // Status Musik
   tft.setTextColor(COLOR_STATUS);
   tft.setTextSize(1);
   String statusTxt = (musicState == "play") ? "NOW PLAYING" : "PAUSED (" + formatTime(positionSec) + "/" + formatTime(durationSec) + ")";
   tft.drawCentreString(statusTxt, tft.width() / 2, musicY + 60, 1);
 
-  // 4. Volume
+  // 4. Panel Volume (Interaktif dengan Bar)
+  int volY = 270;
   tft.setTextColor(COLOR_VOL);
   tft.setTextSize(1);
-  tft.drawCentreString("VOLUME", tft.width() / 2, 275, 1);
-  tft.setTextSize(3);
-  tft.drawCentreString(String(volumeLevel) + "%", tft.width() / 2, 290, 1);
+  tft.drawCentreString("VOLUME " + String(volumeLevel) + "%", tft.width() / 2, volY, 1);
+
+  // Background Bar
+  int barWidth = 160;
+  int barHeight = 10;
+  int barX = (tft.width() - barWidth) / 2;
+  int barY = volY + 15;
+  tft.fillRoundRect(barX, barY, barWidth, barHeight, 4, COLOR_BAR_BG);
+  
+  // Isi Bar (Progress)
+  int progress = map(volumeLevel, 0, 100, 0, barWidth);
+  if (progress > 0) {
+    tft.fillRoundRect(barX, barY, progress, barHeight, 4, COLOR_BAR_FILL);
+  }
 }
 
 // --- FUNGSI SISANYA TETAP SAMA ---
