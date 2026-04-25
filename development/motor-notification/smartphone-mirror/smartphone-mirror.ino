@@ -69,30 +69,34 @@ void updateDisplay() {
     }
   }
 
-  // 3. Panel Musik
-  int musicY = isNavigating ? 180 : 110;
+  // 3. Panel Musik (Urutan: Judul -> Artist -> Status)
+  int musicY = isNavigating ? 180 : 100;
   
+  // Judul Lagu
+  tft.setTextColor(TFT_GREEN);
+  tft.setTextSize(2);
+  String shortTitle = title.length() > 16 ? title.substring(0, 14) + ".." : title;
+  tft.drawCentreString(shortTitle, tft.width() / 2, musicY, 1);
+  
+  // Nama Artist (Font Diperbesar ke Size 2)
+  tft.setTextColor(TFT_SILVER);
+  tft.setTextSize(2);
+  String shortArtist = artist.length() > 18 ? artist.substring(0, 16) + ".." : artist;
+  tft.drawCentreString(shortArtist, tft.width() / 2, musicY + 30, 1);
+
+  // Status Musik (Sekarang di paling bawah panel musik)
   if (musicState == "play") {
     tft.setTextColor(TFT_GOLD);
     tft.setTextSize(1);
-    tft.drawCentreString("NOW PLAYING", tft.width() / 2, musicY, 1);
+    tft.drawCentreString("NOW PLAYING", tft.width() / 2, musicY + 60, 1);
   } else {
     tft.setTextColor(TFT_ORANGE);
     tft.setTextSize(1);
     String pauseText = "PAUSED (" + formatTime(positionSec) + "/" + formatTime(durationSec) + ")";
-    tft.drawCentreString(pauseText, tft.width() / 2, musicY, 1);
+    tft.drawCentreString(pauseText, tft.width() / 2, musicY + 60, 1);
   }
 
-  tft.setTextColor(TFT_GREEN);
-  tft.setTextSize(2);
-  String shortTitle = title.length() > 16 ? title.substring(0, 14) + ".." : title;
-  tft.drawCentreString(shortTitle, tft.width() / 2, musicY + 25, 1);
-  
-  tft.setTextColor(TFT_SILVER);
-  tft.setTextSize(1);
-  tft.drawCentreString(artist, tft.width() / 2, musicY + 50, 1);
-
-  // 4. Volume
+  // 4. Volume (Tetap di Bawah)
   tft.setTextColor(TFT_CYAN);
   tft.setTextSize(1);
   tft.drawCentreString("VOLUME", tft.width() / 2, 275, 1);
@@ -101,7 +105,7 @@ void updateDisplay() {
 }
 
 void processBuffer(String data) {
-  Serial.println(data); // Selalu print data mentah ke Serial Monitor
+  Serial.println(data);
 
   if (data.indexOf("setTime(") != -1) {
     int startIdx = data.indexOf("(") + 1;
