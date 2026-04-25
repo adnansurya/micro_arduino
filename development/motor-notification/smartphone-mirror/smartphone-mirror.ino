@@ -8,6 +8,17 @@
 
 TFT_eSPI tft = TFT_eSPI();
 
+// --- VARIABEL WARNA (TEMA) ---
+uint16_t COLOR_BG      = TFT_WHITE;     // Latar belakang utama
+uint16_t COLOR_TEXT    = TFT_BLACK;     // Teks jam dan umum
+uint16_t COLOR_ACCENT  = TFT_BLUE;      // Garis pemisah
+uint16_t COLOR_NAV_BG  = 0xE71C;        // Abu-abu muda kebiruan (Light Cyan-ish)
+uint16_t COLOR_NAV_TXT = 0x0010;        // Biru sangat tua untuk teks nav
+uint16_t COLOR_TITLE   = 0x03E0;        // Hijau tua agar kontras di putih
+uint16_t COLOR_ARTIST  = 0x4208;        // Abu-abu tua
+uint16_t COLOR_STATUS  = TFT_MAGENTA;   // Warna status play/pause
+uint16_t COLOR_VOL     = 0x001F;        // Biru murni
+
 #define SERVICE_UUID           "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 #define CHARACTERISTIC_UUID_RX "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
 #define CHARACTERISTIC_UUID_TX "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
@@ -23,7 +34,6 @@ String inputBuffer = "";
 bool refreshDisplay = true;
 bool isNavigating = false;
 
-// Fungsi bantu konversi detik ke mm:ss
 String formatTime(long seconds) {
   if (seconds < 0) seconds = 0;
   int m = seconds / 60;
@@ -35,78 +45,77 @@ String formatTime(long seconds) {
 
 void updateDisplay() {
   if (!deviceConnected) {
-    tft.fillScreen(TFT_BLACK);
-    tft.setTextColor(TFT_DARKGREY);
+    tft.fillScreen(COLOR_BG);
+    tft.setTextColor(COLOR_ARTIST);
     tft.setTextSize(2);
     tft.drawCentreString("DISCONNECTED", tft.width() / 2, 120, 1);
     return;
   }
 
   tft.setRotation(0);
-  tft.fillScreen(TFT_BLACK);
+  tft.fillScreen(COLOR_BG);
   
   // 1. Header Jam
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextColor(COLOR_TEXT);
   tft.setTextSize(4);
   tft.drawCentreString(currentTime, tft.width() / 2, 20, 1);
-  tft.drawFastHLine(20, 65, tft.width() - 40, TFT_BLUE);
+  tft.drawFastHLine(20, 65, tft.width() - 40, COLOR_ACCENT);
 
   // 2. Panel Navigasi
   if (isNavigating) {
-    tft.fillRoundRect(5, 75, tft.width()-10, 90, 8, TFT_DARKCYAN);
-    tft.setTextColor(TFT_WHITE);
+    tft.fillRoundRect(5, 75, tft.width()-10, 90, 8, COLOR_NAV_BG);
+    tft.setTextColor(COLOR_NAV_TXT);
     tft.setTextSize(1);
     tft.drawString("NAVIGASI", 15, 82);
-    tft.setTextColor(TFT_YELLOW);
     tft.setTextSize(2);
     tft.drawString(navDist, 15, 95);
-    tft.setTextColor(TFT_WHITE);
     String shortInstr = navInstr.length() > 18 ? navInstr.substring(0, 16) + ".." : navInstr;
     tft.drawCentreString(shortInstr, tft.width() / 2, 125, 1);
     if (navEta != "") {
       tft.setTextSize(1);
       tft.drawRightString("ETA: " + navEta, tft.width() - 15, 82, 1);
     }
+  } else {
+    // Tampilan jika navigasi tidak tersedia
+    tft.drawRoundRect(5, 75, tft.width()-10, 40, 8, COLOR_NAV_BG);
+    tft.setTextColor(COLOR_ARTIST);
+    tft.setTextSize(1);
+    tft.drawCentreString("Navigasi tidak tersedia", tft.width() / 2, 88, 1);
   }
 
-  // 3. Panel Musik (Urutan: Judul -> Artist -> Status)
-  int musicY = isNavigating ? 180 : 100;
+  // 3. Panel Musik
+  int musicY = isNavigating ? 180 : 135;
   
   // Judul Lagu
-  tft.setTextColor(TFT_GREEN);
+  tft.setTextColor(COLOR_TITLE);
   tft.setTextSize(2);
   String shortTitle = title.length() > 16 ? title.substring(0, 14) + ".." : title;
   tft.drawCentreString(shortTitle, tft.width() / 2, musicY, 1);
   
-  // Nama Artist (Font Diperbesar ke Size 2)
-  tft.setTextColor(TFT_SILVER);
+  // Nama Artist
+  tft.setTextColor(COLOR_ARTIST);
   tft.setTextSize(2);
   String shortArtist = artist.length() > 18 ? artist.substring(0, 16) + ".." : artist;
   tft.drawCentreString(shortArtist, tft.width() / 2, musicY + 30, 1);
 
-  // Status Musik (Sekarang di paling bawah panel musik)
-  if (musicState == "play") {
-    tft.setTextColor(TFT_GOLD);
-    tft.setTextSize(1);
-    tft.drawCentreString("NOW PLAYING", tft.width() / 2, musicY + 60, 1);
-  } else {
-    tft.setTextColor(TFT_ORANGE);
-    tft.setTextSize(1);
-    String pauseText = "PAUSED (" + formatTime(positionSec) + "/" + formatTime(durationSec) + ")";
-    tft.drawCentreString(pauseText, tft.width() / 2, musicY + 60, 1);
-  }
+  // Status Musik
+  tft.setTextColor(COLOR_STATUS);
+  tft.setTextSize(1);
+  String statusTxt = (musicState == "play") ? "NOW PLAYING" : "PAUSED (" + formatTime(positionSec) + "/" + formatTime(durationSec) + ")";
+  tft.drawCentreString(statusTxt, tft.width() / 2, musicY + 60, 1);
 
-  // 4. Volume (Tetap di Bawah)
-  tft.setTextColor(TFT_CYAN);
+  // 4. Volume
+  tft.setTextColor(COLOR_VOL);
   tft.setTextSize(1);
   tft.drawCentreString("VOLUME", tft.width() / 2, 275, 1);
   tft.setTextSize(3);
   tft.drawCentreString(String(volumeLevel) + "%", tft.width() / 2, 290, 1);
 }
 
+// --- FUNGSI SISANYA TETAP SAMA ---
+
 void processBuffer(String data) {
   Serial.println(data);
-
   if (data.indexOf("setTime(") != -1) {
     int startIdx = data.indexOf("(") + 1;
     int endIdx = data.indexOf(")");
@@ -118,7 +127,6 @@ void processBuffer(String data) {
     refreshDisplay = true;
     return;
   }
-
   int start = data.indexOf("GB({");
   int end = data.lastIndexOf("})");
   if (start != -1 && end != -1) {
@@ -126,7 +134,6 @@ void processBuffer(String data) {
     StaticJsonDocument<768> doc;
     if (deserializeJson(doc, jsonStr) == DeserializationError::Ok) {
       String type = doc["t"] | "";
-      
       if (type == "musicinfo") {
         title = doc["track"] | "No Title";
         artist = doc["artist"] | "No Artist";
@@ -144,7 +151,7 @@ void processBuffer(String data) {
         if (rawDist.length() >= 2) rawDist.setCharAt(rawDist.length() - 2, ' ');
         navDist = rawDist;
         navEta = doc["eta"] | "";
-        isNavigating = (navInstr != "");
+        isNavigating = (navInstr != "" && navInstr != " ");
         refreshDisplay = true;
       }
       else if (type == "audio") {
@@ -167,18 +174,13 @@ class MyCallbacks: public BLECharacteristicCallbacks {
 
 class MyServerCallbacks: public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) { deviceConnected = true; refreshDisplay = true; }
-    void onDisconnect(BLEServer* pServer) {
-      deviceConnected = false;
-      refreshDisplay = true;
-      pServer->getAdvertising()->start();
-    }
+    void onDisconnect(BLEServer* pServer) { deviceConnected = false; refreshDisplay = true; pServer->getAdvertising()->start(); }
 };
 
 void setup() {
   Serial.begin(115200);
   tft.init();
   tft.setRotation(0);
-  
   BLEDevice::init("Bangle.js");
   BLEServer *pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
@@ -193,9 +195,6 @@ void setup() {
 }
 
 void loop() {
-  if (refreshDisplay) {
-    updateDisplay();
-    refreshDisplay = false;
-  }
+  if (refreshDisplay) { updateDisplay(); refreshDisplay = false; }
   delay(100);
 }
