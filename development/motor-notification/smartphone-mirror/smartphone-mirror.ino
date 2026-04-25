@@ -48,7 +48,7 @@ void updateDisplay() {
   tft.drawCentreString(currentTime, tft.width() / 2, 20, 1);
   tft.drawFastHLine(20, 65, tft.width() - 40, TFT_BLUE);
 
-  // 2. Panel Navigasi (Font Diperbesar & Support ETA)
+  // 2. Panel Navigasi
   if (isNavigating) {
     tft.fillRoundRect(5, 75, tft.width()-10, 100, 8, TFT_DARKCYAN);
     tft.setTextColor(TFT_WHITE);
@@ -60,13 +60,13 @@ void updateDisplay() {
     tft.setTextColor(TFT_YELLOW);
     tft.drawString(navDist, 15, 100);
     
-    // Instruksi (Font Diperbesar ke Size 2)
+    // Instruksi (Size 2)
     tft.setTextColor(TFT_WHITE);
     tft.setTextSize(2);
     String shortInstr = navInstr.length() > 18 ? navInstr.substring(0, 16) + ".." : navInstr;
     tft.drawCentreString(shortInstr, tft.width() / 2, 130, 1);
 
-    // ETA (Muncul jika tersedia)
+    // ETA
     if (navEta != "") {
       tft.setTextSize(1);
       tft.setTextColor(TFT_SILVER);
@@ -85,7 +85,7 @@ void updateDisplay() {
   tft.setTextSize(1);
   tft.drawCentreString(artist, tft.width() / 2, musicY + 30, 1);
 
-  // 4. Volume (Update Langsung)
+  // 4. Volume
   tft.setTextColor(TFT_CYAN);
   tft.setTextSize(1);
   tft.drawCentreString("VOLUME", tft.width() / 2, 275, 1);
@@ -105,6 +105,10 @@ class MyServerCallbacks: public BLEServerCallbacks {
 };
 
 void processBuffer(String data) {
+  // Selalu print data yang diterima ke Serial Monitor
+  Serial.print("Data Received: ");
+  Serial.println(data);
+
   if (data.indexOf("setTime(") != -1) {
     int startIdx = data.indexOf("(") + 1;
     int endIdx = data.indexOf(")");
@@ -132,13 +136,20 @@ void processBuffer(String data) {
       } 
       else if (type == "nav") {
         navInstr = doc["instr"] | "";
-        navDist = doc["distance"] | "";
-        navEta = doc["eta"] | ""; // Menangkap ETA
+        String rawDist = doc["distance"] | "";
+        
+        // Logika ganti karakter kedua dari ujung menjadi spasi
+        if (rawDist.length() >= 2) {
+            rawDist.setCharAt(rawDist.length() - 2, ' ');
+        }
+        navDist = rawDist;
+        
+        navEta = doc["eta"] | "";
         isNavigating = (navInstr != "");
         refreshDisplay = true;
       }
       else if (type == "audio") {
-        volumeLevel = doc["v"]; // Sesuai permintaan: direct assignment
+        volumeLevel = doc["v"];
         refreshDisplay = true;
       }
     }
