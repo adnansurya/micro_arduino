@@ -25,6 +25,7 @@ bool isNavigating = false;
 
 // Fungsi bantu konversi detik ke mm:ss
 String formatTime(long seconds) {
+  if (seconds < 0) seconds = 0;
   int m = seconds / 60;
   int s = seconds % 60;
   char buf[10];
@@ -37,7 +38,7 @@ void updateDisplay() {
     tft.fillScreen(TFT_BLACK);
     tft.setTextColor(TFT_DARKGREY);
     tft.setTextSize(2);
-    tft.drawCentreString("DISCONNECTED", tft.width() / 2, 100, 1);
+    tft.drawCentreString("DISCONNECTED", tft.width() / 2, 120, 1);
     return;
   }
 
@@ -69,19 +70,12 @@ void updateDisplay() {
   }
 
   // 3. Panel Musik
-  int musicY = isNavigating ? 180 : 100;
+  int musicY = isNavigating ? 180 : 110;
   
-  // LOGIKA STATE: Play vs Pause
   if (musicState == "play") {
     tft.setTextColor(TFT_GOLD);
     tft.setTextSize(1);
     tft.drawCentreString("NOW PLAYING", tft.width() / 2, musicY, 1);
-    
-    // Animasi Kecil (3 Baris naik turun acak setiap refresh)
-    for(int i=0; i<3; i++) {
-      int h = random(5, 15);
-      tft.fillRect(tft.width()/2 - 15 + (i*12), musicY + 15, 6, h, TFT_GOLD);
-    }
   } else {
     tft.setTextColor(TFT_ORANGE);
     tft.setTextSize(1);
@@ -92,20 +86,22 @@ void updateDisplay() {
   tft.setTextColor(TFT_GREEN);
   tft.setTextSize(2);
   String shortTitle = title.length() > 16 ? title.substring(0, 14) + ".." : title;
-  tft.drawCentreString(shortTitle, tft.width() / 2, musicY + 30, 1);
+  tft.drawCentreString(shortTitle, tft.width() / 2, musicY + 25, 1);
   
   tft.setTextColor(TFT_SILVER);
   tft.setTextSize(1);
-  tft.drawCentreString(artist, tft.width() / 2, musicY + 55, 1);
+  tft.drawCentreString(artist, tft.width() / 2, musicY + 50, 1);
 
   // 4. Volume
   tft.setTextColor(TFT_CYAN);
   tft.setTextSize(1);
-  tft.drawCentreString("VOLUME " + String(volumeLevel) + "%", tft.width() / 2, 290, 1);
+  tft.drawCentreString("VOLUME", tft.width() / 2, 275, 1);
+  tft.setTextSize(3);
+  tft.drawCentreString(String(volumeLevel) + "%", tft.width() / 2, 290, 1);
 }
 
 void processBuffer(String data) {
-  Serial.print("Raw: "); Serial.println(data);
+  Serial.println(data); // Selalu print data mentah ke Serial Monitor
 
   if (data.indexOf("setTime(") != -1) {
     int startIdx = data.indexOf("(") + 1;
@@ -130,12 +126,12 @@ void processBuffer(String data) {
       if (type == "musicinfo") {
         title = doc["track"] | "No Title";
         artist = doc["artist"] | "No Artist";
-        durationSec = doc["dur"] | 0; // Simpan durasi total
+        durationSec = doc["dur"] | 0;
         refreshDisplay = true;
       } 
       else if (type == "musicstate") {
-        musicState = doc["state"].as<String>(); // "play" atau "pause"
-        positionSec = doc["position"] | 0;      // Posisi detik sekarang
+        musicState = doc["state"].as<String>();
+        positionSec = doc["position"] | 0;
         refreshDisplay = true;
       }
       else if (type == "nav") {
@@ -197,14 +193,5 @@ void loop() {
     updateDisplay();
     refreshDisplay = false;
   }
-  
-  // Animasi Bar saat Play (Refresh sedikit lebih sering jika play)
-  if (musicState == "play" && deviceConnected) {
-    static uint32_t lastAnim = 0;
-    if (millis() - lastAnim > 200) { // Animasi berganti tiap 200ms
-      refreshDisplay = true;
-      lastAnim = millis();
-    }
-  }
-  delay(50);
+  delay(100);
 }
