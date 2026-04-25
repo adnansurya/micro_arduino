@@ -59,9 +59,12 @@ void updateDisplay() {
 }
 
 void sendCommand(String cmd) {
-  String fullCmd = "GB(" + cmd + ")\n";
+  // Pastikan ada \n di ujung string JSON
+  String fullCmd = "GB(" + cmd + ")\n"; 
   pCharacteristicTX->setValue(fullCmd.c_str());
   pCharacteristicTX->notify();
+  Serial.print("Sent: "); 
+  Serial.println(fullCmd);
 }
 
 void syncTime(long timestamp) {
@@ -117,13 +120,62 @@ class MyCallbacks : public BLECharacteristicCallbacks {
   }
 };
 
+void touch_calibrate() {
+  uint16_t calData[5];
+  uint8_t check;
+
+  tft.fillScreen(TFT_BLACK);
+  tft.setCursor(20, 0);
+  tft.setTextFont(2);
+  tft.setTextSize(1);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+
+  tft.println("Sentuh sudut yang berkedip untuk kalibrasi");
+
+  tft.setTextFont(1);
+  tft.println();
+
+  // Jalankan kalibrasi
+  tft.calibrateTouch(calData, TFT_MAGENTA, TFT_BLACK, 15);
+
+  tft.fillScreen(TFT_BLACK);
+  tft.println("Kalibrasi Selesai!");
+  tft.println("Copy data ini ke variabel calData di setup():");
+
+  // Tampilkan hasil di layar agar bisa dicatat jika tidak tersambung Serial
+  tft.print("{");
+  for (uint8_t i = 0; i < 5; i++) {
+    tft.print(calData[i]);
+    if (i < 4) tft.print(", ");
+  }
+  tft.println("}");
+
+  // Tampilkan di Serial Monitor
+  Serial.println("Hasil Kalibrasi:");
+  Serial.print("uint16_t calData[5] = {");
+  for (uint8_t i = 0; i < 5; i++) {
+    Serial.print(calData[i]);
+    if (i < 4) Serial.print(", ");
+  }
+  Serial.println("};");
+
+  delay(5000);  // Beri waktu untuk mencatat
+}
+
 void setup() {
   Serial.begin(115200);
   tft.init();
   tft.setRotation(0);
   tft.fillScreen(TFT_BLACK);
 
-  uint16_t calData[5] = { 444, 2897, 423, 3309, 4 };
+  // LOGIKA KALIBRASI OTOMATIS:
+  // Jika layar ditekan saat boot, jalankan kalibrasi
+  uint16_t x, y;
+  if (tft.getTouch(&x, &y)) {
+    touch_calibrate();
+  }
+
+  uint16_t calData[5] = { 693, 2827, 343, 3231, 4 };
   tft.setTouch(calData);
   updateDisplay();
 
@@ -136,28 +188,41 @@ void setup() {
   pCharacteristicRX->setCallbacks(new MyCallbacks());
   pService->start();
   pServer->getAdvertising()->start();
+  // Beri jeda sebentar agar koneksi stabil dulu
+  delay(2000);
+  // Kirim status baterai 100% agar HP menganggap device sudah fully ready
+  pCharacteristicTX->setValue("GB({\"t\":\"status\",\"bat\":100})\n");
+  pCharacteristicTX->notify();
+  Serial.println("Handshake sent!");
 }
 
 void loop() {
-  // 1. Tangani Update Layar (Diluar Callback BLE)
+  uint16_t x, y;
+
+  // Ambil data mentah sentuhan
+  if (tft.getTouch(&x, &y)) {
+
+    // Sesuaikan zona sentuh berdasarkan hasil debug tadi
+    // Contoh: jika layar Anda 240x320 portrait
+    if (y > 170 && y < 215) {
+      if (x < 80) {
+        Serial.println("Tombol PREV ditekan");
+        sendCommand("Bangle.musicControl(\"previous\")");
+      } else if (x >= 80 && x <= 160) {
+        Serial.println("Tombol PLAY ditekan");
+        // sendCommand("Bangle.musicControl(\"playpause\")");
+        sendCommand("Bangle.findDevice()");
+      } else if (x > 160) {
+        Serial.println("Tombol NEXT ditekan");
+        sendCommand("Bangle.musicControl(\"next\")");
+      }
+      delay(300);  // Penting agar tidak tertekan berulang kali (debounce)
+    }
+  }
+
   if (refreshDisplay) {
     updateDisplay();
     refreshDisplay = false;
   }
-
-  // 2. Tangani Touch dengan jeda agar tidak membebani CPU
-  static uint32_t lastTouch = 0;
-  if (millis() - lastTouch > 50) {
-    uint16_t t_x = 0, t_y = 0;
-    if (tft.getTouch(&t_x, &t_y)) {
-      // Logika tombol Anda di sini...
-
-      // Setelah sendCommand, beri delay agar tidak bentrok dengan BLE transmission
-      lastTouch = millis() + 200;
-    }
-    lastTouch = millis();
-  }
-
-  // Beri kesempatan sistem untuk memproses Bluetooth background task
-  delay(1);
+  delay(10);
 }
