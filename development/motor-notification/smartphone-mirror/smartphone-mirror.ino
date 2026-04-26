@@ -173,6 +173,15 @@ void processBuffer(String data) {
   }
 }
 
+// --- Fungsi untuk mengirim balik command ke Gadgetbridge ---
+void sendToGB(String cmd) {
+  if (deviceConnected) {
+    pCharacteristicTX->setValue(cmd.c_str());
+    pCharacteristicTX->notify();
+    Serial.println("Sent to GB: " + cmd);
+  }
+}
+
 class MyCallbacks: public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *pCharacteristic) {
     std::string value = pCharacteristic->getValue();
@@ -183,9 +192,31 @@ class MyCallbacks: public BLECharacteristicCallbacks {
   }
 };
 
+// --- Update MyServerCallbacks ---
 class MyServerCallbacks: public BLEServerCallbacks {
-    void onConnect(BLEServer* pServer) { deviceConnected = true; refreshDisplay = true; }
-    void onDisconnect(BLEServer* pServer) { deviceConnected = false; refreshDisplay = true; pServer->getAdvertising()->start(); }
+    void onConnect(BLEServer* pServer) {
+      deviceConnected = true;
+      refreshDisplay = true;
+      
+      // TRIGGER: Beritahu Gadgetbridge bahwa kita siap menerima data
+      // Kirim delay sedikit agar koneksi stabil dulu
+      delay(500); 
+      
+      // 1. Kirim info versi (pura-pura jadi Bangle.js yang valid)
+      sendToGB("GB({\"t\":\"info\",\"v\":\"2v25\",\"m\":\"ESP32-Dashboard\"})\n");
+      
+      // 2. Minta status GPS (agar navigasi terpancing)
+      sendToGB("GB({\"t\":\"gps\",\"status\":\"ok\"})\n");
+      
+      // 3. Minta info musik terbaru
+      sendToGB("GB({\"t\":\"music\",\"n\":\"info\"})\n");
+    }
+
+    void onDisconnect(BLEServer* pServer) {
+      deviceConnected = false;
+      refreshDisplay = true;
+      pServer->getAdvertising()->start();
+    }
 };
 
 void setup() {
