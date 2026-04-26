@@ -7,6 +7,10 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
 
+// Definisikan pin I2C custom untuk Lolin32 Lite
+#define I2C_SDA 23
+#define I2C_SCL 19
+
 // --- KONFIGURASI OLED SH1106 ---
 #define i2c_Address 0x3c 
 #define SCREEN_WIDTH 128
@@ -44,14 +48,14 @@ void updateDisplay() {
   }
 
   // 1. Header: Jam & Volume
-  display.setTextSize(2);
-  display.setCursor(0, 0);
+  display.setTextSize(1);
+  display.setCursor(0, 10);
   display.print(currentTime);
   
   display.setTextSize(1);
-  display.setCursor(85, 0);
+  display.setCursor(85, 10);
   display.print("V:"); display.print(volumeLevel); display.print("%");
-  display.drawFastHLine(0, 17, 128, SH110X_WHITE);
+  // display.drawFastHLine(0, 17, 128, SH110X_WHITE);
 
   // 2. Konten Tengah
   if (isNavigating) {
@@ -70,13 +74,13 @@ void updateDisplay() {
   }
 
   // 3. Footer: Status Bar
-  display.drawFastHLine(0, 50, 128, SH110X_WHITE);
+  // display.drawFastHLine(0, 50, 128, SH110X_WHITE);
   display.setCursor(0, 55);
   display.print(musicState == "play" ? "> PLAYING" : "|| PAUSED");
   
-  int volWidth = map(volumeLevel, 0, 100, 0, 50);
-  display.drawRect(75, 54, 50, 8, SH110X_WHITE);
-  display.fillRect(75, 54, volWidth, 8, SH110X_WHITE);
+  // int volWidth = map(volumeLevel, 0, 100, 0, 50);
+  // display.drawRect(75, 54, 50, 8, SH110X_WHITE);
+  // display.fillRect(75, 54, volWidth, 8, SH110X_WHITE);
 
   display.display();
 }
@@ -149,6 +153,9 @@ class MyServerCallbacks: public BLEServerCallbacks {
 
 void setup() {
   Serial.begin(115200);
+
+  // Inisialisasi I2C dengan pin custom (SDA=23, SCL=19)
+  Wire.begin(I2C_SDA, I2C_SCL);
   
   // Inisialisasi OLED sesuai contoh yang berhasil
   delay(250); 
