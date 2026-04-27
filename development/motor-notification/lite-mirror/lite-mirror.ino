@@ -5,21 +5,23 @@
 #include <ArduinoJson.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
-#include <Adafruit_SH110X.h>
+#include <Adafruit_SSD1306.h> // GANTI: Dari SH110X ke SSD1306
 
 // Definisikan pin I2C custom untuk Lolin32 Lite
 #define I2C_SDA 23
 #define I2C_SCL 19
 
-// --- KONFIGURASI OLED SH1106 ---
-#define i2c_Address 0x3c 
+// --- KONFIGURASI OLED SSD1306 ---
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
-#define OLED_RESET -1
-Adafruit_SH1106G display = Adafruit_SH1106G(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+#define OLED_RESET    -1 
+#define i2c_Address 0x3C 
+
+// Inisialisasi objek SSD1306
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 // --- UUID GADGETBRIDGE ---
-#define SERVICE_UUID           "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
+#define SERVICE_UUID         "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 #define CHARACTERISTIC_UUID_RX "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
 #define CHARACTERISTIC_UUID_TX "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 
@@ -37,7 +39,7 @@ bool isNavigating = false;
 // --- FUNGSI UPDATE TAMPILAN ---
 void updateDisplay() {
   display.clearDisplay();
-  display.setTextColor(SH110X_WHITE);
+  display.setTextColor(SSD1306_WHITE); // GANTI: Konstanta warna SSD1306
 
   if (!deviceConnected) {
     display.setTextSize(1);
@@ -52,10 +54,8 @@ void updateDisplay() {
   display.setCursor(0, 10);
   display.print(currentTime);
   
-  display.setTextSize(1);
   display.setCursor(85, 10);
   display.print("V:"); display.print(volumeLevel); display.print("%");
-  // display.drawFastHLine(0, 17, 128, SH110X_WHITE);
 
   // 2. Konten Tengah
   if (isNavigating) {
@@ -74,13 +74,8 @@ void updateDisplay() {
   }
 
   // 3. Footer: Status Bar
-  // display.drawFastHLine(0, 50, 128, SH110X_WHITE);
   display.setCursor(0, 55);
   display.print(musicState == "play" ? "> PLAYING" : "|| PAUSED");
-  
-  // int volWidth = map(volumeLevel, 0, 100, 0, 50);
-  // display.drawRect(75, 54, 50, 8, SH110X_WHITE);
-  // display.fillRect(75, 54, volWidth, 8, SH110X_WHITE);
 
   display.display();
 }
@@ -157,9 +152,13 @@ void setup() {
   // Inisialisasi I2C dengan pin custom (SDA=23, SCL=19)
   Wire.begin(I2C_SDA, I2C_SCL);
   
-  // Inisialisasi OLED sesuai contoh yang berhasil
-  delay(250); 
-  display.begin(i2c_Address, true);
+  // Inisialisasi OLED SSD1306
+  // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
+  if(!display.begin(SSD1306_SWITCHCAPVCC, i2c_Address)) {
+    Serial.println(F("SSD1306 allocation failed"));
+    for(;;); // Berhenti jika OLED tidak terdeteksi
+  }
+  
   display.clearDisplay();
   display.display();
 
