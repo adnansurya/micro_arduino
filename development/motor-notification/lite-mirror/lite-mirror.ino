@@ -5,7 +5,7 @@
 #include <ArduinoJson.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h> // GANTI: Dari SH110X ke SSD1306
+#include <Adafruit_SSD1306.h>  // GANTI: Dari SH110X ke SSD1306
 
 // Definisikan pin I2C custom untuk Lolin32 Lite
 #define I2C_SDA 23
@@ -14,14 +14,14 @@
 // --- KONFIGURASI OLED SSD1306 ---
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
-#define OLED_RESET    -1 
-#define i2c_Address 0x3C 
+#define OLED_RESET -1
+#define i2c_Address 0x3C
 
 // Inisialisasi objek SSD1306
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 // --- UUID GADGETBRIDGE ---
-#define SERVICE_UUID         "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
+#define SERVICE_UUID "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 #define CHARACTERISTIC_UUID_RX "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
 #define CHARACTERISTIC_UUID_TX "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 
@@ -36,10 +36,14 @@ String inputBuffer = "";
 bool refreshDisplay = true;
 bool isNavigating = false;
 
+unsigned long lastActivityTime = 0;
+const long standbyDelay = 15000;  // 15 detik
+bool isStandby = false;
+
 // --- FUNGSI UPDATE TAMPILAN ---
 void updateDisplay() {
   display.clearDisplay();
-  display.setTextColor(SSD1306_WHITE); // GANTI: Konstanta warna SSD1306
+  display.setTextColor(SSD1306_WHITE);
 
   if (!deviceConnected) {
     display.setTextSize(1);
@@ -49,33 +53,48 @@ void updateDisplay() {
     return;
   }
 
-  // 1. Header: Jam & Volume
-  display.setTextSize(1);
-  display.setCursor(0, 10);
-  display.print(currentTime);
-  
-  display.setCursor(85, 10);
-  display.print("V:"); display.print(volumeLevel); display.print("%");
-
-  // 2. Konten Tengah
+  // Jika sedang navigasi, abaikan mode standby (tetap tampilkan navigasi)
   if (isNavigating) {
+    display.setTextSize(1);
     display.setCursor(0, 22);
-    display.print("NAV: "); display.print(navDist);
+    display.print("NAV: ");
+    display.print(navDist);
     display.setCursor(0, 32);
     display.print(navInstr.substring(0, 20));
-  } else {
+  }
+  // Jika tidak navigasi, cek apakah masuk mode standby
+  else if (isStandby) {
+    // TAMPILAN STANDBY: Jam Besar di Tengah
+    display.setTextSize(3);  // Ukuran teks besar
+    // Hitung posisi tengah (128 - (lebar teks "00:00")) / 2
+    // Lebar karakter size 3 sekitar 18 pixel, 5 karakter = 90 pixel
+    display.setCursor(19, 22);
+    display.print(currentTime);
+  }
+  // TAMPILAN NORMAL (Musik)
+  else {
+    // Header kecil
+    display.setTextSize(1);
+    display.setCursor(0, 0);
+    display.print(currentTime);
+    display.setCursor(85, 0);
+    display.print("V:");
+    display.print(volumeLevel);
+    display.print("%");
+
+    // Musik Info
     display.setCursor(0, 22);
     String shortTitle = title.length() > 18 ? title.substring(0, 16) + ".." : title;
     display.print(shortTitle);
-    
+
     display.setCursor(0, 32);
     String shortArtist = artist.length() > 18 ? artist.substring(0, 16) + ".." : artist;
     display.print(shortArtist);
-  }
 
-  // 3. Footer: Status Bar
-  display.setCursor(0, 55);
-  display.print(musicState == "play" ? "> PLAYING" : "|| PAUSED");
+    // Footer
+    display.setCursor(0, 55);
+    display.print(musicState == "play" ? "> PLAYING" : "|| PAUSED");
+  }
 
   display.display();
 }
@@ -84,6 +103,9 @@ void processBuffer(String data) {
   // Tampilkan seluruh data mentah yang diterima ke Serial Monitor
   Serial.print("Data Masuk: ");
   Serial.println(data);
+
+  lastActivityTime = millis();
+  isStandby = false;
 
   if (data.indexOf("setTime(") != -1) {
     int startIdx = data.indexOf("(") + 1;
@@ -99,7 +121,7 @@ void processBuffer(String data) {
   int end = data.lastIndexOf("})");
   if (start != -1 && end != -1) {
     String jsonStr = data.substring(start + 3, end + 2);
-    
+
     // Tampilkan JSON yang berhasil dipisahkan
     Serial.print("JSON Terdeteksi: ");
     Serial.println(jsonStr);
@@ -142,46 +164,51 @@ void sendToGB(String cmd) {
   }
 }
 
-class MyCallbacks: public BLECharacteristicCallbacks {
+class MyCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *pCharacteristic) {
     std::string value = pCharacteristic->getValue();
     for (char c : value) {
-      if (c == '\n') { processBuffer(inputBuffer); inputBuffer = ""; }
-      else { inputBuffer += c; }
+      if (c == '\n') {
+        processBuffer(inputBuffer);
+        inputBuffer = "";
+      } else {
+        inputBuffer += c;
+      }
     }
   }
 };
 
-class MyServerCallbacks: public BLEServerCallbacks {
-    void onConnect(BLEServer* pServer) {
-      deviceConnected = true;
-      refreshDisplay = true;
-      delay(500); 
-      sendToGB("GB({\"t\":\"info\",\"v\":\"2v25\",\"m\":\"Lolin32-Lite\"})\n");
-      sendToGB("GB({\"t\":\"music\",\"n\":\"info\"})\n");
-    }
-    void onDisconnect(BLEServer* pServer) {
-      deviceConnected = false;
-      refreshDisplay = true;
-      pServer->getAdvertising()->start();
-    }
+class MyServerCallbacks : public BLEServerCallbacks {
+  void onConnect(BLEServer *pServer) {
+    deviceConnected = true;
+    refreshDisplay = true;
+    delay(500);
+    sendToGB("GB({\"t\":\"info\",\"v\":\"2v25\",\"m\":\"Lolin32-Lite\"})\n");
+    sendToGB("GB({\"t\":\"music\",\"n\":\"info\"})\n");
+  }
+  void onDisconnect(BLEServer *pServer) {
+    deviceConnected = false;
+    refreshDisplay = true;
+    pServer->getAdvertising()->start();
+  }
 };
 
 void setup() {
   Serial.begin(115200);
-  delay(1000); 
-  Serial.println("--- SISTEM DIMULAI ---"); // Tambahkan ini
+  delay(1000);
+  Serial.println("--- SISTEM DIMULAI ---");  // Tambahkan ini
 
   // Inisialisasi I2C dengan pin custom (SDA=23, SCL=19)
   Wire.begin(I2C_SDA, I2C_SCL);
-  
+
   // Inisialisasi OLED SSD1306
   // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
-  if(!display.begin(SSD1306_SWITCHCAPVCC, i2c_Address)) {
+  if (!display.begin(SSD1306_SWITCHCAPVCC, i2c_Address)) {
     Serial.println(F("SSD1306 allocation failed"));
-    for(;;); // Berhenti jika OLED tidak terdeteksi
+    for (;;)
+      ;  // Berhenti jika OLED tidak terdeteksi
   }
-  
+
   display.clearDisplay();
   display.display();
 
@@ -199,9 +226,15 @@ void setup() {
 }
 
 void loop() {
-  if (refreshDisplay) { 
-    updateDisplay(); 
-    refreshDisplay = false; 
+
+  if (!isStandby && (millis() - lastActivityTime > standbyDelay)) {
+    isStandby = true;
+    refreshDisplay = true;  // Refresh untuk pindah ke tampilan jam besar
+  }
+
+  if (refreshDisplay) {
+    updateDisplay();
+    refreshDisplay = false;
   }
   delay(100);
 }
