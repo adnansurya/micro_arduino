@@ -6,6 +6,7 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>  // GANTI: Dari SH110X ke SSD1306
+#include "RTClib.h"
 
 // Definisikan pin I2C custom untuk Lolin32 Lite
 #define I2C_SDA 23
@@ -19,6 +20,9 @@
 
 // Inisialisasi objek SSD1306
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+// Inisialisasi RTC
+RTC_DS1307 rtc;
 
 // --- UUID GADGETBRIDGE ---
 #define SERVICE_UUID "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
@@ -42,12 +46,18 @@ unsigned long lastActivityTime = 0;
 const long standbyDelay = 15000;  // 15 detik
 bool isStandby = false;
 
-// --- FUNGSI UPDATE TAMPILAN ---
+void updateTimeFromRTC() {
+  DateTime now = rtc.now();
+  char buf[10];
+  sprintf(buf, "%02d:%02d", now.hour(), now.minute());
+  currentTime = String(buf);
+}
+
 void updateDisplay() {
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
 
-  if (!deviceConnected) {
+  if (!deviceConnected && !isStandby) {
     display.setTextSize(1);
     display.setCursor(15, 25);
     display.print("WAITING BLE...");
@@ -55,7 +65,9 @@ void updateDisplay() {
     return;
   }
 
-  // Jika sedang navigasi, abaikan mode standby (tetap tampilkan navigasi)
+  // Update waktu dari RTC setiap kali display refresh
+  updateTimeFromRTC();
+
   if (isNavigating) {
     display.setTextSize(1);
     display.setCursor(0, 22);
@@ -63,19 +75,25 @@ void updateDisplay() {
     display.print(navDist);
     display.setCursor(0, 32);
     display.print(navInstr.substring(0, 20));
-  }
-  // Jika tidak navigasi, cek apakah masuk mode standby
-  else if (isStandby) {
-    // TAMPILAN STANDBY: Jam Besar di Tengah
-    display.setTextSize(3);  // Ukuran teks besar
-    // Hitung posisi tengah (128 - (lebar teks "00:00")) / 2
-    // Lebar karakter size 3 sekitar 18 pixel, 5 karakter = 90 pixel
-    display.setCursor(19, 22);
+  } else if (isStandby) {
+    // 1. TAMPILAN JAM BESAR
+    updateTimeFromRTC();  // Pastikan waktu terbaru diambil
+    display.setTextSize(3);
+    display.setCursor(19, 15);  // Geser sedikit ke atas (y: 15) untuk memberi ruang tanggal
     display.print(currentTime);
-  }
-  // TAMPILAN NORMAL (Musik)
-  else {
-    // Header kecil
+
+    // 2. TAMPILAN TANGGAL
+    DateTime now = rtc.now();
+    char dateBuf[12];
+    // Format: DD/MM/YYYY
+    sprintf(dateBuf, "%02d/%02d/%04d", now.day(), now.month(), now.year());
+
+    display.setTextSize(1);
+    // Hitung posisi tengah: (128 - (lebar teks)) / 2
+    // Lebar teks size 1 (6px per char), 10 char = 60px. (128-60)/2 = 34
+    display.setCursor(34, 45);
+    display.print(dateBuf);
+  } else {
     display.setTextSize(1);
     display.setCursor(0, 0);
     display.print(currentTime);
@@ -84,20 +102,13 @@ void updateDisplay() {
     display.print(volumeLevel);
     display.print("%");
 
-    // Musik Info
     display.setCursor(0, 22);
-    String shortTitle = title.length() > 18 ? title.substring(0, 16) + ".." : title;
-    display.print(shortTitle);
-
+    display.print(title.length() > 18 ? title.substring(0, 16) + ".." : title);
     display.setCursor(0, 32);
-    String shortArtist = artist.length() > 18 ? artist.substring(0, 16) + ".." : artist;
-    display.print(shortArtist);
-
-    // Footer
+    display.print(artist.length() > 18 ? artist.substring(0, 16) + ".." : artist);
     display.setCursor(0, 55);
     display.print(musicState == "play" ? "> PLAYING" : "|| PAUSED");
   }
-
   display.display();
 }
 
@@ -109,51 +120,44 @@ void processBuffer(String data) {
   lastActivityTime = millis();
   isStandby = false;
 
+  // LOGIKA BARU: Set Waktu RTC dari Gadgetbridge
   if (data.indexOf("setTime(") != -1) {
     int startIdx = data.indexOf("(") + 1;
-    lastUnixTime = data.substring(startIdx, data.indexOf(")")).toInt();
-    struct tm *tmp = localtime(&lastUnixTime);
-    char buf[10];
-    sprintf(buf, "%02d:%02d", tmp->tm_hour, tmp->tm_min);
-    currentTime = String(buf);
-    Serial.println("Waktu diperbarui: " + currentTime);
+    // Ambil timestamp mentah (UTC) dari HP
+    long unixTimeUTC = data.substring(startIdx, data.indexOf(")")).toInt();
+
+    // Tambahkan 8 jam (28800 detik) untuk GMT+8
+    long unixTimeWITA = unixTimeUTC + 28800;
+
+    // Set waktu yang sudah dikoreksi ke modul DS1307
+    rtc.adjust(DateTime(unixTimeWITA));
+
+    Serial.print("Waktu sinkron (UTC): ");
+    Serial.println(unixTimeUTC);
+    Serial.print("Waktu sinkron (WITA): ");
+    Serial.println(unixTimeWITA);
   }
 
+  // Proses JSON Gadgetbridge
   int start = data.indexOf("GB({");
   int end = data.lastIndexOf("})");
   if (start != -1 && end != -1) {
     String jsonStr = data.substring(start + 3, end + 2);
-
-    // Tampilkan JSON yang berhasil dipisahkan
-    Serial.print("JSON Terdeteksi: ");
-    Serial.println(jsonStr);
-
     StaticJsonDocument<512> doc;
-    DeserializationError error = deserializeJson(doc, jsonStr);
-
-    if (error) {
-      Serial.print("Gagal parse JSON: ");
-      Serial.println(error.c_str());
-      return;
-    }
-
-    String type = doc["t"] | "";
-    if (type == "musicinfo") {
-      title = doc["track"] | "No Title";
-      artist = doc["artist"] | "No Artist";
-      Serial.println("Musik: " + title + " - " + artist);
-    } else if (type == "musicstate") {
-      musicState = doc["state"].as<String>();
-      Serial.println("Status Musik: " + musicState);
-    } else if (type == "nav") {
-      navInstr = doc["instr"] | "";
-      navDist = doc["distance"] | "";
-      isNavigating = (navInstr != "" && navInstr != " ");
-      Serial.println("Navigasi: " + navInstr + " (" + navDist + ")");
-    } else if (type == "audio") {
-      volumeLevel = doc["v"];
-      Serial.print("Volume: ");
-      Serial.println(volumeLevel);
+    if (deserializeJson(doc, jsonStr) == DeserializationError::Ok) {
+      String type = doc["t"] | "";
+      if (type == "musicinfo") {
+        title = doc["track"] | "No Title";
+        artist = doc["artist"] | "No Artist";
+      } else if (type == "musicstate") {
+        musicState = doc["state"].as<String>();
+      } else if (type == "nav") {
+        navInstr = doc["instr"] | "";
+        navDist = doc["distance"] | "";
+        isNavigating = (navInstr != "" && navInstr != " ");
+      } else if (type == "audio") {
+        volumeLevel = doc["v"];
+      }
     }
   }
   refreshDisplay = true;
@@ -205,6 +209,12 @@ void setup() {
   // Inisialisasi I2C dengan pin custom (SDA=23, SCL=19)
   Wire.begin(I2C_SDA, I2C_SCL);
 
+  // Inisialisasi RTC
+  if (!rtc.begin()) {
+    Serial.println("RTC tidak ditemukan!");
+  }
+  // rtc.adjust(DateTime(F(__DATE__), F(__TIME__))); // Opsional: set awal pakai waktu compile
+
   // Inisialisasi OLED SSD1306
   // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
   if (!display.begin(SSD1306_SWITCHCAPVCC, i2c_Address)) {
@@ -230,20 +240,25 @@ void setup() {
 }
 
 void loop() {
-
   if (digitalRead(TOUCH_PIN) == HIGH) {
     if (isStandby) {
-      Serial.println("Touch detected: Keluar dari Standby");
       isStandby = false;
-      lastActivityTime = millis(); // Reset timer agar tidak langsung balik standby
+      lastActivityTime = millis();
       refreshDisplay = true;
-      delay(200); // Debounce sederhana agar tidak terbaca berkali-kali
+      delay(200);
     }
   }
 
   if (!isStandby && (millis() - lastActivityTime > standbyDelay)) {
     isStandby = true;
-    refreshDisplay = true;  // Refresh untuk pindah ke tampilan jam besar
+    refreshDisplay = true;
+  }
+
+  // Refresh display setiap 1 menit agar jam update meski standby
+  static unsigned long lastMinuteUpdate = 0;
+  if (millis() - lastMinuteUpdate > 60000) {
+    lastMinuteUpdate = millis();
+    refreshDisplay = true;
   }
 
   if (refreshDisplay) {
