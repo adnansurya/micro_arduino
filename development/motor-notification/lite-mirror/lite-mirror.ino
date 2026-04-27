@@ -36,6 +36,8 @@ String inputBuffer = "";
 bool refreshDisplay = true;
 bool isNavigating = false;
 
+#define TOUCH_PIN 14
+
 unsigned long lastActivityTime = 0;
 const long standbyDelay = 15000;  // 15 detik
 bool isStandby = false;
@@ -198,6 +200,8 @@ void setup() {
   delay(1000);
   Serial.println("--- SISTEM DIMULAI ---");  // Tambahkan ini
 
+  pinMode(TOUCH_PIN, INPUT);
+
   // Inisialisasi I2C dengan pin custom (SDA=23, SCL=19)
   Wire.begin(I2C_SDA, I2C_SCL);
 
@@ -227,6 +231,16 @@ void setup() {
 
 void loop() {
 
+  if (digitalRead(TOUCH_PIN) == HIGH) {
+    if (isStandby) {
+      Serial.println("Touch detected: Keluar dari Standby");
+      isStandby = false;
+      lastActivityTime = millis(); // Reset timer agar tidak langsung balik standby
+      refreshDisplay = true;
+      delay(200); // Debounce sederhana agar tidak terbaca berkali-kali
+    }
+  }
+
   if (!isStandby && (millis() - lastActivityTime > standbyDelay)) {
     isStandby = true;
     refreshDisplay = true;  // Refresh untuk pindah ke tampilan jam besar
@@ -236,5 +250,5 @@ void loop() {
     updateDisplay();
     refreshDisplay = false;
   }
-  delay(100);
+  delay(50);
 }
