@@ -81,6 +81,10 @@ void updateDisplay() {
 }
 
 void processBuffer(String data) {
+  // Tampilkan seluruh data mentah yang diterima ke Serial Monitor
+  Serial.print("Data Masuk: ");
+  Serial.println(data);
+
   if (data.indexOf("setTime(") != -1) {
     int startIdx = data.indexOf("(") + 1;
     lastUnixTime = data.substring(startIdx, data.indexOf(")")).toInt();
@@ -88,27 +92,44 @@ void processBuffer(String data) {
     char buf[10];
     sprintf(buf, "%02d:%02d", tmp->tm_hour, tmp->tm_min);
     currentTime = String(buf);
+    Serial.println("Waktu diperbarui: " + currentTime);
   }
 
   int start = data.indexOf("GB({");
   int end = data.lastIndexOf("})");
   if (start != -1 && end != -1) {
     String jsonStr = data.substring(start + 3, end + 2);
+    
+    // Tampilkan JSON yang berhasil dipisahkan
+    Serial.print("JSON Terdeteksi: ");
+    Serial.println(jsonStr);
+
     StaticJsonDocument<512> doc;
-    if (deserializeJson(doc, jsonStr) == DeserializationError::Ok) {
-      String type = doc["t"] | "";
-      if (type == "musicinfo") {
-        title = doc["track"] | "No Title";
-        artist = doc["artist"] | "No Artist";
-      } else if (type == "musicstate") {
-        musicState = doc["state"].as<String>();
-      } else if (type == "nav") {
-        navInstr = doc["instr"] | "";
-        navDist = doc["distance"] | "";
-        isNavigating = (navInstr != "" && navInstr != " ");
-      } else if (type == "audio") {
-        volumeLevel = doc["v"];
-      }
+    DeserializationError error = deserializeJson(doc, jsonStr);
+
+    if (error) {
+      Serial.print("Gagal parse JSON: ");
+      Serial.println(error.c_str());
+      return;
+    }
+
+    String type = doc["t"] | "";
+    if (type == "musicinfo") {
+      title = doc["track"] | "No Title";
+      artist = doc["artist"] | "No Artist";
+      Serial.println("Musik: " + title + " - " + artist);
+    } else if (type == "musicstate") {
+      musicState = doc["state"].as<String>();
+      Serial.println("Status Musik: " + musicState);
+    } else if (type == "nav") {
+      navInstr = doc["instr"] | "";
+      navDist = doc["distance"] | "";
+      isNavigating = (navInstr != "" && navInstr != " ");
+      Serial.println("Navigasi: " + navInstr + " (" + navDist + ")");
+    } else if (type == "audio") {
+      volumeLevel = doc["v"];
+      Serial.print("Volume: ");
+      Serial.println(volumeLevel);
     }
   }
   refreshDisplay = true;
@@ -148,6 +169,8 @@ class MyServerCallbacks: public BLEServerCallbacks {
 
 void setup() {
   Serial.begin(115200);
+  delay(1000); 
+  Serial.println("--- SISTEM DIMULAI ---"); // Tambahkan ini
 
   // Inisialisasi I2C dengan pin custom (SDA=23, SCL=19)
   Wire.begin(I2C_SDA, I2C_SCL);
