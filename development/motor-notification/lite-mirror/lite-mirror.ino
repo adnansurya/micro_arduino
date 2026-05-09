@@ -46,6 +46,11 @@ bool isNavigating = false;
 bool isNotify = false;
 String notifySrc = "", notifyTitle = "", notifyBody = "";
 
+// --- VARIABEL OVERLAY VOLUME ---
+bool showVolumeOverlay = false;
+unsigned long lastVolumeChangeMillis = 0;
+int lastVolumeLevel = 0;  // Untuk mendeteksi perubahan
+
 // --- UUID GADGETBRIDGE ---
 #define SERVICE_UUID "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 #define CHARACTERISTIC_UUID_RX "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
@@ -94,25 +99,37 @@ void updateDisplay() {
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
 
+  // 1. PRIORITAS UTAMA: NOTIFIKASI
   if (isNotify) {
-    // --- TAMPILAN NOTIFIKASI ---
     display.setTextSize(1);
     display.setCursor(0, 0);
-    display.print("[" + notifySrc + "]");  // Menampilkan sumber (WhatsApp/Instagram)
+    display.print("[" + notifySrc + "]");
     display.drawFastHLine(0, 11, 128, WHITE);
-
     display.setCursor(0, 15);
-    display.setTextSize(1);
-    display.print(notifyTitle);  // Menampilkan Nama Pengirim
-
+    display.print(notifyTitle);
     display.setCursor(0, 30);
-    display.setTextSize(2);  // Body pesan agak besar
-    // Potong string jika terlalu panjang agar tidak berantakan
+    display.setTextSize(2);
     display.print(notifyBody.length() > 20 ? notifyBody.substring(0, 18) + ".." : notifyBody);
-
     display.setTextSize(1);
     display.setCursor(20, 56);
     display.print("> Tap to Dismiss <");
+  }
+  // 2. PRIORITAS KEDUA: VOLUME OVERLAY
+  else if (showVolumeOverlay) {
+    display.setTextSize(1);
+    display.setCursor(35, 10);
+    display.print("VOLUME");
+
+    display.setTextSize(4);
+    display.setCursor(30, 25);
+    display.print(volumeLevel);
+    display.setTextSize(2);
+    display.print("%");
+
+    // Progress Bar Volume di bagian bawah
+    display.drawRect(10, 58, 108, 5, WHITE);
+    int volWidth = map(volumeLevel, 0, 100, 0, 108);
+    display.fillRect(10, 58, volWidth, 5, WHITE);
   } else {
     updateTimeFromRTC();
     switch (currentMode) {
@@ -222,7 +239,12 @@ void processBuffer(String data) {
           if (currentMode == 3) currentMode = 1;  // Jika navigasi selesai, balik ke mode Jam
         }
       } else if (type == "audio") {
-        volumeLevel = doc["v"];
+        int newVolume = doc["v"];
+        if (newVolume != volumeLevel) {  // Jika volume berubah
+          volumeLevel = newVolume;
+          showVolumeOverlay = true;           // Aktifkan overlay
+          lastVolumeChangeMillis = millis();  // Reset timer 3 detik
+        }
       } else if (type == "notify") {
         notifySrc = doc["src"] | "Notification";
         notifyTitle = doc["title"] | "";
@@ -332,9 +354,14 @@ void loop() {
         currentMode = 0;
       }
     }
-    delay(200); // Debounce
+    delay(200);  // Debounce
   }
   lastTouchState = currentTouch;
+
+  // Cek Timer Volume (3 detik)
+  if (showVolumeOverlay && (millis() - lastVolumeChangeMillis > 3000)) {
+    showVolumeOverlay = false;
+  }
 
   // 2. Background Process
   processAccel();
