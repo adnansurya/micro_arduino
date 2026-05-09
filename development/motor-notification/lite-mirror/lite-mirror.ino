@@ -91,65 +91,68 @@ void updateDisplay() {
   display.setTextColor(SSD1306_WHITE);
   updateTimeFromRTC();
 
-  if (isNavigating) {
-    display.setTextSize(1);
-    display.setCursor(0, 5); display.print("NAVIGASI AKTIF");
-    display.drawFastHLine(0, 15, 128, WHITE);
-    display.setCursor(0, 25); display.print(navDist);
-    display.setTextSize(2);
-    display.setCursor(0, 40); display.print(navInstr.substring(0, 10));
-  } 
-  else {
-    switch (currentMode) {
-      case 0: { // MODE MUSIK
+  switch (currentMode) {
+    case 0:
+      {  // MODE MUSIK
         display.setTextSize(1);
-        display.setCursor(0, 0); 
+        display.setCursor(0, 0);
         display.print(currentTime);
-        
         if (!deviceConnected) {
-          // Tampilan jika Bluetooth terputus
           display.setCursor(0, 30);
           display.setTextSize(2);
           display.print("DISCONNECTED");
-        } 
-        else {
-          // Tampilan normal jika terhubung
-          display.setCursor(85, 0); 
+        } else {
+          display.setCursor(85, 0);
           display.printf("V:%d%%", volumeLevel);
-          display.setCursor(0, 22); 
+          display.setCursor(0, 22);
           display.print(title.length() > 18 ? title.substring(0, 16) + ".." : title);
-          display.setCursor(0, 35); 
+          display.setCursor(0, 35);
           display.print(artist.length() > 18 ? artist.substring(0, 16) + ".." : artist);
-          display.setCursor(0, 55); 
+          display.setCursor(0, 55);
           display.print(musicState == "play" ? "> PLAYING" : "|| PAUSED");
         }
         break;
       }
-
-      case 1: { // MODE JAM BESAR
+    case 1:
+      {  // MODE JAM
         display.setTextSize(3);
-        display.setCursor(19, 15); display.print(currentTime);
+        display.setCursor(19, 15);
+        display.print(currentTime);
         display.setTextSize(1);
-        DateTime now = rtc.now(); // Variabel ini sekarang aman di dalam scope kurung kurawal
+        DateTime now = rtc.now();
         display.setCursor(34, 48);
         display.printf("%02d/%02d/%04d", now.day(), now.month(), now.year());
         break;
       }
-
-      case 2: { // MODE SPEDOMETER
+    case 2:
+      {  // MODE SPEDOMETER
         display.setTextSize(1);
-        display.setCursor(0, 0); display.print("SPEEDOMETER");
+        display.setCursor(0, 0);
+        display.print("SPEEDOMETER");
         display.setTextSize(4);
-        display.setCursor(20, 20); display.print((int)speedKMH);
+        display.setCursor(20, 20);
+        display.print((int)speedKMH);
         display.setTextSize(1);
         display.print(" km/h");
-        
         display.drawRect(0, 60, 128, 4, WHITE);
         int barWidth = map(constrain((int)speedKMH, 0, 60), 0, 60, 0, 128);
         display.fillRect(0, 60, barWidth, 4, WHITE);
         break;
       }
-    }
+    case 3:
+      {  // MODE NAVIGASI (Hanya jika aktif)
+        display.setTextSize(1);
+        display.setCursor(0, 5);
+        display.print("NAVIGASI");
+        display.drawFastHLine(0, 15, 128, WHITE);
+        display.setCursor(0, 25);
+        display.print(navDist);
+        display.setTextSize(2);
+        // Menampilkan instruksi lebih jelas
+        display.setCursor(0, 40);
+        display.print(navInstr.length() > 10 ? navInstr.substring(0, 10) : navInstr);
+        break;
+      }
   }
   display.display();
 }
@@ -181,7 +184,15 @@ void processBuffer(String data) {
       } else if (type == "nav") {
         navInstr = doc["instr"] | "";
         navDist = doc["distance"] | "";
-        isNavigating = (navInstr != "" && navInstr != " ");
+
+        // Jika navigasi memiliki isi, aktifkan mode 3
+        if (navInstr != "" && navInstr != " ") {
+          isNavigating = true;
+          currentMode = 3;  // OTOMATIS PINDAH KE MODE 3
+        } else {
+          isNavigating = false;
+          if (currentMode == 3) currentMode = 1;  // Jika navigasi selesai, balik ke mode Jam
+        }
       } else if (type == "audio") {
         volumeLevel = doc["v"];
       }
@@ -220,7 +231,7 @@ class MyServerCallbacks : public BLEServerCallbacks {
   }
   void onDisconnect(BLEServer *pServer) {
     deviceConnected = false;
-    isNavigating = false; // Reset navigasi saat putus
+    isNavigating = false;  // Reset navigasi saat putus
     pServer->getAdvertising()->start();
   }
 };
@@ -276,10 +287,19 @@ void loop() {
   bool currentTouch = digitalRead(TOUCH_PIN);
   if (currentTouch == HIGH && lastTouchState == LOW) {
     currentMode++;
-    if (currentMode > 2) currentMode = 0;
+
+    // Jika navigasi TIDAK aktif, Mode 3 dilompati (langsung balik ke 0)
+    if (!isNavigating && currentMode == 3) {
+      currentMode = 0;
+    }
+    // Jika sudah lebih dari mode 3, balik ke 0
+    else if (currentMode > 3) {
+      currentMode = 0;
+    }
+
     Serial.print("Mode Sekarang: ");
     Serial.println(currentMode);
-    delay(200);  // Debounce
+    delay(200);
   }
   lastTouchState = currentTouch;
 
