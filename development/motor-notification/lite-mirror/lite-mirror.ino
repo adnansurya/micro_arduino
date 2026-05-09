@@ -51,6 +51,9 @@ bool showVolumeOverlay = false;
 unsigned long lastVolumeChangeMillis = 0;
 int lastVolumeLevel = 0;  // Untuk mendeteksi perubahan
 
+// Array nama hari dalam Bahasa Indonesia
+const char* namaHari[] = {"Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"};
+
 // --- UUID GADGETBRIDGE ---
 #define SERVICE_UUID "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 #define CHARACTERISTIC_UUID_RX "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
@@ -154,17 +157,25 @@ void updateDisplay() {
           }
           break;
         }
-      case 1:
-        {  // MODE JAM
-          display.setTextSize(3);
-          display.setCursor(19, 15);
-          display.print(currentTime);
-          display.setTextSize(1);
-          DateTime now = rtc.now();
-          display.setCursor(34, 48);
-          display.printf("%02d/%02d/%04d", now.day(), now.month(), now.year());
-          break;
-        }
+      case 1: { // MODE JAM BESAR
+      DateTime now = rtc.now(); // Ambil data waktu terbaru
+      
+      // Tampilkan Jam Besar
+      display.setTextSize(3);
+      display.setCursor(19, 10); 
+      display.print(currentTime);
+      
+      // Tampilkan Nama Hari (di bawah jam)
+      display.setTextSize(1);
+      int centerX = (128 - (String(namaHari[now.dayOfTheWeek()]).length() * 6)) / 2; // Hitung posisi tengah
+      display.setCursor(centerX, 40);
+      display.print(namaHari[now.dayOfTheWeek()]);
+      
+      // Tampilkan Tanggal (paling bawah)
+      display.setCursor(34, 52);
+      display.printf("%02d/%02d/%04d", now.day(), now.month(), now.year());
+      break;
+    }
       case 2:
         {  // MODE SPEDOMETER
           display.setTextSize(1);
