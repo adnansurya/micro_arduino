@@ -11,8 +11,8 @@
 #include "RTClib.h"
 
 // --- KONFIGURASI PIN ---
-#define I2C_SDA 23
-#define I2C_SCL 19
+#define I2C_SDA 21
+#define I2C_SCL 22
 #define TOUCH_PIN 14
 
 // --- KONFIGURASI OLED ---
@@ -103,11 +103,26 @@ void updateDisplay() {
     switch (currentMode) {
       case 0: { // MODE MUSIK
         display.setTextSize(1);
-        display.setCursor(0, 0); display.print(currentTime);
-        display.setCursor(85, 0); display.printf("V:%d%%", volumeLevel);
-        display.setCursor(0, 22); display.print(title.length() > 18 ? title.substring(0, 16) + ".." : title);
-        display.setCursor(0, 35); display.print(artist.length() > 18 ? artist.substring(0, 16) + ".." : artist);
-        display.setCursor(0, 55); display.print(musicState == "play" ? "> PLAYING" : "|| PAUSED");
+        display.setCursor(0, 0); 
+        display.print(currentTime);
+        
+        if (!deviceConnected) {
+          // Tampilan jika Bluetooth terputus
+          display.setCursor(0, 30);
+          display.setTextSize(2);
+          display.print("DISCONNECTED");
+        } 
+        else {
+          // Tampilan normal jika terhubung
+          display.setCursor(85, 0); 
+          display.printf("V:%d%%", volumeLevel);
+          display.setCursor(0, 22); 
+          display.print(title.length() > 18 ? title.substring(0, 16) + ".." : title);
+          display.setCursor(0, 35); 
+          display.print(artist.length() > 18 ? artist.substring(0, 16) + ".." : artist);
+          display.setCursor(0, 55); 
+          display.print(musicState == "play" ? "> PLAYING" : "|| PAUSED");
+        }
         break;
       }
 
@@ -205,6 +220,7 @@ class MyServerCallbacks : public BLEServerCallbacks {
   }
   void onDisconnect(BLEServer *pServer) {
     deviceConnected = false;
+    isNavigating = false; // Reset navigasi saat putus
     pServer->getAdvertising()->start();
   }
 };
