@@ -42,6 +42,10 @@ int volumeLevel = 0;
 String inputBuffer = "";
 bool isNavigating = false;
 
+// --- VARIABEL NOTIFIKASI ---
+bool isNotify = false;
+String notifySrc = "", notifyTitle = "", notifyBody = "";
+
 // --- UUID GADGETBRIDGE ---
 #define SERVICE_UUID "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 #define CHARACTERISTIC_UUID_RX "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
@@ -89,71 +93,95 @@ void processAccel() {
 void updateDisplay() {
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
-  updateTimeFromRTC();
 
-  switch (currentMode) {
-    case 0:
-      {  // MODE MUSIK
-        display.setTextSize(1);
-        display.setCursor(0, 0);
-        display.print(currentTime);
-        if (!deviceConnected) {
-          display.setCursor(0, 30);
-          display.setTextSize(2);
-          display.print("DISCONNECTED");
-        } else {
-          display.setCursor(85, 0);
-          display.printf("V:%d%%", volumeLevel);
-          display.setCursor(0, 22);
-          display.print(title.length() > 18 ? title.substring(0, 16) + ".." : title);
-          display.setCursor(0, 35);
-          display.print(artist.length() > 18 ? artist.substring(0, 16) + ".." : artist);
-          display.setCursor(0, 55);
-          display.print(musicState == "play" ? "> PLAYING" : "|| PAUSED");
+  if (isNotify) {
+    // --- TAMPILAN NOTIFIKASI ---
+    display.setTextSize(1);
+    display.setCursor(0, 0);
+    display.print("[" + notifySrc + "]");  // Menampilkan sumber (WhatsApp/Instagram)
+    display.drawFastHLine(0, 11, 128, WHITE);
+
+    display.setCursor(0, 15);
+    display.setTextSize(1);
+    display.print(notifyTitle);  // Menampilkan Nama Pengirim
+
+    display.setCursor(0, 30);
+    display.setTextSize(2);  // Body pesan agak besar
+    // Potong string jika terlalu panjang agar tidak berantakan
+    display.print(notifyBody.length() > 20 ? notifyBody.substring(0, 18) + ".." : notifyBody);
+
+    display.setTextSize(1);
+    display.setCursor(20, 56);
+    display.print("> Tap to Dismiss <");
+  } else {
+    updateTimeFromRTC();
+    switch (currentMode) {
+      case 0:
+        {  // MODE MUSIK
+          display.setTextSize(1);
+          display.setCursor(0, 0);
+          display.print(currentTime);
+          if (!deviceConnected) {
+            display.setCursor(0, 30);
+            display.setTextSize(2);
+            display.print("DISCONNECTED");
+          } else {
+            display.setCursor(85, 0);
+            display.printf("V:%d%%", volumeLevel);
+            display.setCursor(0, 22);
+            display.print(title.length() > 18 ? title.substring(0, 16) + ".." : title);
+            display.setCursor(0, 35);
+            display.print(artist.length() > 18 ? artist.substring(0, 16) + ".." : artist);
+            display.setCursor(0, 55);
+            display.print(musicState == "play" ? "> PLAYING" : "|| PAUSED");
+          }
+          break;
         }
-        break;
-      }
-    case 1:
-      {  // MODE JAM
-        display.setTextSize(3);
-        display.setCursor(19, 15);
-        display.print(currentTime);
-        display.setTextSize(1);
-        DateTime now = rtc.now();
-        display.setCursor(34, 48);
-        display.printf("%02d/%02d/%04d", now.day(), now.month(), now.year());
-        break;
-      }
-    case 2:
-      {  // MODE SPEDOMETER
-        display.setTextSize(1);
-        display.setCursor(0, 0);
-        display.print("SPEEDOMETER");
-        display.setTextSize(4);
-        display.setCursor(20, 20);
-        display.print((int)speedKMH);
-        display.setTextSize(1);
-        display.print(" km/h");
-        display.drawRect(0, 60, 128, 4, WHITE);
-        int barWidth = map(constrain((int)speedKMH, 0, 60), 0, 60, 0, 128);
-        display.fillRect(0, 60, barWidth, 4, WHITE);
-        break;
-      }
-    case 3:
-      {  // MODE NAVIGASI (Hanya jika aktif)
-        display.setTextSize(1);
-        display.setCursor(0, 5);
-        display.print("NAVIGASI");
-        display.drawFastHLine(0, 15, 128, WHITE);
-        display.setCursor(0, 25);
-        display.print(navDist);
-        display.setTextSize(2);
-        // Menampilkan instruksi lebih jelas
-        display.setCursor(0, 40);
-        display.print(navInstr.length() > 10 ? navInstr.substring(0, 10) : navInstr);
-        break;
-      }
+      case 1:
+        {  // MODE JAM
+          display.setTextSize(3);
+          display.setCursor(19, 15);
+          display.print(currentTime);
+          display.setTextSize(1);
+          DateTime now = rtc.now();
+          display.setCursor(34, 48);
+          display.printf("%02d/%02d/%04d", now.day(), now.month(), now.year());
+          break;
+        }
+      case 2:
+        {  // MODE SPEDOMETER
+          display.setTextSize(1);
+          display.setCursor(0, 0);
+          display.print("SPEEDOMETER");
+          display.setTextSize(4);
+          display.setCursor(20, 20);
+          display.print((int)speedKMH);
+          display.setTextSize(1);
+          display.print(" km/h");
+          display.drawRect(0, 60, 128, 4, WHITE);
+          int barWidth = map(constrain((int)speedKMH, 0, 60), 0, 60, 0, 128);
+          display.fillRect(0, 60, barWidth, 4, WHITE);
+          break;
+        }
+      case 3:
+        {  // MODE NAVIGASI (Hanya jika aktif)
+          display.setTextSize(1);
+          display.setCursor(0, 5);
+          display.print("NAVIGASI");
+          display.drawFastHLine(0, 15, 128, WHITE);
+          display.setCursor(0, 25);
+          display.print(navDist);
+          display.setTextSize(2);
+          // Menampilkan instruksi lebih jelas
+          display.setCursor(0, 40);
+          display.print(navInstr.length() > 10 ? navInstr.substring(0, 10) : navInstr);
+          break;
+        }
+    }
   }
+
+
+
   display.display();
 }
 
@@ -195,6 +223,11 @@ void processBuffer(String data) {
         }
       } else if (type == "audio") {
         volumeLevel = doc["v"];
+      } else if (type == "notify") {
+        notifySrc = doc["src"] | "Notification";
+        notifyTitle = doc["title"] | "";
+        notifyBody = doc["body"] | "";
+        isNotify = true;  // Langsung aktifkan layar notifikasi
       }
     }
   }
@@ -282,33 +315,33 @@ void setup() {
 
 // --- LOOP UTAMA ---
 void loop() {
-  // 1. Cek Touch Sensor untuk Ganti Mode
+  // 1. Cek Touch Sensor
   static bool lastTouchState = LOW;
   bool currentTouch = digitalRead(TOUCH_PIN);
+
   if (currentTouch == HIGH && lastTouchState == LOW) {
-    currentMode++;
-
-    // Jika navigasi TIDAK aktif, Mode 3 dilompati (langsung balik ke 0)
-    if (!isNavigating && currentMode == 3) {
-      currentMode = 0;
+    if (isNotify) {
+      // Jika sedang ada notifikasi, tutup notifikasinya saja
+      isNotify = false;
+    } else {
+      // Jika normal, ganti mode seperti biasa
+      currentMode++;
+      if (!isNavigating && currentMode == 3) {
+        currentMode = 0;
+      } else if (currentMode > 3) {
+        currentMode = 0;
+      }
     }
-    // Jika sudah lebih dari mode 3, balik ke 0
-    else if (currentMode > 3) {
-      currentMode = 0;
-    }
-
-    Serial.print("Mode Sekarang: ");
-    Serial.println(currentMode);
-    delay(200);
+    delay(200); // Debounce
   }
   lastTouchState = currentTouch;
 
-  // 2. Update Perhitungan Spedometer (Background)
+  // 2. Background Process
   processAccel();
 
-  // 3. Update Layar secara berkala
+  // 3. Update Layar
   static unsigned long lastDisplayMillis = 0;
-  if (millis() - lastDisplayMillis > 100) {  // Update setiap 100ms
+  if (millis() - lastDisplayMillis > 100) {
     updateDisplay();
     lastDisplayMillis = millis();
   }
