@@ -9,11 +9,22 @@
 #include <Adafruit_Sensor.h>
 #include <Adafruit_ADXL345_U.h>
 #include "RTClib.h"
+#include <WiFi.h>
+#include <ESPmDNS.h>
+#include <WiFiUdp.h>
+#include <ArduinoOTA.h>
+
+#define OTA_JUMPER_PIN 23
+bool otaMode = false; // Flag untuk mengecek apakah OTA aktif
 
 // --- KONFIGURASI PIN ---
 #define I2C_SDA 21
 #define I2C_SCL 22
 #define TOUCH_PIN 14
+
+// Konfigurasi WiFi (Wajib untuk OTA)
+const char* ssid = "MIKRO";
+const char* password = "1DEAlist";
 
 // --- KONFIGURASI OLED ---
 #define SCREEN_WIDTH 128
@@ -59,6 +70,53 @@ const char* namaHari[] = {"Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat",
 #define CHARACTERISTIC_UUID_RX "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
 #define CHARACTERISTIC_UUID_TX "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 BLECharacteristic *pCharacteristicTX;
+
+void setupOTA() {
+  pinMode(OTA_JUMPER_PIN, INPUT_PULLUP); // Menggunakan internal pull-up
+  
+  // Cek jika pin 23 dijumper ke GND (LOW)
+  if (digitalRead(OTA_JUMPER_PIN) == LOW) {
+    otaMode = true;
+    
+    display.clearDisplay();
+    display.setCursor(0, 20);
+    display.println("OTA MODE ACTIVE");
+    display.println("Connecting WiFi...");
+    display.display();
+
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid, password);
+    
+    // Tunggu koneksi maksimal 10 detik agar tidak stuck
+    unsigned long startAttempt = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 10000) {
+      delay(500);
+      Serial.print(".");
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+      ArduinoOTA.setHostname("Smartwatch-ESP32");
+      ArduinoOTA.onStart([]() {
+        display.clearDisplay();
+        display.setCursor(0, 20);
+        display.println("OTA UPDATING...");
+        display.display();
+      });
+      ArduinoOTA.begin();
+      Serial.println("\nOTA Ready!");
+    } else {
+      display.println("WiFi Timeout!");
+      display.display();
+      delay(2000);
+      otaMode = false;
+      WiFi.disconnect(true);
+      WiFi.mode(WIFI_OFF);
+    }
+  } else {
+    otaMode = false;
+    Serial.println("OTA Mode Disabled (No Jumper)");
+  }
+}
 
 // --- FUNGSI RTC ---
 void updateTimeFromRTC() {
@@ -111,11 +169,11 @@ void updateDisplay() {
     display.setCursor(0, 15);
     display.print(notifyTitle);
     display.setCursor(0, 30);
-    display.setTextSize(2);
+    display.setTextSize(1);
     display.print(notifyBody.length() > 20 ? notifyBody.substring(0, 18) + ".." : notifyBody);
     display.setTextSize(1);
     display.setCursor(20, 56);
-    display.print("> Tap to Dismiss <");
+    display.print("> Dismiss <");
   }
   // 2. PRIORITAS KEDUA: VOLUME OVERLAY
   else if (showVolumeOverlay) {
@@ -143,8 +201,8 @@ void updateDisplay() {
           display.print(currentTime);
           if (!deviceConnected) {
             display.setCursor(0, 30);
-            display.setTextSize(2);
-            display.print("DISCONNECTED");
+            display.setTextSize(1);
+            display.print("DEVCE DISCONNECTED");
           } else {
             display.setCursor(85, 0);
             display.printf("V:%d%%", volumeLevel);
@@ -184,7 +242,7 @@ void updateDisplay() {
           display.setTextSize(4);
           display.setCursor(20, 20);
           display.print((int)speedKMH);
-          display.setTextSize(1);
+          display.setTextSize(2);
           display.print(" km/h");
           display.drawRect(0, 60, 128, 4, WHITE);
           int barWidth = map(constrain((int)speedKMH, 0, 60), 0, 60, 0, 128);
@@ -302,23 +360,32 @@ class MyServerCallbacks : public BLEServerCallbacks {
   }
 };
 
-// --- SETUP ---
 void setup() {
   Serial.begin(115200);
+  pinMode(OTA_JUMPER_PIN, INPUT_PULLUP);
   pinMode(TOUCH_PIN, INPUT);
   Wire.begin(I2C_SDA, I2C_SCL);
 
+  // Inisialisasi Hardware Dasar
   if (!rtc.begin()) Serial.println("RTC Gagal!");
   if (!accel.begin()) Serial.println("ADXL345 Gagal!");
-  if (!display.begin(SSD1306_SWITCHCAPVCC, i2c_Address))
-    for (;;)
-      ;
+  if (!display.begin(SSD1306_SWITCHCAPVCC, i2c_Address)) for (;;);
 
-  // Kalibrasi ADXL345 (Pastikan alat diam)
+  // 1. CEK JUMPER OTA TERLEBIH DAHULU
+  setupOTA(); 
+
+  // 2. JIKA OTA AKTIF, BERHENTI DI SINI (Fokus OTA)
+  if (otaMode) {
+    Serial.println("System focus to OTA. Bluetooth disabled.");
+    return; // Keluar dari setup, fungsi setup selanjutnya (BLE) tidak dijalankan
+  }
+
+  // 3. JIKA TIDAK OTA, JALANKAN BLUETOOTH & KALIBRASI (Normal Mode)
+  // Kalibrasi ADXL345
   display.clearDisplay();
   display.setTextColor(WHITE);
   display.setCursor(0, 20);
-  display.println("KALIBRASI ADXL...");
+  display.println("NORMAL MODE...");
   display.display();
 
   float sumMag = 0;
@@ -343,11 +410,30 @@ void setup() {
   pServer->getAdvertising()->start();
 
   lastAccelTime = millis();
-  Serial.println("Sistem Siap!");
+  Serial.println("Sistem Siap (Normal Mode)!");
 }
 
 // --- LOOP UTAMA ---
 void loop() {
+  if (otaMode) {
+    // FOKUS HANYA OTA
+    ArduinoOTA.handle();
+    
+    // Opsional: Tampilkan status di layar agar tahu ESP32 tidak hang
+    static unsigned long lastTick = 0;
+    if (millis() - lastTick > 1000) {
+      display.clearDisplay();
+      display.setTextSize(1);
+      display.setCursor(0, 10);
+      display.println(">> OTA MODE ON <<");
+      display.println("IP: " + WiFi.localIP().toString());
+      display.setCursor(0, 40);
+      display.println("Waiting for upload...");
+      display.display();
+      lastTick = millis();
+    }
+    return; // "Skip" semua kodingan di bawah (Sensor, Spedo, BLE, dll)
+  }
   // 1. Cek Touch Sensor
   static bool lastTouchState = LOW;
   bool currentTouch = digitalRead(TOUCH_PIN);
