@@ -53,6 +53,8 @@ int lastVolumeLevel = 0;
 
 // Array nama hari dalam Bahasa Indonesia
 const char *namaHari[] = { "Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu" };
+const char *namaBulan[] = { "", "Januari", "Februari", "Maret", "April", "Mei", "Juni", 
+                             "Juli", "Agustus", "September", "Oktober", "November", "Desember" };
 
 // --- UUID GADGETBRIDGE ---
 #define SERVICE_UUID "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
@@ -149,15 +151,26 @@ void updateDisplay() {
       }
       case 1: { // MODE JAM BESAR
         DateTime now = rtc.now();
+        
+        // Tampilkan Jam Besar
         display.setTextSize(3);
         display.setCursor(19, 10);
         display.print(currentTime);
+        
+        // Tampilkan Nama Hari (Kecil di tengah)
         display.setTextSize(1);
-        int centerX = (128 - (String(namaHari[now.dayOfTheWeek()]).length() * 6)) / 2;
-        display.setCursor(centerX, 40);
-        display.print(namaHari[now.dayOfTheWeek()]);
-        display.setCursor(34, 52);
-        display.printf("%02d/%02d/%04d", now.day(), now.month(), now.year());
+        String hari = String(namaHari[now.dayOfTheWeek()]);
+        int centerHari = (128 - (hari.length() * 6)) / 2;
+        display.setCursor(centerHari, 40);
+        display.print(hari);
+        
+        // Tampilkan Tanggal Format Panjang (Contoh: 11 Mei 2026)
+        // Kita hitung posisi tengah secara dinamis
+        String tglPanjang = String(now.day()) + " " + String(namaBulan[now.month()]) + " " + String(now.year());
+        int centerTgl = (128 - (tglPanjang.length() * 6)) / 2;
+        
+        display.setCursor(centerTgl, 52);
+        display.print(tglPanjang);
         break;
       }
       case 2: { // MODE SPEDOMETER
