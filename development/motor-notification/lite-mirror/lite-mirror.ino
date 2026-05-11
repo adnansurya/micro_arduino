@@ -46,6 +46,10 @@ bool isNavigating = false;
 bool isNotify = false;
 String notifySrc = "", notifyTitle = "", notifyBody = "";
 
+// --- VARIABEL PANGGILAN ---
+bool isIncomingCall = false;
+String callName = "";
+
 // --- VARIABEL OVERLAY VOLUME ---
 bool showVolumeOverlay = false;
 unsigned long lastVolumeChangeMillis = 0;
@@ -64,8 +68,8 @@ unsigned long touchStartTime = 0;
 unsigned long lastTouchReleaseTime = 0;
 bool isTouching = false;
 int touchCounter = 0;
-const int longTouchDuration = 800;  // 0.8 detik untuk Long Touch
-const int doubleTouchInterval = 300; // Jeda maksimal antar sentuhan untuk Double Touch
+const int longTouchDuration = 800;    // 0.8 detik untuk Long Touch
+const int doubleTouchInterval = 300;  // Jeda maksimal antar sentuhan untuk Double Touch
 
 // Array nama hari dalam Bahasa Indonesia
 const char *namaHari[] = { "Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu" };
@@ -139,7 +143,40 @@ void updateDisplay() {
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
 
-  if (isNotify) {
+  // 1. PRIORITAS TERTINGGI: INCOMING CALL
+  // 1. PRIORITAS TERTINGGI: INCOMING CALL
+  if (isIncomingCall) {
+    display.setTextSize(1);
+    display.setCursor(20, 0);
+    display.print("[ PANGGILAN ]"); // Header lebih simpel
+    display.drawFastHLine(0, 10, 128, WHITE);
+
+    // Update Posisi Scroll Khusus
+    if (millis() - lastScrollTime > scrollDelay) {
+      scrollPos++;
+      lastScrollTime = millis();
+    }
+
+    // Nama Penelepon (Scrolling Text Size 2)
+    display.setTextSize(2);
+    int maxCharsCall = 10; 
+    if (callName.length() <= maxCharsCall) {
+      int centerCall = (128 - (callName.length() * 12)) / 2;
+      display.setCursor(centerCall, 25); // Posisi lebih ke tengah karena ikon dihapus
+      display.print(callName);
+    } else {
+      String displayStr = callName + "   " + callName;
+      int subStart = (scrollPos % (callName.length() + 3));
+      display.setCursor(0, 25);
+      display.print(displayStr.substring(subStart, subStart + maxCharsCall));
+    }
+
+    display.setTextSize(1);
+    display.setCursor(0, 56);
+    display.print("Hold:Reject  Dbl:Accept");
+  } 
+  // 2. PRIORITAS KEDUA: NOTIFIKASI
+  else if (isNotify) {
     display.setTextSize(1);
 
     // 1. Tampilkan [ src ] di tengah paling atas
@@ -338,11 +375,22 @@ void processBuffer(String data) {
           lastVolumeChangeMillis = millis();
         }
       } else if (type == "notify") {
-        scrollPos = 0;
-        notifySrc = doc["src"] | "Notification";
-        notifyTitle = doc["title"] | "";
-        notifyBody = doc["body"] | "";
-        isNotify = true;
+        String tempSrc = doc["src"] | "";
+        if (tempSrc != "Incoming call") {
+          notifySrc = tempSrc;
+          notifyTitle = doc["title"] | "";
+          notifyBody = doc["body"] | "";
+          isNotify = true;
+          scrollPos = 0; 
+        }
+      } else if (type == "call") {
+        String cmd = doc["cmd"] | "";
+        if (cmd == "incoming") {
+          callName = doc["name"] | "Unknown";
+          isIncomingCall = true;
+        } else if (cmd == "end" || cmd == "accept") {
+          isIncomingCall = false;
+        }
       }
     }
   }
@@ -430,26 +478,34 @@ void loop() {
   // --- 1. LOGIKA TOUCH SENSOR (SINGLE, DOUBLE, LONG) ---
   bool currentTouch = digitalRead(TOUCH_PIN);
 
-  // A. SAAT BARU DISENTUH
+  // A. Saat baru disentuh
   if (currentTouch == HIGH && !isTouching) {
     isTouching = true;
     touchStartTime = millis();
   }
 
-  // B. SAAT SENTUHAN DILEPAS
+  // B. Saat sentuhan dilepas
   if (currentTouch == LOW && isTouching) {
     isTouching = false;
     unsigned long duration = millis() - touchStartTime;
 
     if (duration >= longTouchDuration) {
-      // --- ACTION: LONG TOUCH (Play/Pause) ---
-      if (isNotify) {
-        isNotify = false; // Jika ada notif, tutup dulu
+      // ACTION: LONG TOUCH
+      if (isIncomingCall) {
+        // Reject Telepon
+        sendToGB("GB({\"t\":\"call\",\"cmd\":\"reject\"})\n");
+        isIncomingCall = false;
+        Serial.println("Action: Long Touch - Reject Call");
+      } else if (isNotify) {
+        // Tutup Notifikasi
+        isNotify = false;
+        Serial.println("Action: Long Touch - Dismiss Notify");
       } else {
+        // Toggle Music
         sendToGB("GB({\"t\":\"music\",\"n\":\"toggle\"})\n");
         Serial.println("Action: Long Touch - Toggle Play/Pause");
       }
-      touchCounter = 0; // Reset counter
+      touchCounter = 0; 
     } 
     else {
       // Potensi Single atau Double Touch
@@ -458,13 +514,16 @@ void loop() {
     }
   }
 
-  // C. EVALUASI SINGLE ATAU DOUBLE TOUCH (Setelah jeda tertentu)
+  // C. Evaluasi Single atau Double Touch (Setelah jeda interval)
   if (touchCounter > 0 && (millis() - lastTouchReleaseTime > doubleTouchInterval)) {
     if (touchCounter == 1) {
-      // --- ACTION: SINGLE TOUCH (Ganti Mode) ---
-      if (isNotify) {
+      // ACTION: SINGLE TOUCH
+      if (isIncomingCall || isNotify) {
+        // Jika ada Call/Notif, satu sentuhan untuk dismiss/tutup UI saja
+        isIncomingCall = false;
         isNotify = false;
       } else {
+        // Ganti Mode Dashboard
         currentMode++;
         if (!isNavigating && currentMode == 3) currentMode = 0;
         else if (currentMode > 3) currentMode = 0;
@@ -472,21 +531,30 @@ void loop() {
       }
     } 
     else if (touchCounter >= 2) {
-      // --- ACTION: DOUBLE TOUCH (Next Lagu) ---
-      if (!isNotify) {
+      // ACTION: DOUBLE TOUCH
+      if (isIncomingCall) {
+        // Angkat Telepon
+        sendToGB("GB({\"t\":\"call\",\"cmd\":\"accept\"})\n");
+        isIncomingCall = false;
+        Serial.println("Action: Double Touch - Accept Call");
+      } else if (!isNotify) {
+        // Next Lagu
         sendToGB("GB({\"t\":\"music\",\"n\":\"next\"})\n");
         Serial.println("Action: Double Touch - Next Track");
       }
     }
-    touchCounter = 0; // Reset setelah eksekusi
+    touchCounter = 0; // Reset counter
   }
 
+  // --- 2. LOGIKA OVERLAY VOLUME (Timeout 3 Detik) ---
   if (showVolumeOverlay && (millis() - lastVolumeChangeMillis > 3000)) {
     showVolumeOverlay = false;
   }
 
+  // --- 3. BACKGROUND PROCESS (SPEDOMETER) ---
   processAccel();
 
+  // --- 4. UPDATE LAYAR (Setiap 100ms agar smooth) ---
   static unsigned long lastDisplayMillis = 0;
   if (millis() - lastDisplayMillis > 100) {
     updateDisplay();
