@@ -15,7 +15,7 @@
 #include <ArduinoOTA.h>
 
 #define OTA_JUMPER_PIN 23
-bool otaMode = false; // Flag untuk mengecek apakah OTA aktif
+bool otaMode = false;  // Flag untuk mengecek apakah OTA aktif
 
 // --- KONFIGURASI PIN ---
 #define I2C_SDA 21
@@ -23,8 +23,8 @@ bool otaMode = false; // Flag untuk mengecek apakah OTA aktif
 #define TOUCH_PIN 14
 
 // Konfigurasi WiFi (Wajib untuk OTA)
-const char* ssid = "MIKRO";
-const char* password = "1DEAlist";
+const char *ssid = "MIKRO";
+const char *password = "1DEAlist";
 
 // --- KONFIGURASI OLED ---
 #define SCREEN_WIDTH 128
@@ -63,7 +63,7 @@ unsigned long lastVolumeChangeMillis = 0;
 int lastVolumeLevel = 0;  // Untuk mendeteksi perubahan
 
 // Array nama hari dalam Bahasa Indonesia
-const char* namaHari[] = {"Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"};
+const char *namaHari[] = { "Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu" };
 
 // --- UUID GADGETBRIDGE ---
 #define SERVICE_UUID "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
@@ -72,12 +72,12 @@ const char* namaHari[] = {"Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat",
 BLECharacteristic *pCharacteristicTX;
 
 void setupOTA() {
-  pinMode(OTA_JUMPER_PIN, INPUT_PULLUP); // Menggunakan internal pull-up
-  
+  pinMode(OTA_JUMPER_PIN, INPUT_PULLUP);  // Menggunakan internal pull-up
+
   // Cek jika pin 23 dijumper ke GND (LOW)
   if (digitalRead(OTA_JUMPER_PIN) == LOW) {
     otaMode = true;
-    
+
     display.clearDisplay();
     display.setCursor(0, 20);
     display.println("OTA MODE ACTIVE");
@@ -86,7 +86,7 @@ void setupOTA() {
 
     WiFi.mode(WIFI_STA);
     WiFi.begin(ssid, password);
-    
+
     // Tunggu koneksi maksimal 10 detik agar tidak stuck
     unsigned long startAttempt = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 10000) {
@@ -215,25 +215,26 @@ void updateDisplay() {
           }
           break;
         }
-      case 1: { // MODE JAM BESAR
-      DateTime now = rtc.now(); // Ambil data waktu terbaru
-      
-      // Tampilkan Jam Besar
-      display.setTextSize(3);
-      display.setCursor(19, 10); 
-      display.print(currentTime);
-      
-      // Tampilkan Nama Hari (di bawah jam)
-      display.setTextSize(1);
-      int centerX = (128 - (String(namaHari[now.dayOfTheWeek()]).length() * 6)) / 2; // Hitung posisi tengah
-      display.setCursor(centerX, 40);
-      display.print(namaHari[now.dayOfTheWeek()]);
-      
-      // Tampilkan Tanggal (paling bawah)
-      display.setCursor(34, 52);
-      display.printf("%02d/%02d/%04d", now.day(), now.month(), now.year());
-      break;
-    }
+      case 1:
+        {                            // MODE JAM BESAR
+          DateTime now = rtc.now();  // Ambil data waktu terbaru
+
+          // Tampilkan Jam Besar
+          display.setTextSize(3);
+          display.setCursor(19, 10);
+          display.print(currentTime);
+
+          // Tampilkan Nama Hari (di bawah jam)
+          display.setTextSize(1);
+          int centerX = (128 - (String(namaHari[now.dayOfTheWeek()]).length() * 6)) / 2;  // Hitung posisi tengah
+          display.setCursor(centerX, 40);
+          display.print(namaHari[now.dayOfTheWeek()]);
+
+          // Tampilkan Tanggal (paling bawah)
+          display.setCursor(34, 52);
+          display.printf("%02d/%02d/%04d", now.day(), now.month(), now.year());
+          break;
+        }
       case 2:
         {  // MODE SPEDOMETER
           display.setTextSize(1);
@@ -297,16 +298,26 @@ void processBuffer(String data) {
         musicState = doc["state"].as<String>();
       } else if (type == "nav") {
         navInstr = doc["instr"] | "";
-        navDist = doc["distance"] | "";
+        String rawDist = doc["distance"] | "";  // Ambil data mentah jarak
 
-        // Jika navigasi memiliki isi, aktifkan mode 3
-        if (navInstr != "" && navInstr != " ") {
-          isNavigating = true;
-          currentMode = 3;  // OTOMATIS PINDAH KE MODE 3
-        } else {
-          isNavigating = false;
-          if (currentMode == 3) currentMode = 1;  // Jika navigasi selesai, balik ke mode Jam
+        // --- PERBAIKAN KARAKTER ANEH ---
+        // Kita akan membersihkan karakter non-ASCII (seperti )
+        navDist = "";
+        for (int i = 0; i < rawDist.length(); i++) {
+          char c = rawDist[i];
+          // Hanya ambil karakter angka, huruf, dan spasi (ASCII 32-126)
+          if (c >= 32 && c <= 126) {
+            navDist += c;
+          } else {
+            navDist += " ";  // Ganti karakter aneh dengan spasi
+          }
         }
+
+        // Bersihkan spasi ganda yang mungkin muncul
+        navDist.trim();
+
+        isNavigating = (navInstr != "" && navInstr != " ");
+        if (isNavigating) currentMode = 3;
       } else if (type == "audio") {
         int newVolume = doc["v"];
         if (newVolume != volumeLevel) {  // Jika volume berubah
@@ -369,15 +380,17 @@ void setup() {
   // Inisialisasi Hardware Dasar
   if (!rtc.begin()) Serial.println("RTC Gagal!");
   if (!accel.begin()) Serial.println("ADXL345 Gagal!");
-  if (!display.begin(SSD1306_SWITCHCAPVCC, i2c_Address)) for (;;);
+  if (!display.begin(SSD1306_SWITCHCAPVCC, i2c_Address))
+    for (;;)
+      ;
 
   // 1. CEK JUMPER OTA TERLEBIH DAHULU
-  setupOTA(); 
+  setupOTA();
 
   // 2. JIKA OTA AKTIF, BERHENTI DI SINI (Fokus OTA)
   if (otaMode) {
     Serial.println("System focus to OTA. Bluetooth disabled.");
-    return; // Keluar dari setup, fungsi setup selanjutnya (BLE) tidak dijalankan
+    return;  // Keluar dari setup, fungsi setup selanjutnya (BLE) tidak dijalankan
   }
 
   // 3. JIKA TIDAK OTA, JALANKAN BLUETOOTH & KALIBRASI (Normal Mode)
@@ -418,7 +431,7 @@ void loop() {
   if (otaMode) {
     // FOKUS HANYA OTA
     ArduinoOTA.handle();
-    
+
     // Opsional: Tampilkan status di layar agar tahu ESP32 tidak hang
     static unsigned long lastTick = 0;
     if (millis() - lastTick > 1000) {
@@ -432,7 +445,7 @@ void loop() {
       display.display();
       lastTick = millis();
     }
-    return; // "Skip" semua kodingan di bawah (Sensor, Spedo, BLE, dll)
+    return;  // "Skip" semua kodingan di bawah (Sensor, Spedo, BLE, dll)
   }
   // 1. Cek Touch Sensor
   static bool lastTouchState = LOW;
