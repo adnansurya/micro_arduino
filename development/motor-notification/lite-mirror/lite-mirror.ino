@@ -71,6 +71,7 @@ int touchCounter = 0;
 const int longTouchDuration = 800;    // 0.8 detik untuk Long Touch
 const int doubleTouchInterval = 300;  // Jeda maksimal antar sentuhan untuk Double Touch
 
+
 // Array nama hari dalam Bahasa Indonesia
 const char *namaHari[] = { "Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu" };
 const char *namaBulan[] = { "", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
@@ -398,8 +399,32 @@ void processBuffer(String data) {
 
 void sendToGB(String cmd) {
   if (deviceConnected) {
-    pCharacteristicTX->setValue(cmd.c_str());
+    // 1. Tambahkan pembungkus GB( ... )
+    // 2. Gunakan \x03 (Ctrl+C) untuk memastikan buffer bersih
+    // 3. Tambahkan \n di akhir sebagai terminator
+    // String finalPacket = "GB(" + cmd + ")\n";
+    String finalPacket = cmd + "\n";
+
+    pCharacteristicTX->setValue(finalPacket.c_str());
     pCharacteristicTX->notify();
+    
+    Serial.print("Sending to Android: ");
+    Serial.println(finalPacket);
+  }
+}
+
+void sendRawJSON(String jsonString) {
+  if (deviceConnected) {
+    // Pastikan data diakhiri dengan newline agar parser Android terpicu
+    if (!jsonString.endsWith("\n")) {
+      jsonString += "\n";
+    }
+
+    pCharacteristicTX->setValue(jsonString.c_str());
+    pCharacteristicTX->notify();
+    
+    Serial.print("Raw Sent: ");
+    Serial.print(jsonString);
   }
 }
 
@@ -430,6 +455,18 @@ class MyServerCallbacks : public BLEServerCallbacks {
     pServer->getAdvertising()->start();
   }
 };
+
+void checkSerial() {
+  if (Serial.available()) {
+    String manualCmd = Serial.readStringUntil('\n');
+    manualCmd.trim(); // Bersihkan spasi/newline
+    
+    // if (manualCmd.startsWith("GB({")) {
+      sendToGB(manualCmd);
+      Serial.println("Sent to Android: " + manualCmd);
+    // }
+  }
+}
 
 void setup() {
   Serial.begin(115200);
@@ -475,6 +512,8 @@ void setup() {
 }
 
 void loop() {
+
+  // checkSerial();
   // --- 1. LOGIKA TOUCH SENSOR (SINGLE, DOUBLE, LONG) ---
   bool currentTouch = digitalRead(TOUCH_PIN);
 
