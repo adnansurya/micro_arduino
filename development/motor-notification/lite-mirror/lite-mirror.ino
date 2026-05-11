@@ -51,6 +51,14 @@ bool showVolumeOverlay = false;
 unsigned long lastVolumeChangeMillis = 0;
 int lastVolumeLevel = 0; 
 
+// --- VARIABEL RUNNING TEXT ---
+int scrollPos = 0;
+unsigned long lastScrollTime = 0;
+int scrollDelay = 150; // Kecepatan scroll (ms), makin kecil makin cepat
+bool scrollTitleTurn = true; // True: Judul yang jalan, False: Artist yang jalan
+unsigned long lastSwitchTime = 0;
+int switchDelay = 5000; // Berganti fokus setiap 5 detik
+
 // Array nama hari dalam Bahasa Indonesia
 const char *namaHari[] = { "Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu" };
 const char *namaBulan[] = { "", "Januari", "Februari", "Maret", "April", "Mei", "Juni", 
@@ -68,6 +76,27 @@ void updateTimeFromRTC() {
   char buf[10];
   sprintf(buf, "%02d:%02d", now.hour(), now.minute());
   currentTime = String(buf);
+}
+
+void drawScrollingText(String text, int y, bool isFocus) {
+  int maxChars = 21; // Jumlah karakter yang muat di layar (lebar 128px, font size 1)
+  
+  if (text.length() <= maxChars) {
+    display.setCursor(0, y);
+    display.print(text);
+  } else {
+    if (isFocus) {
+      // Logika Geser Teks
+      String displayStr = text + "   " + text; // Tambah spasi antar repetisi
+      int subStart = (scrollPos % (text.length() + 3));
+      display.setCursor(0, y);
+      display.print(displayStr.substring(subStart, subStart + maxChars));
+    } else {
+      // Jika sedang tidak fokus, tampilkan statis (potong di awal)
+      display.setCursor(0, y);
+      display.print(text.substring(0, maxChars - 2) + "..");
+    }
+  }
 }
 
 // --- FUNGSI PERHITUNGAN SPEDOMETER ---
@@ -134,16 +163,33 @@ void updateDisplay() {
         display.setTextSize(1);
         display.setCursor(0, 0);
         display.print(currentTime);
+        
         if (!deviceConnected) {
           display.setCursor(0, 30);
           display.print("DEVICE DISCONNECTED");
         } else {
           display.setCursor(85, 0);
           display.printf("V:%d%%", volumeLevel);
-          display.setCursor(0, 22);
-          display.print(title.length() > 18 ? title.substring(0, 16) + ".." : title);
-          display.setCursor(0, 35);
-          display.print(artist.length() > 18 ? artist.substring(0, 16) + ".." : artist);
+
+          // Logika Pergantian Fokus Scroll
+          if (millis() - lastSwitchTime > switchDelay) {
+            scrollTitleTurn = !scrollTitleTurn;
+            scrollPos = 0; // Reset posisi setiap ganti fokus
+            lastSwitchTime = millis();
+          }
+
+          // Update Posisi Scroll
+          if (millis() - lastScrollTime > scrollDelay) {
+            scrollPos++;
+            lastScrollTime = millis();
+          }
+
+          // Baris Judul (y=22)
+          drawScrollingText(title, 22, scrollTitleTurn);
+          
+          // Baris Artis (y=35)
+          drawScrollingText(artist, 35, !scrollTitleTurn);
+
           display.setCursor(0, 55);
           display.print(musicState == "play" ? "> PLAYING" : "|| PAUSED");
         }
