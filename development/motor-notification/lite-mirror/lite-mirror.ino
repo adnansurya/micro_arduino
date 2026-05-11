@@ -36,7 +36,7 @@ float threshold = 0.6;
 int currentMode = 0;  // 0:Musik, 1:Jam, 2:Spedometer
 bool deviceConnected = false;
 String artist = "-", title = "-", currentTime = "00:00";
-String navInstr = "", navDist = "", navEta = ""; 
+String navInstr = "", navDist = "", navEta = "";
 String musicState = "pause";
 int volumeLevel = 0;
 String inputBuffer = "";
@@ -49,20 +49,20 @@ String notifySrc = "", notifyTitle = "", notifyBody = "";
 // --- VARIABEL OVERLAY VOLUME ---
 bool showVolumeOverlay = false;
 unsigned long lastVolumeChangeMillis = 0;
-int lastVolumeLevel = 0; 
+int lastVolumeLevel = 0;
 
 // --- VARIABEL RUNNING TEXT ---
 int scrollPos = 0;
 unsigned long lastScrollTime = 0;
-int scrollDelay = 150; // Kecepatan scroll (ms), makin kecil makin cepat
-bool scrollTitleTurn = true; // True: Judul yang jalan, False: Artist yang jalan
+int scrollDelay = 150;        // Kecepatan scroll (ms), makin kecil makin cepat
+bool scrollTitleTurn = true;  // True: Judul yang jalan, False: Artist yang jalan
 unsigned long lastSwitchTime = 0;
-int switchDelay = 5000; // Berganti fokus setiap 5 detik
+int switchDelay = 5000;  // Berganti fokus setiap 5 detik
 
 // Array nama hari dalam Bahasa Indonesia
 const char *namaHari[] = { "Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu" };
-const char *namaBulan[] = { "", "Januari", "Februari", "Maret", "April", "Mei", "Juni", 
-                             "Juli", "Agustus", "September", "Oktober", "November", "Desember" };
+const char *namaBulan[] = { "", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+                            "Juli", "Agustus", "September", "Oktober", "November", "Desember" };
 
 // --- UUID GADGETBRIDGE ---
 #define SERVICE_UUID "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
@@ -79,15 +79,15 @@ void updateTimeFromRTC() {
 }
 
 void drawScrollingText(String text, int y, bool isFocus) {
-  int maxChars = 21; // Jumlah karakter yang muat di layar (lebar 128px, font size 1)
-  
+  int maxChars = 21;  // Jumlah karakter yang muat di layar (lebar 128px, font size 1)
+
   if (text.length() <= maxChars) {
     display.setCursor(0, y);
     display.print(text);
   } else {
     if (isFocus) {
       // Logika Geser Teks
-      String displayStr = text + "   " + text; // Tambah spasi antar repetisi
+      String displayStr = text + "   " + text;  // Tambah spasi antar repetisi
       int subStart = (scrollPos % (text.length() + 3));
       display.setCursor(0, y);
       display.print(displayStr.substring(subStart, subStart + maxChars));
@@ -133,18 +133,41 @@ void updateDisplay() {
 
   if (isNotify) {
     display.setTextSize(1);
-    display.setCursor(0, 0);
-    display.print("[" + notifySrc + "]");
-    display.drawFastHLine(0, 11, 128, WHITE);
-    display.setCursor(0, 15);
-    display.print(notifyTitle);
-    display.setCursor(0, 30);
-    display.setTextSize(1);
-    display.print(notifyBody.length() > 20 ? notifyBody.substring(0, 18) + ".." : notifyBody);
-    display.setCursor(20, 56);
-    display.print("> Dismiss <");
-  } 
-  else if (showVolumeOverlay) {
+
+    // 1. Tampilkan [ src ] di tengah paling atas
+    String srcText = "[ " + notifySrc + " ]";
+    int centerSrc = (128 - (srcText.length() * 6)) / 2;
+    display.setCursor(centerSrc, 0);
+    display.print(srcText);
+
+    // 2. Tampilkan Title dengan Scrolling Text (Baris 12)
+    // Menggunakan logika scroll yang sama dengan mode musik
+    if (millis() - lastScrollTime > scrollDelay) {
+      scrollPos++;
+      lastScrollTime = millis();
+    }
+
+    int maxChars = 21;
+    if (notifyTitle.length() <= maxChars) {
+      int centerTitle = (128 - (notifyTitle.length() * 6)) / 2;
+      display.setCursor(centerTitle, 12);
+      display.print(notifyTitle);
+    } else {
+      String displayStr = notifyTitle + "   " + notifyTitle;
+      int subStart = (scrollPos % (notifyTitle.length() + 3));
+      display.setCursor(0, 12);
+      display.print(displayStr.substring(subStart, subStart + maxChars));
+    }
+
+    // 3. Garis Pembatas (Posisinya tetap di y=22 karena title sekarang 1 baris scroll)
+    display.drawFastHLine(0, 22, 128, WHITE);
+
+    // 4. Tampilkan "Body" dengan tanda kutip
+    display.setCursor(0, 28);
+    // Tambahkan tanda kutip di awal dan akhir
+    String quotedBody = "\"" + notifyBody + "\"";
+    display.print(quotedBody);
+  } else if (showVolumeOverlay) {
     display.setTextSize(1);
     display.setCursor(35, 10);
     display.print("VOLUME");
@@ -159,101 +182,105 @@ void updateDisplay() {
   } else {
     updateTimeFromRTC();
     switch (currentMode) {
-      case 0: { // MODE MUSIK
-        display.setTextSize(1);
-        display.setCursor(0, 0);
-        display.print(currentTime);
-        
-        if (!deviceConnected) {
-          display.setCursor(0, 30);
-          display.print("DEVICE DISCONNECTED");
-        } else {
-          display.setCursor(85, 0);
-          display.printf("V:%d%%", volumeLevel);
+      case 0:
+        {  // MODE MUSIK
+          display.setTextSize(1);
+          display.setCursor(0, 0);
+          display.print(currentTime);
 
-          // Logika Pergantian Fokus Scroll
-          if (millis() - lastSwitchTime > switchDelay) {
-            scrollTitleTurn = !scrollTitleTurn;
-            scrollPos = 0; // Reset posisi setiap ganti fokus
-            lastSwitchTime = millis();
+          if (!deviceConnected) {
+            display.setCursor(0, 30);
+            display.print("DEVICE DISCONNECTED");
+          } else {
+            display.setCursor(85, 0);
+            display.printf("V:%d%%", volumeLevel);
+
+            // Logika Pergantian Fokus Scroll
+            if (millis() - lastSwitchTime > switchDelay) {
+              scrollTitleTurn = !scrollTitleTurn;
+              scrollPos = 0;  // Reset posisi setiap ganti fokus
+              lastSwitchTime = millis();
+            }
+
+            // Update Posisi Scroll
+            if (millis() - lastScrollTime > scrollDelay) {
+              scrollPos++;
+              lastScrollTime = millis();
+            }
+
+            // Baris Judul (y=22)
+            drawScrollingText(title, 22, scrollTitleTurn);
+
+            // Baris Artis (y=35)
+            drawScrollingText(artist, 35, !scrollTitleTurn);
+
+            display.setCursor(0, 55);
+            display.print(musicState == "play" ? "> PLAYING" : "|| PAUSED");
           }
-
-          // Update Posisi Scroll
-          if (millis() - lastScrollTime > scrollDelay) {
-            scrollPos++;
-            lastScrollTime = millis();
-          }
-
-          // Baris Judul (y=22)
-          drawScrollingText(title, 22, scrollTitleTurn);
-          
-          // Baris Artis (y=35)
-          drawScrollingText(artist, 35, !scrollTitleTurn);
-
-          display.setCursor(0, 55);
-          display.print(musicState == "play" ? "> PLAYING" : "|| PAUSED");
+          break;
         }
-        break;
-      }
-      case 1: { // MODE JAM BESAR
-        DateTime now = rtc.now();
-        
-        // Tampilkan Jam Besar
-        display.setTextSize(3);
-        display.setCursor(19, 10);
-        display.print(currentTime);
-        
-        // Tampilkan Nama Hari (Kecil di tengah)
-        display.setTextSize(1);
-        String hari = String(namaHari[now.dayOfTheWeek()]);
-        int centerHari = (128 - (hari.length() * 6)) / 2;
-        display.setCursor(centerHari, 40);
-        display.print(hari);
-        
-        // Tampilkan Tanggal Format Panjang (Contoh: 11 Mei 2026)
-        // Kita hitung posisi tengah secara dinamis
-        String tglPanjang = String(now.day()) + " " + String(namaBulan[now.month()]) + " " + String(now.year());
-        int centerTgl = (128 - (tglPanjang.length() * 6)) / 2;
-        
-        display.setCursor(centerTgl, 52);
-        display.print(tglPanjang);
-        break;
-      }
-      case 2: { // MODE SPEDOMETER
-        display.setTextSize(1);
-        display.setCursor(0, 0);
-        display.print("SPEEDOMETER");
-        display.setTextSize(4);
-        display.setCursor(20, 20);
-        display.print((int)speedKMH);
-        display.setTextSize(2);
-        display.print(" km/h");
-        display.drawRect(0, 60, 128, 4, WHITE);
-        int barWidth = map(constrain((int)speedKMH, 0, 60), 0, 60, 0, 128);
-        display.fillRect(0, 60, barWidth, 4, WHITE);
-        break;
-      }
-      case 3: { // MODE NAVIGASI
-        display.setTextSize(1);
-        display.setCursor(0, 0);
-        display.print("NAVIGASI");
-        display.drawFastHLine(0, 10, 128, WHITE);
-        
-        // Baris Jarak & ETA
-        display.setCursor(0, 15);
-        display.print("Dst: " + navDist); // Menampilkan Jarak di kiri
-        
-        // Hitung posisi kanan untuk ETA (ukuran teks 1: ~6px per karakter)
-        int etaPos = 128 - (navEta.length() * 6);
-        display.setCursor(etaPos, 15);
-        display.print(navEta); // Menampilkan ETA di ujung kanan
-        
-        // Tampilkan Instruksi Navigasi (1-3 Baris)
-        display.setTextSize(1);
-        display.setCursor(0, 28);
-        display.print(navInstr); 
-        break;
-      }
+      case 1:
+        {  // MODE JAM BESAR
+          DateTime now = rtc.now();
+
+          // Tampilkan Jam Besar
+          display.setTextSize(3);
+          display.setCursor(19, 10);
+          display.print(currentTime);
+
+          // Tampilkan Nama Hari (Kecil di tengah)
+          display.setTextSize(1);
+          String hari = String(namaHari[now.dayOfTheWeek()]);
+          int centerHari = (128 - (hari.length() * 6)) / 2;
+          display.setCursor(centerHari, 40);
+          display.print(hari);
+
+          // Tampilkan Tanggal Format Panjang (Contoh: 11 Mei 2026)
+          // Kita hitung posisi tengah secara dinamis
+          String tglPanjang = String(now.day()) + " " + String(namaBulan[now.month()]) + " " + String(now.year());
+          int centerTgl = (128 - (tglPanjang.length() * 6)) / 2;
+
+          display.setCursor(centerTgl, 52);
+          display.print(tglPanjang);
+          break;
+        }
+      case 2:
+        {  // MODE SPEDOMETER
+          display.setTextSize(1);
+          display.setCursor(0, 0);
+          display.print("SPEEDOMETER");
+          display.setTextSize(4);
+          display.setCursor(20, 20);
+          display.print((int)speedKMH);
+          display.setTextSize(2);
+          display.print(" km/h");
+          display.drawRect(0, 60, 128, 4, WHITE);
+          int barWidth = map(constrain((int)speedKMH, 0, 60), 0, 60, 0, 128);
+          display.fillRect(0, 60, barWidth, 4, WHITE);
+          break;
+        }
+      case 3:
+        {  // MODE NAVIGASI
+          display.setTextSize(1);
+          display.setCursor(0, 0);
+          display.print("NAVIGASI");
+          display.drawFastHLine(0, 10, 128, WHITE);
+
+          // Baris Jarak & ETA
+          display.setCursor(0, 15);
+          display.print("Dst: " + navDist);  // Menampilkan Jarak di kiri
+
+          // Hitung posisi kanan untuk ETA (ukuran teks 1: ~6px per karakter)
+          int etaPos = 128 - (navEta.length() * 6);
+          display.setCursor(etaPos, 15);
+          display.print(navEta);  // Menampilkan ETA di ujung kanan
+
+          // Tampilkan Instruksi Navigasi (1-3 Baris)
+          display.setTextSize(1);
+          display.setCursor(0, 28);
+          display.print(navInstr);
+          break;
+        }
     }
   }
   display.display();
@@ -261,13 +288,13 @@ void updateDisplay() {
 
 // --- FUNGSI TERIMA DATA GADGETBRIDGE ---
 void processBuffer(String data) {
-  Serial.print("Data Masuk: "); // Tetap dipertahankan untuk debugging
+  Serial.print("Data Masuk: ");  // Tetap dipertahankan untuk debugging
   Serial.println(data);
 
   if (data.indexOf("setTime(") != -1) {
     int startIdx = data.indexOf("(") + 1;
     long unixTimeUTC = data.substring(startIdx, data.indexOf(")")).toInt();
-    rtc.adjust(DateTime(unixTimeUTC + 28800)); // Sync GMT+8
+    rtc.adjust(DateTime(unixTimeUTC + 28800));  // Sync GMT+8
   }
 
   int start = data.indexOf("GB({");
@@ -303,6 +330,7 @@ void processBuffer(String data) {
           lastVolumeChangeMillis = millis();
         }
       } else if (type == "notify") {
+        scrollPos = 0;
         notifySrc = doc["src"] | "Notification";
         notifyTitle = doc["title"] | "";
         notifyBody = doc["body"] | "";
@@ -354,7 +382,9 @@ void setup() {
 
   if (!rtc.begin()) Serial.println("RTC Gagal!");
   if (!accel.begin()) Serial.println("ADXL345 Gagal!");
-  if (!display.begin(SSD1306_SWITCHCAPVCC, i2c_Address)) for (;;);
+  if (!display.begin(SSD1306_SWITCHCAPVCC, i2c_Address))
+    for (;;)
+      ;
 
   // Kalibrasi ADXL345
   display.clearDisplay();
