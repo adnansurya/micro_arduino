@@ -59,6 +59,14 @@ bool scrollTitleTurn = true;  // True: Judul yang jalan, False: Artist yang jala
 unsigned long lastSwitchTime = 0;
 int switchDelay = 5000;  // Berganti fokus setiap 5 detik
 
+// --- VARIABEL TOUCH ADVANCED ---
+unsigned long touchStartTime = 0;
+unsigned long lastTouchReleaseTime = 0;
+bool isTouching = false;
+int touchCounter = 0;
+const int longTouchDuration = 800;  // 0.8 detik untuk Long Touch
+const int doubleTouchInterval = 300; // Jeda maksimal antar sentuhan untuk Double Touch
+
 // Array nama hari dalam Bahasa Indonesia
 const char *namaHari[] = { "Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu" };
 const char *namaBulan[] = { "", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
@@ -419,20 +427,59 @@ void setup() {
 }
 
 void loop() {
-  static bool lastTouchState = LOW;
+  // --- 1. LOGIKA TOUCH SENSOR (SINGLE, DOUBLE, LONG) ---
   bool currentTouch = digitalRead(TOUCH_PIN);
 
-  if (currentTouch == HIGH && lastTouchState == LOW) {
-    if (isNotify) {
-      isNotify = false;
-    } else {
-      currentMode++;
-      if (!isNavigating && currentMode == 3) currentMode = 0;
-      else if (currentMode > 3) currentMode = 0;
-    }
-    delay(200);
+  // A. SAAT BARU DISENTUH
+  if (currentTouch == HIGH && !isTouching) {
+    isTouching = true;
+    touchStartTime = millis();
   }
-  lastTouchState = currentTouch;
+
+  // B. SAAT SENTUHAN DILEPAS
+  if (currentTouch == LOW && isTouching) {
+    isTouching = false;
+    unsigned long duration = millis() - touchStartTime;
+
+    if (duration >= longTouchDuration) {
+      // --- ACTION: LONG TOUCH (Play/Pause) ---
+      if (isNotify) {
+        isNotify = false; // Jika ada notif, tutup dulu
+      } else {
+        sendToGB("GB({\"t\":\"music\",\"n\":\"toggle\"})\n");
+        Serial.println("Action: Long Touch - Toggle Play/Pause");
+      }
+      touchCounter = 0; // Reset counter
+    } 
+    else {
+      // Potensi Single atau Double Touch
+      touchCounter++;
+      lastTouchReleaseTime = millis();
+    }
+  }
+
+  // C. EVALUASI SINGLE ATAU DOUBLE TOUCH (Setelah jeda tertentu)
+  if (touchCounter > 0 && (millis() - lastTouchReleaseTime > doubleTouchInterval)) {
+    if (touchCounter == 1) {
+      // --- ACTION: SINGLE TOUCH (Ganti Mode) ---
+      if (isNotify) {
+        isNotify = false;
+      } else {
+        currentMode++;
+        if (!isNavigating && currentMode == 3) currentMode = 0;
+        else if (currentMode > 3) currentMode = 0;
+        Serial.println("Action: Single Touch - Next Mode");
+      }
+    } 
+    else if (touchCounter >= 2) {
+      // --- ACTION: DOUBLE TOUCH (Next Lagu) ---
+      if (!isNotify) {
+        sendToGB("GB({\"t\":\"music\",\"n\":\"next\"})\n");
+        Serial.println("Action: Double Touch - Next Track");
+      }
+    }
+    touchCounter = 0; // Reset setelah eksekusi
+  }
 
   if (showVolumeOverlay && (millis() - lastVolumeChangeMillis > 3000)) {
     showVolumeOverlay = false;
