@@ -32,7 +32,7 @@ unsigned long lastAccelTime = 0;
 float offsetMag = 0;
 float threshold = 0.6;
 float filteredAccel = 0;
-const float alpha = 0.15; // Faktor filter (0.05 - 0.2), makin kecil makin halus
+const float alpha = 0.15;  // Faktor filter (0.05 - 0.2), makin kecil makin halus
 
 // --- VARIABEL SISTEM & BLE ---
 int currentMode = 0;  // 0:Musik, 1:Jam, 2:Spedometer
@@ -125,7 +125,7 @@ void processAccel() {
 
   // 1. Hitung Resultan (Koreksi terhadap kemiringan)
   float totalMag = sqrt(sq(event.acceleration.x) + sq(event.acceleration.y) + sq(event.acceleration.z));
-  float netAccel = totalMag - offsetMag; // Offset sudah dikalibrasi di setup()
+  float netAccel = totalMag - offsetMag;  // Offset sudah dikalibrasi di setup()
 
   // 2. Low Pass Filter untuk membuang getaran mesin (noise)
   filteredAccel = (alpha * netAccel) + ((1 - alpha) * filteredAccel);
@@ -141,16 +141,21 @@ void processAccel() {
   static unsigned long lastMoveTime = 0;
   if (abs(filteredAccel) > 0.2) {
     lastMoveTime = millis();
-  } else if (millis() - lastMoveTime > 1000) { // Jika diam 1 detik
-    velocityMS *= 0.8; // Decay lebih cepat
+  } else if (millis() - lastMoveTime > 1000) {  // Jika diam 1 detik
+    velocityMS *= 0.8;                          // Decay lebih cepat
     if (velocityMS < 0.1) velocityMS = 0;
   }
-  
+
   speedKMH = velocityMS * 3.6;
 }
 
 // --- FUNGSI UPDATE TAMPILAN OLED ---
 void updateDisplay() {
+
+  if (currentMode == 0 && !deviceConnected) {
+    currentMode = 1;
+  }
+
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
 
@@ -159,7 +164,7 @@ void updateDisplay() {
   if (isIncomingCall) {
     display.setTextSize(1);
     display.setCursor(20, 0);
-    display.print("[ PANGGILAN ]"); // Header lebih simpel
+    display.print("[ PANGGILAN ]");  // Header lebih simpel
     display.drawFastHLine(0, 10, 128, WHITE);
 
     // Update Posisi Scroll Khusus
@@ -170,10 +175,10 @@ void updateDisplay() {
 
     // Nama Penelepon (Scrolling Text Size 2)
     display.setTextSize(2);
-    int maxCharsCall = 10; 
+    int maxCharsCall = 10;
     if (callName.length() <= maxCharsCall) {
       int centerCall = (128 - (callName.length() * 12)) / 2;
-      display.setCursor(centerCall, 25); // Posisi lebih ke tengah karena ikon dihapus
+      display.setCursor(centerCall, 25);  // Posisi lebih ke tengah karena ikon dihapus
       display.print(callName);
     } else {
       String displayStr = callName + "   " + callName;
@@ -185,7 +190,7 @@ void updateDisplay() {
     display.setTextSize(1);
     display.setCursor(0, 56);
     display.print("Hold:Reject  Dbl:Accept");
-  } 
+  }
   // 2. PRIORITAS KEDUA: NOTIFIKASI
   else if (isNotify) {
     display.setTextSize(1);
@@ -392,7 +397,7 @@ void processBuffer(String data) {
           notifyTitle = doc["title"] | "";
           notifyBody = doc["body"] | "";
           isNotify = true;
-          scrollPos = 0; 
+          scrollPos = 0;
         }
       } else if (type == "call") {
         String cmd = doc["cmd"] | "";
@@ -412,12 +417,12 @@ void sendToGB(String cmd) {
     // 1. Tambahkan pembungkus GB( ... )
     // 2. Gunakan \x03 (Ctrl+C) untuk memastikan buffer bersih
     // 3. Tambahkan \n di akhir sebagai terminator
-    // String finalPacket = "GB(" + cmd + ")\n";
-    String finalPacket = cmd + "\n";
+    String finalPacket = "\x10"+ cmd + "\n";
+    // String finalPacket = cmd + "\n";
 
     pCharacteristicTX->setValue(finalPacket.c_str());
     pCharacteristicTX->notify();
-    
+
     Serial.print("Sending to Android: ");
     Serial.println(finalPacket);
   }
@@ -432,7 +437,7 @@ void sendRawJSON(String jsonString) {
 
     pCharacteristicTX->setValue(jsonString.c_str());
     pCharacteristicTX->notify();
-    
+
     Serial.print("Raw Sent: ");
     Serial.print(jsonString);
   }
@@ -469,12 +474,13 @@ class MyServerCallbacks : public BLEServerCallbacks {
 void checkSerial() {
   if (Serial.available()) {
     String manualCmd = Serial.readStringUntil('\n');
-    manualCmd.trim(); // Bersihkan spasi/newline
-    
-    // if (manualCmd.startsWith("GB({")) {
+    manualCmd.trim();  // Bersihkan spasi/newline
+
+    if (manualCmd.startsWith("GB({")) {
       sendToGB(manualCmd);
-      Serial.println("Sent to Android: " + manualCmd);
-    // }
+    } else {
+      sendRawJSON(manualCmd);
+    }
   }
 }
 
@@ -507,6 +513,7 @@ void setup() {
 
   // Inisialisasi BLE
   BLEDevice::init("Bangle.js");
+  BLEDevice::setMTU(512);
   BLEServer *pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
   BLEService *pService = pServer->createService(SERVICE_UUID);
@@ -523,7 +530,7 @@ void setup() {
 
 void loop() {
 
-  // checkSerial();
+  checkSerial();
   // --- 1. LOGIKA TOUCH SENSOR (SINGLE, DOUBLE, LONG) ---
   bool currentTouch = digitalRead(TOUCH_PIN);
 
@@ -554,9 +561,8 @@ void loop() {
         sendToGB("GB({\"t\":\"music\",\"n\":\"toggle\"})\n");
         Serial.println("Action: Long Touch - Toggle Play/Pause");
       }
-      touchCounter = 0; 
-    } 
-    else {
+      touchCounter = 0;
+    } else {
       // Potensi Single atau Double Touch
       touchCounter++;
       lastTouchReleaseTime = millis();
@@ -574,12 +580,19 @@ void loop() {
       } else {
         // Ganti Mode Dashboard
         currentMode++;
+        if (currentMode == 0 && !deviceConnected) {
+          currentMode = 1;
+        }
+
         if (!isNavigating && currentMode == 3) currentMode = 0;
         else if (currentMode > 3) currentMode = 0;
+
+        if (currentMode == 0 && !deviceConnected) {
+          currentMode = 1;
+        }
         Serial.println("Action: Single Touch - Next Mode");
       }
-    } 
-    else if (touchCounter >= 2) {
+    } else if (touchCounter >= 2) {
       // ACTION: DOUBLE TOUCH
       if (isIncomingCall) {
         // Angkat Telepon
@@ -592,7 +605,7 @@ void loop() {
         Serial.println("Action: Double Touch - Next Track");
       }
     }
-    touchCounter = 0; // Reset counter
+    touchCounter = 0;  // Reset counter
   }
 
   // --- 2. LOGIKA OVERLAY VOLUME (Timeout 3 Detik) ---
