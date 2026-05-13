@@ -31,6 +31,8 @@ float velocityMS = 0;
 unsigned long lastAccelTime = 0;
 float offsetMag = 0;
 float threshold = 0.6;
+float filteredAccel = 0;
+const float alpha = 0.15; // Faktor filter (0.05 - 0.2), makin kecil makin halus
 
 // --- VARIABEL SISTEM & BLE ---
 int currentMode = 0;  // 0:Musik, 1:Jam, 2:Spedometer
@@ -121,21 +123,29 @@ void processAccel() {
   float dt = (now - lastAccelTime) / 1000.0;
   lastAccelTime = now;
 
-  float currentMag = sqrt(sq(event.acceleration.x) + sq(event.acceleration.y) + sq(event.acceleration.z));
-  float linearAcc = currentMag - offsetMag;
+  // 1. Hitung Resultan (Koreksi terhadap kemiringan)
+  float totalMag = sqrt(sq(event.acceleration.x) + sq(event.acceleration.y) + sq(event.acceleration.z));
+  float netAccel = totalMag - offsetMag; // Offset sudah dikalibrasi di setup()
 
-  if (abs(linearAcc) < threshold) linearAcc = 0;
+  // 2. Low Pass Filter untuk membuang getaran mesin (noise)
+  filteredAccel = (alpha * netAccel) + ((1 - alpha) * filteredAccel);
 
-  velocityMS += linearAcc * dt;
+  // 3. Dead-zone (Threshold)
+  if (abs(filteredAccel) < threshold) filteredAccel = 0;
+
+  // 4. Hitung Kecepatan
+  velocityMS += filteredAccel * dt;
   if (velocityMS < 0) velocityMS = 0;
 
+  // 5. Zero-Velocity Update (Force stop saat diam)
   static unsigned long lastMoveTime = 0;
-  if (abs(linearAcc) > 0.1) {
+  if (abs(filteredAccel) > 0.2) {
     lastMoveTime = millis();
-  } else if (millis() - lastMoveTime > 1500) {
-    velocityMS *= 0.9;
+  } else if (millis() - lastMoveTime > 1000) { // Jika diam 1 detik
+    velocityMS *= 0.8; // Decay lebih cepat
     if (velocityMS < 0.1) velocityMS = 0;
   }
+  
   speedKMH = velocityMS * 3.6;
 }
 
