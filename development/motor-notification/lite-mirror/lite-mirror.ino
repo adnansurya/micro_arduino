@@ -417,7 +417,7 @@ void sendToGB(String cmd) {
     // 1. Tambahkan pembungkus GB( ... )
     // 2. Gunakan \x03 (Ctrl+C) untuk memastikan buffer bersih
     // 3. Tambahkan \n di akhir sebagai terminator
-    String finalPacket = "\x10"+ cmd + "\n";
+    String finalPacket = "\x03\x10"+ cmd + "\n";
     // String finalPacket = cmd + "\n";
 
     pCharacteristicTX->setValue(finalPacket.c_str());
@@ -434,7 +434,7 @@ void sendRawJSON(String jsonString) {
     if (!jsonString.endsWith("\n")) {
       jsonString += "\n";
     }
-
+    // jsonString = "\x03\x10" + jsonString;
     pCharacteristicTX->setValue(jsonString.c_str());
     pCharacteristicTX->notify();
 
