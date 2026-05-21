@@ -9,9 +9,14 @@
 #include <SPI.h>
 #include <WiFiManager.h>
 #include <time.h>  // Library internal ESP32 untuk NTP
+#include "FS.h"
+#include "LittleFS.h"  // Menggunakan LittleFS untuk menyimpan config baru
 
 // MEMANGGIL FILE KONFIGURASI TERPISAH
 #include "config.h"
+
+char device_id[20] = "";
+char phone[20] = "";
 
 // Konfigurasi Hardware Serial untuk RS485
 HardwareSerial modbusSerial(2);
@@ -214,13 +219,27 @@ void loop() {
     if (rtcAvailable) {
       formatPesan += "Waktu: " + getDateTimeString(rtc.now()) + "\n";
     }
-    formatPesan += "VR: " + String(readingResults[0].value, 2) + " V\n";
-    formatPesan += "VS: " + String(readingResults[1].value, 2) + " V\n";
-    formatPesan += "VT: " + String(readingResults[2].value, 2) + " V\n";
-    formatPesan += "IR: " + String(readingResults[3].value, 2) + " A\n";
-    formatPesan += "IS: " + String(readingResults[4].value, 2) + " A\n";
-    formatPesan += "IT: " + String(readingResults[5].value, 2) + " A";
+    formatPesan += "----------------------\n";
 
+    // OTOMATIS MEMASUKKAN SEMUA REGISTER YANG ADA DI DAFTAR
+    for (int i = 0; i < numRegisters; i++) {
+      formatPesan += String(readingResults[i].name) + ": " + String(readingResults[i].value, 2);
+
+      // Menambahkan satuan dinamis berdasarkan nama registernya
+      if (String(readingResults[i].name).indexOf("Voltage") >= 0) formatPesan += " V";
+      else if (String(readingResults[i].name).indexOf("Current") >= 0) formatPesan += " A";
+      else if (String(readingResults[i].name).indexOf("Power Factor") >= 0) formatPesan += "";  // PF tidak ada satuan
+      else if (String(readingResults[i].name).indexOf("Power") >= 0) formatPesan += " W";
+      else if (String(readingResults[i].name).indexOf("Frequency") >= 0) formatPesan += " Hz";
+
+      // Tambahkan baris baru jika bukan register terakhir
+      if (i < numRegisters - 1) {
+        formatPesan += "\n";
+      }
+    }
+
+    // Kirim pesan yang sudah dirangkai otomatis
+    Serial.println(formatPesan);
     sendMessage(formatPesan);
   }
 }
@@ -314,9 +333,22 @@ void simpan_data_ke_csv() {
 }
 
 void setupWiFiManager() {
+  // Load data yang tersimpan sebelumnya (jika ada)
+  loadConfigFile();
+
+  // Buat custom parameter untuk input di WiFi Manager
+  // Format: WiFiManagerParameter(id, placeholder, default_value, length)
+  WiFiManagerParameter custom_device_id("device_id", "Device ID", device_id, 20);
+  WiFiManagerParameter custom_phone("phone", "Nomor Telepon (62xxx)", phone, 20);
+
+  // Masukkan parameter ke dalam WiFiManager
+  wm.addParameter(&custom_device_id);
+  wm.addParameter(&custom_phone);
+
   wm.setSaveConfigCallback([]() {
     shouldSaveConfig = true;
   });
+
   wm.setConfigPortalTimeout(120);
   wm.setConnectTimeout(30);
   wm.setHostname("esp32-datalogger");
@@ -326,6 +358,13 @@ void setupWiFiManager() {
     saveSystemStatus("WIFI_FAIL", "Failed to connect to WiFi at boot");
   } else {
     saveSystemStatus("WIFI_SUCCESS", "Connected to: " + WiFi.SSID());
+
+    // Jika user menekan tombol Save di halaman WiFi Manager, ambil nilainya
+    if (shouldSaveConfig) {
+      strcpy(device_id, custom_device_id.getValue());
+      strcpy(phone, custom_phone.getValue());
+      saveConfigFile();  // Simpan permanen ke file JSON
+    }
   }
 }
 
@@ -391,4 +430,42 @@ float getFloatData(uint16_t address, const char* dataType) {
     return (float)value;
   }
   return NAN;
+}
+
+// Fungsi membaca konfigurasi dari LittleFS
+bool loadConfigFile() {
+  if (LittleFS.begin(true)) {
+    if (LittleFS.exists("/config_wm.json")) {
+      File configFile = LittleFS.open("/config_wm.json", "r");
+      if (configFile) {
+        StaticJsonDocument<256> doc;
+        DeserializationError error = deserializeJson(doc, configFile);
+        if (!error) {
+          strcpy(device_id, doc["device_id"] | "");
+          strcpy(phone, doc["phone"] | "");
+          configFile.close();
+          return true;
+        }
+      }
+    }
+  }
+  Serial.println("❌ Gagal membaca config_wm.json, menggunakan nilai kosong.");
+  return false;
+}
+
+// Fungsi menyimpan konfigurasi ke LittleFS
+void saveConfigFile() {
+  Serial.println("💾 Menyimpan konfigurasi ke LittleFS...");
+  StaticJsonDocument<256> doc;
+  doc["device_id"] = device_id;
+  doc["phone"] = phone;
+
+  File configFile = LittleFS.open("/config_wm.json", "w");
+  if (configFile) {
+    serializeJson(doc, configFile);
+    configFile.close();
+    Serial.println("✅ Konfigurasi berhasil disimpan!");
+  } else {
+    Serial.println("❌ Gagal membuka file untuk menulis konfigurasi.");
+  }
 }
