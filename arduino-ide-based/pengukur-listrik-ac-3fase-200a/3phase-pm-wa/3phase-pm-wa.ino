@@ -8,20 +8,20 @@
 #include <SD.h>
 #include <SPI.h>
 #include <WiFiManager.h>
-#include <time.h> // Library internal ESP32 untuk NTP
+#include <time.h>  // Library internal ESP32 untuk NTP
 
 // MEMANGGIL FILE KONFIGURASI TERPISAH
 #include "config.h"
 
 // Konfigurasi Hardware Serial untuk RS485
-HardwareSerial modbusSerial(2);  
+HardwareSerial modbusSerial(2);
 ModbusMaster node;
 
 // Konfigurasi RTC DS3231
 RTC_DS3231 rtc;
 
 // Konfigurasi SD Card
-const int chipSelect = 5;  
+const int chipSelect = 5;
 File dataFile;
 
 // Konfigurasi WiFi Manager
@@ -30,9 +30,9 @@ WiFiManager wm;
 // =========================================================================
 // KONFIGURASI NTP SERVER & OFFSET MANUAL
 // =========================================================================
-const char* ntpServer = "id.pool.ntp.org"; // Server NTP Indonesia (lebih cepat & stabil)
-const long  gmtOffset_sec = 8 * 3600;      // UTC+8 (WITA) = 8 jam * 3600 detik = 28800
-const int   daylightOffset_sec = 0;        // Tidak ada DST di Indonesia
+const char* ntpServer = "id.pool.ntp.org";  // Server NTP Indonesia (lebih cepat & stabil)
+const long gmtOffset_sec = 8 * 3600;        // UTC+8 (WITA) = 8 jam * 3600 detik = 28800
+const int daylightOffset_sec = 0;           // Tidak ada DST di Indonesia
 // =========================================================================
 
 // Alamat modbus device
@@ -58,7 +58,15 @@ RegisterDefinition registersToRead[] = {
   { 0x0046, "T phase Voltage", "U32", "voltageT", 10000.0 },
   { 0x0058, "R phase Current", "U32", "currentR", 10000.0 },
   { 0x005A, "S phase Current", "U32", "currentS", 10000.0 },
-  { 0x005C, "T phase Current", "U32", "currentT", 10000.0 }
+  { 0x005C, "T phase Current", "U32", "currentT", 10000.0 },
+  { 0x0064, "R phase Active Power", "S32", "powerR", 10000.0 },
+  { 0x0066, "S phase Active Power", "S32", "powerS", 10000.0 },
+  { 0x0068, "T phase Active Power", "S32", "powerT", 10000.0 },
+  { 0x007C, "R phase Power Factor", "S16", "powerFactorR", 1000.0 },
+  { 0x007D, "S phase Power Factor", "S16", "powerFactorS", 1000.0 },
+  { 0x007E, "T phase Power Factor", "S16", "powerFactorT", 1000.0 },
+  { 0x007F, "Total Power Factor", "S16", "totalPowerFactor", 1000.0 },
+  { 0x0080, "Frequency", "U16", "frequency", 100.0 }
 };
 
 const int numRegisters = sizeof(registersToRead) / sizeof(registersToRead[0]);
@@ -73,19 +81,19 @@ const String statusFileName = "/system_status.txt";
 
 bool shouldSaveConfig = false;
 unsigned long lastReconnectAttempt = 0;
-const unsigned long RECONNECT_INTERVAL = 30000; 
+const unsigned long RECONNECT_INTERVAL = 30000;
 
 bool timeSynced = false;
 unsigned long lastTimeSync = 0;
-const unsigned long TIME_SYNC_INTERVAL = 24 * 60 * 60 * 1000; // Sync harian otomatis
+const unsigned long TIME_SYNC_INTERVAL = 24 * 60 * 60 * 1000;  // Sync harian otomatis
 
 // =========================================================================
 // MANAJEMEN TIMER INTERVAL
 unsigned long lastSDSaveTime = 0;
 unsigned long lastAPISendTime = 0;
 
-const unsigned long sdSaveInterval = 10000;             
-unsigned long apiSendInterval = 5 * 60 * 1000;          
+const unsigned long sdSaveInterval = 10000;
+unsigned long apiSendInterval = 5 * 60 * 1000;
 // =========================================================================
 
 const String FIRMWARE_VERSION = "2.3.0-NTP-NATIVE";
@@ -125,7 +133,7 @@ void setup() {
     wifiConnected = true;
     Serial.println("📡 ONLINE MODE: Terhubung ke WiFi");
     saveSystemStatus("ONLINE_MODE", "WiFi connected successfully");
-    
+
     // Konfigurasi NTP bawaan ESP32 dengan offset manual
     configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
 
@@ -141,7 +149,7 @@ void setup() {
           break;
         }
         Serial.print(".");
-        delay(1000); 
+        delay(1000);
       }
 
       if (syncSuccess) {
@@ -159,7 +167,7 @@ void setup() {
     } else {
       bootMessage += "Waktu RTC: Jam RTC Rusak/Tidak Terdeteksi";
     }
-    
+
     sendMessage(bootMessage);
   }
 
@@ -254,17 +262,17 @@ void sendMessage(String pesan) {
 // FUNGSI BARU UNTUK SYNC DENGAN NTP NATIVE & OFFSET MANUAL
 bool syncTimeFromNTP() {
   if (!rtcAvailable) return false;
-  
+
   struct tm timeinfo;
   // Mencoba mengambil waktu lokal yang sudah ditambahkan offset otomatis oleh core ESP32
   if (!getLocalTime(&timeinfo)) {
-    return false; 
+    return false;
   }
 
   // Set hasil waktu NTP ke module RTC DS3231
   DateTime ntpTime(timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
   rtc.adjust(ntpTime);
-  
+
   timeSynced = true;
   lastTimeSync = millis();
   return true;
@@ -289,7 +297,7 @@ void simpan_data_ke_csv() {
     Serial.println("❌ Gagal simpan CSV: SD Card tidak terdeteksi");
     return;
   }
-  
+
   File file = SD.open(dataFileName, FILE_APPEND);
   if (!file) return;
 
@@ -306,7 +314,9 @@ void simpan_data_ke_csv() {
 }
 
 void setupWiFiManager() {
-  wm.setSaveConfigCallback([](){ shouldSaveConfig = true; });
+  wm.setSaveConfigCallback([]() {
+    shouldSaveConfig = true;
+  });
   wm.setConfigPortalTimeout(120);
   wm.setConnectTimeout(30);
   wm.setHostname("esp32-datalogger");
@@ -346,10 +356,13 @@ void saveSystemStatus(const String& event, const String& message) {
 
 void printSystemInfo() {
   Serial.println("=== SYSTEM INFORMATION ===");
-  Serial.print("🔌 Mode WiFi: "); Serial.println(WiFi.status() == WL_CONNECTED ? "ONLINE" : "OFFLINE");
-  Serial.print("💾 SD Card: "); Serial.println(sdCardAvailable ? "✅ Ready" : "❌ Error");
+  Serial.print("🔌 Mode WiFi: ");
+  Serial.println(WiFi.status() == WL_CONNECTED ? "ONLINE" : "OFFLINE");
+  Serial.print("💾 SD Card: ");
+  Serial.println(sdCardAvailable ? "✅ Ready" : "❌ Error");
   if (rtcAvailable) {
-    Serial.print("🕒 Waktu RTC Saat Ini: "); Serial.println(getDateTimeString(rtc.now()));
+    Serial.print("🕒 Waktu RTC Saat Ini: ");
+    Serial.println(getDateTimeString(rtc.now()));
   }
   Serial.println("==================================");
 }
@@ -366,8 +379,15 @@ float getFloatData(uint16_t address, const char* dataType) {
   uint8_t result = node.readInputRegisters(address, numRegsToRead);
   if (result != node.ku8MBSuccess) return NAN;
 
-  if (strcmp(dataType, "U32") == 0) {
+  if (strcmp(dataType, "U16") == 0) {
+    return (float)node.getResponseBuffer(0);
+  } else if (strcmp(dataType, "S16") == 0) {
+    return (float)((int16_t)node.getResponseBuffer(0));
+  } else if (strcmp(dataType, "U32") == 0) {
     uint32_t value = ((uint32_t)node.getResponseBuffer(0) << 16) | node.getResponseBuffer(1);
+    return (float)value;
+  } else if (strcmp(dataType, "S32") == 0) {
+    int32_t value = ((int32_t)(int16_t)node.getResponseBuffer(0) << 16) | node.getResponseBuffer(1);
     return (float)value;
   }
   return NAN;
