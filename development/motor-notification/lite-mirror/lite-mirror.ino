@@ -25,17 +25,21 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 RTC_DS1307 rtc;
 Adafruit_ADXL345_Unified accel = Adafruit_ADXL345_Unified(12345);
 
-// --- VARIABEL SPEDOMETER ---
-float speedKMH = 0;
-float velocityMS = 0;
-unsigned long lastAccelTime = 0;
+// --- VARIABEL TRIP TIMER (PENGGANTI SPEEDOMETER) ---
+unsigned long tripDurationSeconds = 0; // Total durasi trip dalam detik
+unsigned long lastTripUpdateTime = 0;  // Waktu terakhir durasi trip bertambah
+bool isEngineRunning = false;          // Status mesin (bergetar atau tidak)
+unsigned long lastVibrationTime = 0;   // Waktu terakhir getaran terdeteksi
+const unsigned long engineOffTimeout = 5000; // Motor dianggap mati jika diam selama 5 detik
+
+// Variabel filter akselerometer
 float offsetMag = 0;
-float threshold = 0.6;
+float threshold = 0.25;     // Sesuaikan nilai ini untuk sensitivitas getaran mesin motor Anda
 float filteredAccel = 0;
-const float alpha = 0.15;  // Faktor filter (0.05 - 0.2), makin kecil makin halus
+const float alpha = 0.3;   // Filter sedikit lebih responsif untuk deteksi getaran raw
 
 // --- VARIABEL SISTEM & BLE ---
-int currentMode = 0;  // 0:Musik, 1:Jam, 2:Spedometer
+int currentMode = 0;  // 0:Musik, 1:Jam, 2:Trip Meter, 3:Navigasi
 bool deviceConnected = false;
 String artist = "-", title = "-", currentTime = "00:00";
 String navInstr = "", navDist = "", navEta = "";
@@ -60,21 +64,20 @@ int lastVolumeLevel = 0;
 // --- VARIABEL RUNNING TEXT ---
 int scrollPos = 0;
 unsigned long lastScrollTime = 0;
-int scrollDelay = 150;        // Kecepatan scroll (ms), makin kecil makin cepat
-bool scrollTitleTurn = true;  // True: Judul yang jalan, False: Artist yang jalan
+int scrollDelay = 150;        
+bool scrollTitleTurn = true;  
 unsigned long lastSwitchTime = 0;
-int switchDelay = 5000;  // Berganti fokus setiap 5 detik
+int switchDelay = 5000;  
 
 // --- VARIABEL TOUCH ADVANCED ---
 unsigned long touchStartTime = 0;
 unsigned long lastTouchReleaseTime = 0;
 bool isTouching = false;
 int touchCounter = 0;
-const int longTouchDuration = 800;    // 0.8 detik untuk Long Touch
-const int doubleTouchInterval = 300;  // Jeda maksimal antar sentuhan untuk Double Touch
+const int longTouchDuration = 800;    
+const int doubleTouchInterval = 300;  
 
-
-// Array nama hari dalam Bahasa Indonesia
+// Array nama hari & bulan
 const char *namaHari[] = { "Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu" };
 const char *namaBulan[] = { "", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
                             "Juli", "Agustus", "September", "Oktober", "November", "Desember" };
@@ -94,64 +97,62 @@ void updateTimeFromRTC() {
 }
 
 void drawScrollingText(String text, int y, bool isFocus) {
-  int maxChars = 21;  // Jumlah karakter yang muat di layar (lebar 128px, font size 1)
-
+  int maxChars = 21; 
   if (text.length() <= maxChars) {
     display.setCursor(0, y);
     display.print(text);
   } else {
     if (isFocus) {
-      // Logika Geser Teks
-      String displayStr = text + "   " + text;  // Tambah spasi antar repetisi
+      String displayStr = text + "   " + text;  
       int subStart = (scrollPos % (text.length() + 3));
       display.setCursor(0, y);
       display.print(displayStr.substring(subStart, subStart + maxChars));
     } else {
-      // Jika sedang tidak fokus, tampilkan statis (potong di awal)
       display.setCursor(0, y);
       display.print(text.substring(0, maxChars - 2) + "..");
     }
   }
 }
 
-// --- FUNGSI PERHITUNGAN SPEDOMETER ---
-void processAccel() {
+// --- FUNGSI DETEKSI GETARAN & UPDATE TRIP ---
+void processTripTimer() {
   sensors_event_t event;
   accel.getEvent(&event);
 
-  unsigned long now = millis();
-  float dt = (now - lastAccelTime) / 1000.0;
-  lastAccelTime = now;
-
-  // 1. Hitung Resultan (Koreksi terhadap kemiringan)
+  // 1. Hitung Resultan Magnitudo G-Force
   float totalMag = sqrt(sq(event.acceleration.x) + sq(event.acceleration.y) + sq(event.acceleration.z));
-  float netAccel = totalMag - offsetMag;  // Offset sudah dikalibrasi di setup()
+  float netAccel = totalMag - offsetMag; 
 
-  // 2. Low Pass Filter untuk membuang getaran mesin (noise)
+  // 2. Filter Sederhana (Low Pass Filter)
   filteredAccel = (alpha * netAccel) + ((1 - alpha) * filteredAccel);
 
-  // 3. Dead-zone (Threshold)
-  if (abs(filteredAccel) < threshold) filteredAccel = 0;
+  unsigned long now = millis();
 
-  // 4. Hitung Kecepatan
-  velocityMS += filteredAccel * dt;
-  if (velocityMS < 0) velocityMS = 0;
-
-  // 5. Zero-Velocity Update (Force stop saat diam)
-  static unsigned long lastMoveTime = 0;
-  if (abs(filteredAccel) > 0.2) {
-    lastMoveTime = millis();
-  } else if (millis() - lastMoveTime > 1000) {  // Jika diam 1 detik
-    velocityMS *= 0.8;                          // Decay lebih cepat
-    if (velocityMS < 0.1) velocityMS = 0;
+  // 3. Cek apakah getaran melebihi threshold (Mesin Menyala/Motor Jalan)
+  if (abs(filteredAccel) > threshold) {
+    lastVibrationTime = now;
+    isEngineRunning = true;
+  } else {
+    // Jika tidak ada getaran dalam waktu 'engineOffTimeout' (5 detik), mesin dianggap mati
+    if (now - lastVibrationTime > engineOffTimeout) {
+      isEngineRunning = false;
+    }
   }
 
-  speedKMH = velocityMS * 3.6;
+  // 4. Hitung Waktu Trip (Hanya bertambah jika mesin menyala)
+  if (isEngineRunning) {
+    if (now - lastTripUpdateTime >= 1000) { // Update setiap 1 detik
+      tripDurationSeconds++;
+      lastTripUpdateTime = now;
+    }
+  } else {
+    // Jika mesin mati, pastikan anchor penambahan waktu tetap sinkron saat mesin menyala lagi
+    lastTripUpdateTime = now;
+  }
 }
 
 // --- FUNGSI UPDATE TAMPILAN OLED ---
 void updateDisplay() {
-
   if (currentMode == 0 && !deviceConnected) {
     currentMode = 1;
   }
@@ -160,25 +161,22 @@ void updateDisplay() {
   display.setTextColor(SSD1306_WHITE);
 
   // 1. PRIORITAS TERTINGGI: INCOMING CALL
-  // 1. PRIORITAS TERTINGGI: INCOMING CALL
   if (isIncomingCall) {
     display.setTextSize(1);
     display.setCursor(20, 0);
-    display.print("[ PANGGILAN ]");  // Header lebih simpel
+    display.print("[ PANGGILAN ]");  
     display.drawFastHLine(0, 10, 128, WHITE);
 
-    // Update Posisi Scroll Khusus
     if (millis() - lastScrollTime > scrollDelay) {
       scrollPos++;
       lastScrollTime = millis();
     }
 
-    // Nama Penelepon (Scrolling Text Size 2)
     display.setTextSize(2);
     int maxCharsCall = 10;
     if (callName.length() <= maxCharsCall) {
       int centerCall = (128 - (callName.length() * 12)) / 2;
-      display.setCursor(centerCall, 25);  // Posisi lebih ke tengah karena ikon dihapus
+      display.setCursor(centerCall, 25);  
       display.print(callName);
     } else {
       String displayStr = callName + "   " + callName;
@@ -189,20 +187,16 @@ void updateDisplay() {
 
     display.setTextSize(1);
     display.setCursor(0, 56);
-    display.print("Hold:Reject  Dbl:Accept");
+    display.print("Hold:Reject   Dbl:Accept");
   }
   // 2. PRIORITAS KEDUA: NOTIFIKASI
   else if (isNotify) {
     display.setTextSize(1);
-
-    // 1. Tampilkan [ src ] di tengah paling atas
     String srcText = "[ " + notifySrc + " ]";
     int centerSrc = (128 - (srcText.length() * 6)) / 2;
     display.setCursor(centerSrc, 0);
     display.print(srcText);
 
-    // 2. Tampilkan Title dengan Scrolling Text (Baris 12)
-    // Menggunakan logika scroll yang sama dengan mode musik
     if (millis() - lastScrollTime > scrollDelay) {
       scrollPos++;
       lastScrollTime = millis();
@@ -220,12 +214,8 @@ void updateDisplay() {
       display.print(displayStr.substring(subStart, subStart + maxChars));
     }
 
-    // 3. Garis Pembatas (Posisinya tetap di y=22 karena title sekarang 1 baris scroll)
     display.drawFastHLine(0, 22, 128, WHITE);
-
-    // 4. Tampilkan "Body" dengan tanda kutip
     display.setCursor(0, 28);
-    // Tambahkan tanda kutip di awal dan akhir
     String quotedBody = "\"" + notifyBody + "\"";
     display.print(quotedBody);
   } else if (showVolumeOverlay) {
@@ -243,8 +233,7 @@ void updateDisplay() {
   } else {
     updateTimeFromRTC();
     switch (currentMode) {
-      case 0:
-        {  // MODE MUSIK
+      case 0: {  // MODE MUSIK
           display.setTextSize(1);
           display.setCursor(0, 0);
           display.print(currentTime);
@@ -256,23 +245,18 @@ void updateDisplay() {
             display.setCursor(85, 0);
             display.printf("V:%d%%", volumeLevel);
 
-            // Logika Pergantian Fokus Scroll
             if (millis() - lastSwitchTime > switchDelay) {
               scrollTitleTurn = !scrollTitleTurn;
-              scrollPos = 0;  // Reset posisi setiap ganti fokus
+              scrollPos = 0;  
               lastSwitchTime = millis();
             }
 
-            // Update Posisi Scroll
             if (millis() - lastScrollTime > scrollDelay) {
               scrollPos++;
               lastScrollTime = millis();
             }
 
-            // Baris Judul (y=22)
             drawScrollingText(title, 22, scrollTitleTurn);
-
-            // Baris Artis (y=35)
             drawScrollingText(artist, 35, !scrollTitleTurn);
 
             display.setCursor(0, 55);
@@ -280,63 +264,67 @@ void updateDisplay() {
           }
           break;
         }
-      case 1:
-        {  // MODE JAM BESAR
+      case 1: {  // MODE JAM BESAR
           DateTime now = rtc.now();
-
-          // Tampilkan Jam Besar
           display.setTextSize(3);
           display.setCursor(19, 10);
           display.print(currentTime);
 
-          // Tampilkan Nama Hari (Kecil di tengah)
           display.setTextSize(1);
           String hari = String(namaHari[now.dayOfTheWeek()]);
           int centerHari = (128 - (hari.length() * 6)) / 2;
           display.setCursor(centerHari, 40);
           display.print(hari);
 
-          // Tampilkan Tanggal Format Panjang (Contoh: 11 Mei 2026)
-          // Kita hitung posisi tengah secara dinamis
           String tglPanjang = String(now.day()) + " " + String(namaBulan[now.month()]) + " " + String(now.year());
           int centerTgl = (128 - (tglPanjang.length() * 6)) / 2;
-
           display.setCursor(centerTgl, 52);
           display.print(tglPanjang);
           break;
         }
-      case 2:
-        {  // MODE SPEDOMETER
+      case 2: {  // MODE PENGGANTI: TRIP DURATION TIMER
           display.setTextSize(1);
           display.setCursor(0, 0);
-          display.print("SPEEDOMETER");
-          display.setTextSize(4);
-          display.setCursor(20, 20);
-          display.print((int)speedKMH);
+          display.print("TRIP DURATION");
+          
+          // Indikator status mesin (Running / Stop) di pojok kanan atas
+          display.setCursor(85, 0);
+          display.print(isEngineRunning ? "[RUN]" : "[STP]");
+
+          // Konversi detik menjadi format HH:MM:SS
+          unsigned long t = tripDurationSeconds;
+          int s = t % 60;
+          t /= 60;
+          int m = t % 60;
+          int h = t / 60;
+
+          char tripBuf[10];
+          sprintf(tripBuf, "%02d:%02d:%02d", h, m, s);
+
+          // Tampilkan Waktu Trip ukuran besar di tengah
           display.setTextSize(2);
-          display.print(" km/h");
-          display.drawRect(0, 60, 128, 4, WHITE);
-          int barWidth = map(constrain((int)speedKMH, 0, 60), 0, 60, 0, 128);
-          display.fillRect(0, 60, barWidth, 4, WHITE);
+          display.setCursor(16, 22);
+          display.print(tripBuf);
+
+          // Petunjuk Reset di bagian bawah
+          display.setTextSize(1);
+          display.setCursor(10, 50);
+          display.print("Hold Touch to Reset");
           break;
         }
-      case 3:
-        {  // MODE NAVIGASI
+      case 3: {  // MODE NAVIGASI
           display.setTextSize(1);
           display.setCursor(0, 0);
           display.print("NAVIGASI");
           display.drawFastHLine(0, 10, 128, WHITE);
 
-          // Baris Jarak & ETA
           display.setCursor(0, 15);
-          display.print("Dst: " + navDist);  // Menampilkan Jarak di kiri
+          display.print("Dst: " + navDist);  
 
-          // Hitung posisi kanan untuk ETA (ukuran teks 1: ~6px per karakter)
           int etaPos = 128 - (navEta.length() * 6);
           display.setCursor(etaPos, 15);
-          display.print(navEta);  // Menampilkan ETA di ujung kanan
+          display.print(navEta);  
 
-          // Tampilkan Instruksi Navigasi (1-3 Baris)
           display.setTextSize(1);
           display.setCursor(0, 28);
           display.print(navInstr);
@@ -349,7 +337,7 @@ void updateDisplay() {
 
 // --- FUNGSI TERIMA DATA GADGETBRIDGE ---
 void processBuffer(String data) {
-  Serial.print("Data Masuk: ");  // Tetap dipertahankan untuk debugging
+  Serial.print("Data Masuk: ");  
   Serial.println(data);
 
   if (data.indexOf("setTime(") != -1) {
@@ -414,15 +402,9 @@ void processBuffer(String data) {
 
 void sendToGB(String cmd) {
   if (deviceConnected) {
-    // 1. Tambahkan pembungkus GB( ... )
-    // 2. Gunakan \x03 (Ctrl+C) untuk memastikan buffer bersih
-    // 3. Tambahkan \n di akhir sebagai terminator
     String finalPacket = "\x03\x10"+ cmd + "\n";
-    // String finalPacket = cmd + "\n";
-
     pCharacteristicTX->setValue(finalPacket.c_str());
     pCharacteristicTX->notify();
-
     Serial.print("Sending to Android: ");
     Serial.println(finalPacket);
   }
@@ -430,14 +412,11 @@ void sendToGB(String cmd) {
 
 void sendRawJSON(String jsonString) {
   if (deviceConnected) {
-    // Pastikan data diakhiri dengan newline agar parser Android terpicu
     if (!jsonString.endsWith("\n")) {
       jsonString += "\n";
     }
-    // jsonString = "\x03\x10" + jsonString;
     pCharacteristicTX->setValue(jsonString.c_str());
     pCharacteristicTX->notify();
-
     Serial.print("Raw Sent: ");
     Serial.print(jsonString);
   }
@@ -474,8 +453,7 @@ class MyServerCallbacks : public BLEServerCallbacks {
 void checkSerial() {
   if (Serial.available()) {
     String manualCmd = Serial.readStringUntil('\n');
-    manualCmd.trim();  // Bersihkan spasi/newline
-
+    manualCmd.trim();  
     if (manualCmd.startsWith("GB({")) {
       sendToGB(manualCmd);
     } else {
@@ -492,8 +470,7 @@ void setup() {
   if (!rtc.begin()) Serial.println("RTC Gagal!");
   if (!accel.begin()) Serial.println("ADXL345 Gagal!");
   if (!display.begin(SSD1306_SWITCHCAPVCC, i2c_Address))
-    for (;;)
-      ;
+    for (;;);
 
   // Kalibrasi ADXL345
   display.clearDisplay();
@@ -524,23 +501,22 @@ void setup() {
   pService->start();
   pServer->getAdvertising()->start();
 
-  lastAccelTime = millis();
+  lastTripUpdateTime = millis();
+  lastVibrationTime = millis();
   Serial.println("Sistem Siap!");
 }
 
 void loop() {
-
   checkSerial();
+  
   // --- 1. LOGIKA TOUCH SENSOR (SINGLE, DOUBLE, LONG) ---
   bool currentTouch = digitalRead(TOUCH_PIN);
 
-  // A. Saat baru disentuh
   if (currentTouch == HIGH && !isTouching) {
     isTouching = true;
     touchStartTime = millis();
   }
 
-  // B. Saat sentuhan dilepas
   if (currentTouch == LOW && isTouching) {
     isTouching = false;
     unsigned long duration = millis() - touchStartTime;
@@ -548,64 +524,53 @@ void loop() {
     if (duration >= longTouchDuration) {
       // ACTION: LONG TOUCH
       if (isIncomingCall) {
-        // Reject Telepon
         sendToGB("GB({\"t\":\"call\",\"cmd\":\"reject\"})\n");
         isIncomingCall = false;
         Serial.println("Action: Long Touch - Reject Call");
       } else if (isNotify) {
-        // Tutup Notifikasi
         isNotify = false;
         Serial.println("Action: Long Touch - Dismiss Notify");
+      } else if (currentMode == 2) {
+        // KHUSUS MODE 2: Reset Waktu Trip ke 00:00:00 jika di-hold
+        tripDurationSeconds = 0;
+        Serial.println("Action: Long Touch - Reset Trip Timer");
       } else {
-        // Toggle Music
         sendToGB("GB({\"t\":\"music\",\"n\":\"toggle\"})\n");
         Serial.println("Action: Long Touch - Toggle Play/Pause");
       }
       touchCounter = 0;
     } else {
-      // Potensi Single atau Double Touch
       touchCounter++;
       lastTouchReleaseTime = millis();
     }
   }
 
-  // C. Evaluasi Single atau Double Touch (Setelah jeda interval)
   if (touchCounter > 0 && (millis() - lastTouchReleaseTime > doubleTouchInterval)) {
     if (touchCounter == 1) {
       // ACTION: SINGLE TOUCH
       if (isIncomingCall || isNotify) {
-        // Jika ada Call/Notif, satu sentuhan untuk dismiss/tutup UI saja
         isIncomingCall = false;
         isNotify = false;
       } else {
-        // Ganti Mode Dashboard
         currentMode++;
-        if (currentMode == 0 && !deviceConnected) {
-          currentMode = 1;
-        }
-
+        if (currentMode == 0 && !deviceConnected) currentMode = 1;
         if (!isNavigating && currentMode == 3) currentMode = 0;
         else if (currentMode > 3) currentMode = 0;
-
-        if (currentMode == 0 && !deviceConnected) {
-          currentMode = 1;
-        }
+        if (currentMode == 0 && !deviceConnected) currentMode = 1;
         Serial.println("Action: Single Touch - Next Mode");
       }
     } else if (touchCounter >= 2) {
       // ACTION: DOUBLE TOUCH
       if (isIncomingCall) {
-        // Angkat Telepon
         sendToGB("GB({\"t\":\"call\",\"cmd\":\"accept\"})\n");
         isIncomingCall = false;
         Serial.println("Action: Double Touch - Accept Call");
       } else if (!isNotify) {
-        // Next Lagu
         sendToGB("GB({\"t\":\"music\",\"n\":\"next\"})\n");
         Serial.println("Action: Double Touch - Next Track");
       }
     }
-    touchCounter = 0;  // Reset counter
+    touchCounter = 0; 
   }
 
   // --- 2. LOGIKA OVERLAY VOLUME (Timeout 3 Detik) ---
@@ -613,8 +578,8 @@ void loop() {
     showVolumeOverlay = false;
   }
 
-  // --- 3. BACKGROUND PROCESS (SPEDOMETER) ---
-  processAccel();
+  // --- 3. BACKGROUND PROCESS (DETEKSI GETARAN & TRIP) ---
+  processTripTimer();
 
   // --- 4. UPDATE LAYAR (Setiap 100ms agar smooth) ---
   static unsigned long lastDisplayMillis = 0;
