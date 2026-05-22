@@ -9,6 +9,7 @@
 #include <Adafruit_Sensor.h>
 #include <Adafruit_ADXL345_U.h>
 #include "RTClib.h"
+#include <Preferences.h> // Pustaka untuk menyimpan data ke Flash Memory ESP32
 
 // --- KONFIGURASI PIN ---
 #define I2C_SDA 21
@@ -21,25 +22,27 @@
 #define i2c_Address 0x3C
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
-// --- INSTANSI SENSOR & RTC ---
+// --- INSTANSI SENSOR, RTC & PREFERENCES ---
 RTC_DS1307 rtc;
 Adafruit_ADXL345_Unified accel = Adafruit_ADXL345_Unified(12345);
+Preferences preferences;
 
-// --- VARIABEL TRIP TIMER (PENGGANTI SPEEDOMETER) ---
-unsigned long tripDurationSeconds = 0; // Total durasi trip dalam detik
-unsigned long lastTripUpdateTime = 0;  // Waktu terakhir durasi trip bertambah
-bool isEngineRunning = false;          // Status mesin (bergetar atau tidak)
-unsigned long lastVibrationTime = 0;   // Waktu terakhir getaran terdeteksi
-const unsigned long engineOffTimeout = 5000; // Motor dianggap mati jika diam selama 5 detik
+// --- VARIABEL TRIP TIMER ---
+unsigned long tripDurationSeconds = 0; 
+unsigned long lastTripUpdateTime = 0;  
+bool isEngineRunning = false;          
+unsigned long lastVibrationTime = 0;   
+const unsigned long engineOffTimeout = 5000; 
 
-// Variabel filter akselerometer
+// Variabel filter & threshold akselerometer
 float offsetMag = 0;
-float threshold = 0.25;     // Sesuaikan nilai ini untuk sensitivitas getaran mesin motor Anda
+float threshold = 0.25;     // Nilai default awal (akan di-overwrite oleh Preferences jika ada)
 float filteredAccel = 0;
-const float alpha = 0.3;   // Filter sedikit lebih responsif untuk deteksi getaran raw
+const float alpha = 0.3;   
 
 // --- VARIABEL SISTEM & BLE ---
 int currentMode = 0;  // 0:Musik, 1:Jam, 2:Trip Meter, 3:Navigasi
+bool isSettingSensitivity = false; // Status apakah sedang di dalam menu edit sensitivitas
 bool deviceConnected = false;
 String artist = "-", title = "-", currentTime = "00:00";
 String navInstr = "", navDist = "", navEta = "";
@@ -119,34 +122,28 @@ void processTripTimer() {
   sensors_event_t event;
   accel.getEvent(&event);
 
-  // 1. Hitung Resultan Magnitudo G-Force
   float totalMag = sqrt(sq(event.acceleration.x) + sq(event.acceleration.y) + sq(event.acceleration.z));
   float netAccel = totalMag - offsetMag; 
 
-  // 2. Filter Sederhana (Low Pass Filter)
   filteredAccel = (alpha * netAccel) + ((1 - alpha) * filteredAccel);
 
   unsigned long now = millis();
 
-  // 3. Cek apakah getaran melebihi threshold (Mesin Menyala/Motor Jalan)
   if (abs(filteredAccel) > threshold) {
     lastVibrationTime = now;
     isEngineRunning = true;
   } else {
-    // Jika tidak ada getaran dalam waktu 'engineOffTimeout' (5 detik), mesin dianggap mati
     if (now - lastVibrationTime > engineOffTimeout) {
       isEngineRunning = false;
     }
   }
 
-  // 4. Hitung Waktu Trip (Hanya bertambah jika mesin menyala)
   if (isEngineRunning) {
-    if (now - lastTripUpdateTime >= 1000) { // Update setiap 1 detik
+    if (now - lastTripUpdateTime >= 1000) { 
       tripDurationSeconds++;
       lastTripUpdateTime = now;
     }
   } else {
-    // Jika mesin mati, pastikan anchor penambahan waktu tetap sinkron saat mesin menyala lagi
     lastTripUpdateTime = now;
   }
 }
@@ -282,34 +279,60 @@ void updateDisplay() {
           display.print(tglPanjang);
           break;
         }
-      case 2: {  // MODE PENGGANTI: TRIP DURATION TIMER
-          display.setTextSize(1);
-          display.setCursor(0, 0);
-          display.print("TRIP DURATION");
-          
-          // Indikator status mesin (Running / Stop) di pojok kanan atas
-          display.setCursor(85, 0);
-          display.print(isEngineRunning ? "[RUN]" : "[STP]");
+      case 2: {  // MODE 2: TRIP METER & SETTING SENSITIVITAS
+          if (isSettingSensitivity) {
+            // === SUB-MENU: PENGATURAN SENSITIVITAS ===
+            display.setTextSize(1);
+            display.setCursor(0, 0);
+            display.print("SET SENSITIVITY");
+            display.drawFastHLine(0, 11, 128, WHITE);
 
-          // Konversi detik menjadi format HH:MM:SS
-          unsigned long t = tripDurationSeconds;
-          int s = t % 60;
-          t /= 60;
-          int m = t % 60;
-          int h = t / 60;
+            display.setCursor(0, 16);
+            display.print("Engine Vibration Thresh");
 
-          char tripBuf[10];
-          sprintf(tripBuf, "%02d:%02d:%02d", h, m, s);
+            // Tampilkan Nilai Threshold Besar di Tengah
+            display.setTextSize(2);
+            display.setCursor(40, 32);
+            display.print(threshold, 1); // 1 angka di belakang koma
 
-          // Tampilkan Waktu Trip ukuran besar di tengah
-          display.setTextSize(2);
-          display.setCursor(16, 22);
-          display.print(tripBuf);
+            // Visualisator Bar Horizontal Skala 0.1 - 5.0
+            display.drawRect(14, 52, 100, 5, WHITE);
+            int barWidth = map(constrain(threshold * 10, 1, 50), 1, 50, 0, 100);
+            display.fillRect(14, 52, barWidth, 5, WHITE);
 
-          // Petunjuk Reset di bagian bawah
-          display.setTextSize(1);
-          display.setCursor(10, 50);
-          display.print("Hold Touch to Reset");
+            // Petunjuk navigasi tipis di bawah bar
+            display.setTextSize(1);
+            display.setCursor(0, 58);
+            // display.print("1x:+0.5 | Hold:Save");
+          } else {
+            // === TAMPILAN NORMAL TRIP METER ===
+            display.setTextSize(1);
+            display.setCursor(0, 0);
+            display.print("TRIP DURATION");
+            
+            display.setCursor(85, 0);
+            display.print(isEngineRunning ? "[RUN]" : "[STP]");
+
+            unsigned long t = tripDurationSeconds;
+            int s = t % 60;
+            t /= 60;
+            int m = t % 60;
+            int h = t / 60;
+
+            char tripBuf[10];
+            sprintf(tripBuf, "%02d:%02d:%02d", h, m, s);
+
+            display.setTextSize(2);
+            display.setCursor(16, 20);
+            display.print(tripBuf);
+
+            display.setTextSize(1);
+            display.setCursor(0, 44);
+            display.printf("Thresh: %.1f | Act: %.1f", threshold, abs(filteredAccel));
+
+            display.setCursor(0, 56);
+            display.print("Hold:Reset | Dbl:Setup");
+          }
           break;
         }
       case 3: {  // MODE NAVIGASI
@@ -343,7 +366,7 @@ void processBuffer(String data) {
   if (data.indexOf("setTime(") != -1) {
     int startIdx = data.indexOf("(") + 1;
     long unixTimeUTC = data.substring(startIdx, data.indexOf(")")).toInt();
-    rtc.adjust(DateTime(unixTimeUTC + 28800));  // Sync GMT+8
+    rtc.adjust(DateTime(unixTimeUTC + 28800));  
   }
 
   int start = data.indexOf("GB({");
@@ -472,6 +495,11 @@ void setup() {
   if (!display.begin(SSD1306_SWITCHCAPVCC, i2c_Address))
     for (;;);
 
+  // Ambil data Simpanan Sensitivitas dari Flash Memory ESP32
+  preferences.begin("dashboard", false);
+  threshold = preferences.getFloat("threshold", 0.25); // Default 0.25 jika memori kosong
+  preferences.end();
+
   // Kalibrasi ADXL345
   display.clearDisplay();
   display.setTextColor(WHITE);
@@ -522,21 +550,27 @@ void loop() {
     unsigned long duration = millis() - touchStartTime;
 
     if (duration >= longTouchDuration) {
-      // ACTION: LONG TOUCH
+      // === ACTION: LONG TOUCH ===
       if (isIncomingCall) {
         sendToGB("GB({\"t\":\"call\",\"cmd\":\"reject\"})\n");
         isIncomingCall = false;
-        Serial.println("Action: Long Touch - Reject Call");
       } else if (isNotify) {
         isNotify = false;
-        Serial.println("Action: Long Touch - Dismiss Notify");
       } else if (currentMode == 2) {
-        // KHUSUS MODE 2: Reset Waktu Trip ke 00:00:00 jika di-hold
-        tripDurationSeconds = 0;
-        Serial.println("Action: Long Touch - Reset Trip Timer");
+        if (isSettingSensitivity) {
+          // Jika sedang di menu setting, Long Touch berarti SIMPAN & KELUAR
+          preferences.begin("dashboard", false);
+          preferences.putFloat("threshold", threshold);
+          preferences.end();
+          isSettingSensitivity = false; 
+          Serial.println("Action: Long Touch - Save Threshold & Exit");
+        } else {
+          // Jika di tampilan trip normal, Long Touch berarti RESET JAM TRIP
+          tripDurationSeconds = 0;
+          Serial.println("Action: Long Touch - Reset Trip Timer");
+        }
       } else {
         sendToGB("GB({\"t\":\"music\",\"n\":\"toggle\"})\n");
-        Serial.println("Action: Long Touch - Toggle Play/Pause");
       }
       touchCounter = 0;
     } else {
@@ -547,11 +581,20 @@ void loop() {
 
   if (touchCounter > 0 && (millis() - lastTouchReleaseTime > doubleTouchInterval)) {
     if (touchCounter == 1) {
-      // ACTION: SINGLE TOUCH
+      // === ACTION: SINGLE TOUCH ===
       if (isIncomingCall || isNotify) {
         isIncomingCall = false;
         isNotify = false;
+      } else if (currentMode == 2 && isSettingSensitivity) {
+        // Jika sedang di dalam menu setting sensitivitas:
+        // Naikkan kelipatan 0.5, batas max 5.0, balik ke 0.1 jika lewat.
+        threshold += 0.5;
+        if (threshold > 5.0) {
+          threshold = 0.1;
+        }
+        Serial.printf("Action: Single Touch - Threshold set to %.1f\n", threshold);
       } else {
+        // Jika di menu normal lainnya, ganti mode seperti biasa
         currentMode++;
         if (currentMode == 0 && !deviceConnected) currentMode = 1;
         if (!isNavigating && currentMode == 3) currentMode = 0;
@@ -560,14 +603,17 @@ void loop() {
         Serial.println("Action: Single Touch - Next Mode");
       }
     } else if (touchCounter >= 2) {
-      // ACTION: DOUBLE TOUCH
+      // === ACTION: DOUBLE TOUCH ===
       if (isIncomingCall) {
         sendToGB("GB({\"t\":\"call\",\"cmd\":\"accept\"})\n");
         isIncomingCall = false;
-        Serial.println("Action: Double Touch - Accept Call");
+      } else if (currentMode == 2) {
+        // KHUSUS MODE 2: Double Touch untuk masuk/keluar Menu Sensitivitas
+        isSettingSensitivity = !isSettingSensitivity;
+        Serial.print("Action: Double Touch - Sensitivity Menu ");
+        Serial.println(isSettingSensitivity ? "ENTER" : "EXIT WITHOUT SAVE");
       } else if (!isNotify) {
         sendToGB("GB({\"t\":\"music\",\"n\":\"next\"})\n");
-        Serial.println("Action: Double Touch - Next Track");
       }
     }
     touchCounter = 0; 
