@@ -9,6 +9,7 @@
 // --- CONFIG ---
 const char* BOT_TOKEN = "8720903466:AAFYSSQ62jIluthCvF4BS6kNhaLQSfxzQNI";
 const char* SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxfsCkUydDZzfXuNT1_JbqxMttbv9xD0XOqfiyQ8bJ7r3g-LZvf-iDPNe1cx76GZoQ00g/exec";
+const char* KODE_UNIT = "LD0492"; 
 
 // Pin JSN-SR04T & Output
 const int TRIG_TENGAH = 12, ECHO_TENGAH = 13;
@@ -47,7 +48,7 @@ void blinkAll(int repeat, int duration) {
 
 void syncDataAtStartup() {
   Serial.println("\n=====================================");
-  Serial.println("  SINKRONISASI KONFIGURASI CLOUD    ");
+  Serial.println("   SINKRONISASI KONFIGURASI CLOUD    ");
   Serial.println("=====================================");
   
   HTTPClient http;
@@ -95,7 +96,7 @@ void setup() {
   blinkAll(1, 500);
 
   WiFiManager wm;
-  wm.setConfigPortalTimeout(60); // Optional: timeout jika tidak ada input di portal AP
+  wm.setConfigPortalTimeout(60); 
   if (!wm.autoConnect("Detektor_Amblas_AP")) { 
     Serial.println("Gagal tersambung WiFi, Restart...");
     delay(3000);
@@ -109,7 +110,7 @@ void setup() {
   syncDataAtStartup();
 
   // 3. Kirim pesan inisiasi ke semua receiver di list
-  String initMsg = "✅ Sistem Detektor Amblas Aktif\nWiFi: " + WiFi.SSID() + "\nIP: " + WiFi.localIP().toString();
+  String initMsg = "✅ Sistem Detektor Amblas Aktif\nUnit: " + String(KODE_UNIT) + "\nWiFi: " + WiFi.SSID() + "\nIP: " + WiFi.localIP().toString();
   for (String id : receiverList) {
     bot.sendMessage(id, initMsg, "");
   }
@@ -133,15 +134,16 @@ void loop() {
   String statusTxt = "AMAN";
   String msg = "";
 
+  // Penentuan status dan format pesan baru
   if (minD < thresholdBahaya) { 
     currentStatus = 2; 
     statusTxt = "BAHAYA";
-    msg = "🚨 EMERGENCY: Chasis bagian " + sensorName + " AMBLAS! (Jarak: " + String(minD) + " cm)"; 
+    msg = "🚨 EMERGENCY: " + String(KODE_UNIT) + ". (" + sensorName + ", Jarak: " + String(minD) + " cm)"; 
   }
   else if (minD <= thresholdAman) { 
     currentStatus = 1; 
     statusTxt = "WASPADA";
-    msg = "⚠️ WARNING: Chasis bagian " + sensorName + " rendah. (Jarak: " + String(minD) + " cm)"; 
+    msg = "⚠️ WARNING: " + String(KODE_UNIT) + ". (" + sensorName + ", Jarak: " + String(minD) + " cm)"; 
   }
 
   if (millis() - lastSerialUpdate > 500) {
