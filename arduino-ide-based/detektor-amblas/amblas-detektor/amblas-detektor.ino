@@ -4,6 +4,7 @@
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <vector>
+#include <TinyGPS++.h> // Tambahan Library GPS
 
 // --- CONFIG ---
 const char* SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxfsCkUydDZzfXuNT1_JbqxMttbv9xD0XOqfiyQ8bJ7r3g-LZvf-iDPNe1cx76GZoQ00g/exec";
@@ -14,6 +15,14 @@ const int TRIG_TENGAH = 12, ECHO_TENGAH = 13;
 const int TRIG_KANAN = 14, ECHO_KANAN = 27;
 const int TRIG_KIRI = 26, ECHO_KIRI = 25;
 const int LED_HIJAU = 21, LED_KUNING = 19, LED_MERAH = 18, BUZZER = 22;
+
+// Pin GPS Ublox Neo 6m (HardwareSerial 2)
+const int GPS_RX_PIN = 16; // Hubungkan ke TX Modul GPS
+const int GPS_TX_PIN = 17; // Hubungkan ke RX Modul GPS (Opsional)
+
+// Objek GPS
+TinyGPSPlus gps;
+HardwareSerial gpsSerial(2); // Menggunakan UART2 ESP32
 
 // Variabel Global
 int thresholdAman = 40;   
@@ -78,6 +87,10 @@ long readDistance(int trig, int echo) {
 
 void setup() {
   Serial.begin(115200);
+  
+  // Inisialisasi Serial untuk GPS (Baudrate default Neo-6M umumnya 9600)
+  gpsSerial.begin(9600, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
+  
   pinMode(LED_HIJAU, OUTPUT); pinMode(LED_KUNING, OUTPUT); pinMode(LED_MERAH, OUTPUT); pinMode(BUZZER, OUTPUT);
   pinMode(TRIG_KIRI, OUTPUT); pinMode(ECHO_KIRI, INPUT);
   pinMode(TRIG_TENGAH, OUTPUT); pinMode(ECHO_TENGAH, INPUT);
@@ -100,20 +113,27 @@ void setup() {
   // Ambil thresholds terbaru dari Google Sheet
   syncDataAtStartup();
   
-  Serial.println("\nKIRI\tTENGAH\tKANAN\tSTATUS");
-  Serial.println("-------------------------------------");
+  Serial.println("\nKIRI\tTENGAH\tKANAN\tSTATUS\t\tLATITUDE\tLONGITUDE");
+  Serial.println("-------------------------------------------------------------------------");
 }
 
 void loop() {
+  // Selalu baca data stream dari GPS secara non-blocking di awal loop
+  while (gpsSerial.available() > 0) {
+    gps.encode(gpsSerial.read());
+  }
+
   long dK = readDistance(TRIG_KIRI, ECHO_KIRI);
   long dT = readDistance(TRIG_TENGAH, ECHO_TENGAH);
   long dKa = readDistance(TRIG_KANAN, ECHO_KANAN);
   
   long minD = dK;
-  String sensorName = "Kiri";
+  String sensorName = "Tengah"; // Default fallback
 
-  if (dT < minD) { minD = dT; sensorName = "Tengah"; }
-  if (dKa < minD) { minD = dKa; sensorName = "Kanan"; }
+  // Menggunakan logika pembanding yang presisi untuk mencari nilai terkecil
+  if (dK <= dT && dK <= dKa) { minD = dK; sensorName = "Kiri"; }
+  else if (dT <= dK && dT <= dKa) { minD = dT; sensorName = "Tengah"; }
+  else { minD = dKa; sensorName = "Kanan"; }
 
   int currentStatus = 0; 
   String statusTxt = "AMAN";
@@ -127,9 +147,17 @@ void loop() {
     statusTxt = "WASPADA";
   }
 
+  // Ambil data koordinat ter-update (Jika GPS belum lock / tidak ada sinyal, kirim nilai default atau "0.000000")
+  String latStr = "0.000000";
+  String lngStr = "0.000000";
+  if (gps.location.isValid()) {
+    latStr = String(gps.location.lat(), 6);
+    lngStr = String(gps.location.lng(), 6);
+  }
+
   // Serial Monitor Logger (Setiap 500ms)
   if (millis() - lastSerialUpdate > 500) {
-    Serial.printf("%ld\t%ld\t%ld\t%s (%s)\n", dK, dT, dKa, statusTxt.c_str(), sensorName.c_str());
+    Serial.printf("%ld\t%ld\t%ld\t%s (%s)\t%s\t%s\n", dK, dT, dKa, statusTxt.c_str(), sensorName.c_str(), latStr.c_str(), lngStr.c_str());
     lastSerialUpdate = millis();
   }
 
@@ -143,7 +171,6 @@ void loop() {
     
     static unsigned long lastBuzzerAlert = 0;
     if (millis() - lastBuzzerAlert > 3000) {
-      // Pola kedip buzzer tanpa menghentikan pembacaan sensor (delay mikro)
       for (int i = 0; i < 3; i++) { 
         digitalWrite(BUZZER, HIGH); delay(80); 
         digitalWrite(BUZZER, LOW); delay(80); 
@@ -158,7 +185,6 @@ void loop() {
 
   // --- LOGIKA PENGIRIMAN DATA KE GOOGLE APPS SCRIPT ---
   if (currentStatus != 0) {
-    // Kirim jika status berubah, sensor kritis berpindah, atau sudah melewati 15 detik dari notifikasi terakhir
     if (currentStatus != lastStatus || sensorName != lastCriticalSensor || millis() - lastNotifyTime > 15000) {
       
       WiFiClientSecure client;
@@ -175,9 +201,9 @@ void loop() {
       dataDoc["sensor_name"] = sensorName;
       dataDoc["jarak"] = minD;
       dataDoc["status"] = statusTxt;
-      dataDoc["latitude"] = "";   // Placeholder GPS (Mendukung integrasi masa depan)
-      dataDoc["longitude"] = "";  // Placeholder GPS (Mendukung integrasi masa depan)
-      dataDoc["url"] = "";        // Placeholder URL Foto (Mendukung integrasi masa depan)
+      dataDoc["latitude"] = latStr;   // Data Koordinat Latitude Aktual
+      dataDoc["longitude"] = lngStr;  // Data Koordinat Longitude Aktual
+      // Bagian "url" telah dihapus sesuai permintaan
 
       String requestBody;
       serializeJson(dataDoc, requestBody);
