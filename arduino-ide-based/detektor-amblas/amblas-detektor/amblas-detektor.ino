@@ -112,6 +112,42 @@ void setup() {
   
   // Ambil thresholds terbaru dari Google Sheet
   syncDataAtStartup();
+
+  // 3. WAITING FOR GPS LOCK (Menahan sistem sebelum masuk ke loop utama)
+  Serial.println("\n=====================================");
+  Serial.println("    MENUNGGU KOORDINAT GPS VALID     ");
+  Serial.println("=====================================");
+  Serial.println("Pastikan antena GPS berada di area terbuka (outdoor)...");
+  
+  unsigned long lastGpsBlink = 0;
+  bool gpsLedState = false;
+
+  while (!gps.location.isValid()) {
+    // Selalu baca data stream dari modul GPS di dalam loop penahan ini
+    while (gpsSerial.available() > 0) {
+      gps.encode(gpsSerial.read());
+    }
+
+    // Indikator visual non-blocking: LED Kuning berkedip cepat menandakan "Mencari Satelit"
+    if (millis() - lastGpsBlink > 250) {
+      gpsLedState = !gpsLedState;
+      digitalWrite(LED_KUNING, gpsLedState ? HIGH : LOW);
+      
+      // Print status satelit ke Serial Monitor agar bisa dipantau
+      Serial.printf("[GPS] Menunggu Sinyal... Satelit Terhubung: %d\n", gps.satellites.value());
+      lastGpsBlink = millis();
+    }
+    
+    yield(); // Beri waktu jeda background OS ESP32 agar tidak watchdog reset
+  }
+
+  // Jika keluar dari loop berarti GPS sudah LOCK
+  digitalWrite(LED_KUNING, LOW); // Matikan LED Kuning penanda tadi
+  Serial.println("-> GPS Lock Berhasil!");
+  Serial.printf("-> Koordinat Awal: %f, %f\n", gps.location.lat(), gps.location.lng());
+  
+  // Berikan sinyal buzzer/led panjang tanda sistem siap beroperasi penuh
+  blinkAll(3, 100); 
   
   Serial.println("\nKIRI\tTENGAH\tKANAN\tSTATUS\t\tLATITUDE\tLONGITUDE");
   Serial.println("-------------------------------------------------------------------------");
@@ -128,9 +164,8 @@ void loop() {
   long dKa = readDistance(TRIG_KANAN, ECHO_KANAN);
   
   long minD = dK;
-  String sensorName = "Tengah"; // Default fallback
+  String sensorName = "Tengah"; 
 
-  // Menggunakan logika pembanding yang presisi untuk mencari nilai terkecil
   if (dK <= dT && dK <= dKa) { minD = dK; sensorName = "Kiri"; }
   else if (dT <= dK && dT <= dKa) { minD = dT; sensorName = "Tengah"; }
   else { minD = dKa; sensorName = "Kanan"; }
@@ -147,13 +182,9 @@ void loop() {
     statusTxt = "WASPADA";
   }
 
-  // Ambil data koordinat ter-update (Jika GPS belum lock / tidak ada sinyal, kirim nilai default atau "0.000000")
-  String latStr = "0.000000";
-  String lngStr = "0.000000";
-  if (gps.location.isValid()) {
-    latStr = String(gps.location.lat(), 6);
-    lngStr = String(gps.location.lng(), 6);
-  }
+  // Ambil data koordinat ter-update (Karena di setup sudah dipastikan valid, di sini pasti aman)
+  String latStr = String(gps.location.lat(), 6);
+  String lngStr = String(gps.location.lng(), 6);
 
   // Serial Monitor Logger (Setiap 500ms)
   if (millis() - lastSerialUpdate > 500) {
@@ -162,11 +193,11 @@ void loop() {
   }
 
   // --- KONTROL INDIKATOR FISIK ---
-  if (currentStatus == 2) { // BAHAYA: LED Merah & Buzzer ON terus menerus
+  if (currentStatus == 2) { 
     digitalWrite(LED_MERAH, HIGH); digitalWrite(LED_KUNING, LOW); digitalWrite(LED_HIJAU, LOW); 
     digitalWrite(BUZZER, HIGH); 
   }
-  else if (currentStatus == 1) { // WASPADA: LED Kuning ON, Buzzer berkedip tiap 3 detik (Non-Blocking)
+  else if (currentStatus == 1) { 
     digitalWrite(LED_MERAH, LOW); digitalWrite(LED_KUNING, HIGH); digitalWrite(LED_HIJAU, LOW); 
     
     static unsigned long lastBuzzerAlert = 0;
@@ -178,7 +209,7 @@ void loop() {
       lastBuzzerAlert = millis();
     }
   } 
-  else { // AMAN: LED Hijau ON, perangkat output lainnya OFF
+  else { 
     digitalWrite(LED_MERAH, LOW); digitalWrite(LED_KUNING, LOW); digitalWrite(LED_HIJAU, HIGH); 
     digitalWrite(BUZZER, LOW); 
   }
@@ -195,15 +226,13 @@ void loop() {
       http.addHeader("Content-Type", "application/json");
       http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
 
-      // Siapkan JSON Payload data rekap
       StaticJsonDocument<256> dataDoc;
       dataDoc["kode_unit"] = KODE_UNIT;
       dataDoc["sensor_name"] = sensorName;
       dataDoc["jarak"] = minD;
       dataDoc["status"] = statusTxt;
-      dataDoc["latitude"] = latStr;   // Data Koordinat Latitude Aktual
-      dataDoc["longitude"] = lngStr;  // Data Koordinat Longitude Aktual
-      // Bagian "url" telah dihapus sesuai permintaan
+      dataDoc["latitude"] = latStr;   
+      dataDoc["longitude"] = lngStr;  
 
       String requestBody;
       serializeJson(dataDoc, requestBody);
@@ -225,5 +254,5 @@ void loop() {
     lastCriticalSensor = "";
   }
 
-  delay(50); // Delay kecil agar loop berjalan stabil (~20Hz)
+  delay(50); 
 }
