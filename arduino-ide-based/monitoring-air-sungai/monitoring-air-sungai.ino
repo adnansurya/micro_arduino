@@ -24,12 +24,43 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 #define LED_KUNING 27
 #define LED_MERAH  26
 
-// Kalibrasi Fisik Sungai (Satuan: centimeter)
-const int TINGGI_MAKSIMAL_SUNGAI = 500; // Jarak sensor ke dasar sungai kosong
-const int BATAS_WASPADA = 50;          // Air mencapai tinggi 100 cm
-const int BATAS_BAHAYA = 70;           // Air mencapai tinggi 150 cm
+// Variabel Kalibrasi Fisik Sungai (Dinamis dari Blynk)
+int KEDALAMAN_SUNGAI = 400; // Nilai default awal (cm)
+int BATAS_WASPADA    = 200; // Nilai default awal (cm)
+int BATAS_BAHAYA     = 350; // Nilai default awal (cm)
 
 BlynkTimer timer;
+
+// ================= BLYNK SYNC & WRITE SYNC =================
+// Otomatis mengambil data dari server Blynk saat pertama kali terhubung
+BLYNK_CONNECTED() {
+  Blynk.syncVirtual(V2, V3, V4);
+}
+
+// Mengambil nilai Kedalaman Sungai dari widget di V2
+BLYNK_WRITE(V2) {
+  KEDALAMAN_SUNGAI = param.asInt();
+  Serial.print("Update Kedalaman Sungai: "); 
+  Serial.print(KEDALAMAN_SUNGAI); 
+  Serial.println(" cm");
+}
+
+// Mengambil nilai Batas Waspada dari widget di V3
+BLYNK_WRITE(V3) {
+  BATAS_WASPADA = param.asInt();
+  Serial.print("Update Batas Waspada: "); 
+  Serial.print(BATAS_WASPADA); 
+  Serial.println(" cm");
+}
+
+// Mengambil nilai Batas Bahaya dari widget di V4
+BLYNK_WRITE(V4) {
+  BATAS_BAHAYA = param.asInt();
+  Serial.print("Update Batas Bahaya: "); 
+  Serial.print(BATAS_BAHAYA); 
+  Serial.println(" cm");
+}
+// ===========================================================
 
 // Fungsi untuk membaca jarak dari sensor JSN-SR04T
 float ambilJarak() {
@@ -44,7 +75,7 @@ float ambilJarak() {
   // Menghitung jarak dalam cm
   float jarak = durasi * 0.034 / 2;
   
-  // JSN-SR04T memiliki blind spot ~20cm. Jika jarak 0 atau di luar jangkauan, anggap error
+  // JSN-SR04T memiliki blind spot ~20cm. Jika jarak 0 atau di luar jangkauan (>400cm), anggap error
   if (jarak == 0 || jarak > 400) {
     return -1; 
   }
@@ -62,13 +93,13 @@ void sendSensorData() {
     return;
   }
 
-  // Hitung tinggi air aktual
-  int tinggiAir = TINGGI_MAKSIMAL_SUNGAI - jarakSensor;
-  if (tinggiAir < 0) tinggiAir = 0; // Mengatasi pembacaan fluktuatif di dasar
+  // Hitung tinggi air aktual berdasarkan kedalaman dinamis
+  int tinggiAir = KEDALAMAN_SUNGAI - jarakSensor;
+  if (tinggiAir < 0) tinggiAir = 0; // Mengatasi fluktuasi bacaan sensor di dasar sungai
 
   String statusKetinggian = "";
   
-  // Logika Status, LED, dan Pengkondisian
+  // Logika Status, LED, dan Pengkondisian dengan Batas Dinamis
   if (tinggiAir < BATAS_WASPADA) {
     statusKetinggian = "AMAN";
     digitalWrite(LED_HIJAU, HIGH);
@@ -103,9 +134,9 @@ void sendSensorData() {
   lcd.print("Status: ");
   lcd.print(statusKetinggian);
 
-  // Kirim data ke Blynk Cloud
-  Blynk.virtualWrite(V0, tinggiAir);        // V1 untuk Gauge / Value Display (Integer)
-  Blynk.virtualWrite(V1, statusKetinggian); // V2 untuk Label Value Display (String)
+  // Kirim data monitoring kembali ke Blynk Cloud
+  Blynk.virtualWrite(V0, tinggiAir);        // V0 untuk Gauge / Value Display (Integer)
+  Blynk.virtualWrite(V1, statusKetinggian); // V1 untuk Label Value Display (String)
 }
 
 void setup() {
@@ -126,7 +157,6 @@ void setup() {
 
   // Konfigurasi WiFiManager
   WiFiManager wm;
-  // Jika gagal terhubung ke WiFi lama, ESP32 akan membuat Access Point bernama "ESP32-Sistem-Banjir"
   if (!wm.autoConnect("ESP32-Sistem-Banjir")) {
     Serial.println("Gagal terhubung dan timeout konfigurasi");
     delay(3000);
@@ -138,10 +168,10 @@ void setup() {
   lcd.print("WiFi OK!       ");
   delay(1500);
 
-  // Inisialisasi Blynk dengan koneksi WiFiManager yang sudah ada
+  // Inisialisasi Blynk
   Blynk.config(BLYNK_AUTH_TOKEN);
   
-  // Mengatur interval pembacaan sensor setiap 2 detik (2000ms)
+  // Mengatur interval pembacaan sensor setiap 2 detik
   timer.setInterval(2000L, sendSensorData);
 }
 
