@@ -25,7 +25,7 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 #define LED_MERAH  26
 
 // Kalibrasi Fisik Sungai (Satuan: centimeter)
-const int TINGGI_MAKSIMAL_SUNGAI = 100; // Jarak sensor ke dasar sungai kosong
+const int TINGGI_MAKSIMAL_SUNGAI = 500; // Jarak sensor ke dasar sungai kosong
 const int BATAS_WASPADA = 50;          // Air mencapai tinggi 100 cm
 const int BATAS_BAHAYA = 70;           // Air mencapai tinggi 150 cm
 
@@ -100,12 +100,12 @@ void sendSensorData() {
   lcd.print(" cm");
   
   lcd.setCursor(0, 1);
-  lcd.print("Sts   : ");
+  lcd.print("Status: ");
   lcd.print(statusKetinggian);
 
   // Kirim data ke Blynk Cloud
-  Blynk.virtualWrite(V1, tinggiAir);        // V1 untuk Gauge / Value Display (Integer)
-  Blynk.virtualWrite(V2, statusKetinggian); // V2 untuk Label Value Display (String)
+  Blynk.virtualWrite(V0, tinggiAir);        // V1 untuk Gauge / Value Display (Integer)
+  Blynk.virtualWrite(V1, statusKetinggian); // V2 untuk Label Value Display (String)
 }
 
 void setup() {
