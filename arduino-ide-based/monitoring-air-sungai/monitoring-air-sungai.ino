@@ -23,15 +23,16 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 #define LED_HIJAU  14
 #define LED_KUNING 27
 #define LED_MERAH  26
-#define PIN_BUZZER 15  // Pin dipindah ke GPIO 15 (Dekat Port USB & GND bawah)
+#define PIN_BUZZER 15  // Pin GPIO 15 dekat port USB
 
 // Variabel Kalibrasi Fisik Sungai (Dinamis dari Blynk)
 int KEDALAMAN_SUNGAI = 400; // Nilai default awal (cm)
 int BATAS_WASPADA    = 200; // Nilai default awal (cm)
 int BATAS_BAHAYA     = 350; // Nilai default awal (cm)
 
-// Variabel status global untuk kontrol buzzer
+// Variabel status global untuk kontrol buzzer dan notifikasi
 String statusGlobal = "AMAN";
+String statusSebelumnya = "AMAN"; // Variabel flag untuk mendeteksi perubahan status
 bool stateBuzzerKedip = false;
 
 BlynkTimer timer;
@@ -77,15 +78,14 @@ float ambilJarak() {
 // Fungsi khusus untuk mengatur bunyi buzzer tanpa delay blocking
 void kontrolBuzzer() {
   if (statusGlobal == "AMAN") {
-    digitalWrite(PIN_BUZZER, LOW); // Buzzer mati total
+    digitalWrite(PIN_BUZZER, LOW); 
   } 
   else if (statusGlobal == "WASPADA") {
-    // Membuat efek berkedip/putus-putus setiap interval timer dijalankan
     stateBuzzerKedip = !stateBuzzerKedip;
     digitalWrite(PIN_BUZZER, stateBuzzerKedip);
   } 
   else if (statusGlobal == "BAHAYA") {
-    digitalWrite(PIN_BUZZER, HIGH); // Buzzer bunyi terus tanpa putus
+    digitalWrite(PIN_BUZZER, HIGH); 
   }
 }
 
@@ -103,7 +103,7 @@ void sendSensorData() {
   int tinggiAir = KEDALAMAN_SUNGAI - jarakSensor;
   if (tinggiAir < 0) tinggiAir = 0;
 
-  // Update statusGlobal berdasarkan pengkondisian jarak air
+  // Evaluasi pengkondisian status air
   if (tinggiAir < BATAS_WASPADA) {
     statusGlobal = "AMAN";
     digitalWrite(LED_HIJAU, HIGH);
@@ -121,6 +121,16 @@ void sendSensorData() {
     digitalWrite(LED_HIJAU, LOW);
     digitalWrite(LED_KUNING, LOW);
     digitalWrite(LED_MERAH, HIGH);
+  }
+
+  // LOGIKA NOTIFIKASI: Kirim log/push notif hanya saat status mengalami perubahan
+  if (statusGlobal != statusSebelumnya) {
+    String pesanNotif = "Peringatan! Status air sungai berubah menjadi: " + statusGlobal + " (" + String(tinggiAir) + " cm)";
+    Blynk.logEvent("status_perubahan", pesanNotif);
+    Serial.println(">>> Notifikasi Dikirim: " + pesanNotif);
+    
+    // Perbarui status sebelumnya agar tidak mengirim notifikasi berulang
+    statusSebelumnya = statusGlobal;
   }
 
   // Tampilkan data ke Serial Monitor
@@ -152,7 +162,7 @@ void setup() {
   pinMode(LED_HIJAU, OUTPUT);
   pinMode(LED_KUNING, OUTPUT);
   pinMode(LED_MERAH, OUTPUT);
-  pinMode(PIN_BUZZER, OUTPUT); // Definisikan buzzer sebagai output
+  pinMode(PIN_BUZZER, OUTPUT);
 
   // Inisialisasi LCD
   lcd.init();
@@ -160,9 +170,9 @@ void setup() {
   lcd.setCursor(0, 0);
   lcd.print("Menghubungkan...");
 
-  // Konfigurasi WiFiManager
+  // Konfigurasi WiFiManager dengan nama Hotspot Baru
   WiFiManager wm;
-  if (!wm.autoConnect("ESP32-Sistem-Banjir")) {
+  if (!wm.autoConnect("ESP32-Monitoring")) {
     Serial.println("Gagal terhubung dan timeout konfigurasi");
     delay(3000);
     ESP.restart();
@@ -176,10 +186,10 @@ void setup() {
   // Inisialisasi Blynk
   Blynk.config(BLYNK_AUTH_TOKEN);
   
-  // Interval utama pembacaan sensor setiap 2 detik (2000ms)
+  // Interval utama pembacaan sensor setiap 2 detik
   timer.setInterval(2000L, sendSensorData);
 
-  // Interval khusus pengecekan buzzer setiap 300ms 
+  // Interval pengecekan buzzer setiap 300ms 
   timer.setInterval(300L, kontrolBuzzer);
 }
 
