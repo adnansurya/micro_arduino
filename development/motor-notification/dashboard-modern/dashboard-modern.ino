@@ -450,7 +450,7 @@ void drawNotificationPopup() {
   tft.drawString(notifySrc, 20, NOTIF_CARD_Y + NOTIF_SRC_Y, 1);
 
   tft.setTextColor(COLOR_TEXT_PRIMARY, COLOR_CARD_BG);
-  String shortTitle = notifyTitle.length() > 35 ? notifyTitle.substring(0, 32) + "..." : notifyTitle;
+  String shortTitle = notifyTitle.length() > 30 ? notifyTitle.substring(0, 27) + "..." : notifyTitle;
   tft.drawString(shortTitle, 20, NOTIF_CARD_Y + NOTIF_TITLE_Y, 2);
 
   tft.setTextColor(COLOR_TEXT_SECONDARY, COLOR_CARD_BG);
