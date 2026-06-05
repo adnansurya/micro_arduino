@@ -137,7 +137,7 @@ void sendSensorData() {
 
   if (statusGlobal != statusSebelumnya) {
     String pesanNotif = "Peringatan! Status air sungai berubah menjadi: " + statusGlobal + " (" + String(tinggiAir) + " cm)";
-    Blynk.logEvent("status_perubahan", pesanNotif);
+    Blynk.logEvent("Status_perubahan", pesanNotif);
     statusSebelumnya = statusGlobal;
   }
 
