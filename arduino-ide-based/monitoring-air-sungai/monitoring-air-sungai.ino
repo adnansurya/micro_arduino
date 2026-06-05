@@ -23,19 +23,32 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 #define LED_HIJAU  14
 #define LED_KUNING 27
 #define LED_MERAH  26
-#define PIN_BUZZER 15  // Pin GPIO 15 dekat port USB
+#define PIN_BUZZER 15  
 
 // Variabel Kalibrasi Fisik Sungai (Dinamis dari Blynk)
-int KEDALAMAN_SUNGAI = 400; // Nilai default awal (cm)
-int BATAS_WASPADA    = 200; // Nilai default awal (cm)
-int BATAS_BAHAYA     = 350; // Nilai default awal (cm)
+int KEDALAMAN_SUNGAI = 400; 
+int BATAS_WASPADA    = 200; 
+int BATAS_BAHAYA     = 350; 
 
 // Variabel status global untuk kontrol buzzer dan notifikasi
 String statusGlobal = "AMAN";
-String statusSebelumnya = "AMAN"; // Variabel flag untuk mendeteksi perubahan status
+String statusSebelumnya = "AMAN"; 
 bool stateBuzzerKedip = false;
 
 BlynkTimer timer;
+
+// Fungsi Callback ketika WiFiManager masuk ke mode Access Point (Config Mode)
+void configModeCallback(WiFiManager *myWiFiManager) {
+  Serial.println("Masuk ke Mode Konfigurasi WiFi");
+  Serial.println("SSID AP: " + myWiFiManager->getConfigPortalSSID());
+  
+  // Tampilkan Nama AP ke LCD agar user tahu harus connect ke hotspot mana
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Hubungkan WiFi:");
+  lcd.setCursor(0, 1);
+  lcd.print(myWiFiManager->getConfigPortalSSID()); // Akan muncul "ESP32-Monitoring"
+}
 
 // ================= BLYNK SYNC & WRITE SYNC =================
 BLYNK_CONNECTED() {
@@ -103,7 +116,6 @@ void sendSensorData() {
   int tinggiAir = KEDALAMAN_SUNGAI - jarakSensor;
   if (tinggiAir < 0) tinggiAir = 0;
 
-  // Evaluasi pengkondisian status air
   if (tinggiAir < BATAS_WASPADA) {
     statusGlobal = "AMAN";
     digitalWrite(LED_HIJAU, HIGH);
@@ -123,19 +135,11 @@ void sendSensorData() {
     digitalWrite(LED_MERAH, HIGH);
   }
 
-  // LOGIKA NOTIFIKASI: Kirim log/push notif hanya saat status mengalami perubahan
   if (statusGlobal != statusSebelumnya) {
     String pesanNotif = "Peringatan! Status air sungai berubah menjadi: " + statusGlobal + " (" + String(tinggiAir) + " cm)";
     Blynk.logEvent("status_perubahan", pesanNotif);
-    Serial.println(">>> Notifikasi Dikirim: " + pesanNotif);
-    
-    // Perbarui status sebelumnya agar tidak mengirim notifikasi berulang
     statusSebelumnya = statusGlobal;
   }
-
-  // Tampilkan data ke Serial Monitor
-  Serial.print("Tinggi Air: ");   Serial.print(tinggiAir); Serial.println(" cm");
-  Serial.print("Status    : ");   Serial.println(statusGlobal);
 
   // Tampilkan data ke LCD 16x2
   lcd.clear();
@@ -168,28 +172,39 @@ void setup() {
   lcd.init();
   lcd.backlight();
   lcd.setCursor(0, 0);
-  lcd.print("Menghubungkan...");
+  lcd.print("Mencari WiFi...");
 
-  // Konfigurasi WiFiManager dengan nama Hotspot Baru
+  // Konfigurasi WiFiManager
   WiFiManager wm;
+  
+  // Set fungsi callback saat masuk mode AP captive portal
+  wm.setAPCallback(configModeCallback);
+  
+  // Mencoba connect ke WiFi lama, jika gagal buka AP "ESP32-Monitoring"
   if (!wm.autoConnect("ESP32-Monitoring")) {
     Serial.println("Gagal terhubung dan timeout konfigurasi");
+    lcd.clear();
+    lcd.print("Timeout/Gagal!");
     delay(3000);
     ESP.restart();
   }
 
+  // JIKA BERHASIL CONNECT WIFI:
   Serial.println("WiFi Terhubung!");
+  
+  // Tampilkan nama SSID WiFi yang berhasil terhubung pada LCD
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("WiFi Terhubung!");
   lcd.setCursor(0, 1);
-  lcd.print("WiFi OK!       ");
-  delay(1500);
+  lcd.print(WiFi.SSID()); // Mengambil nama SSID secara dinamis
+  delay(2500);
 
   // Inisialisasi Blynk
   Blynk.config(BLYNK_AUTH_TOKEN);
   
-  // Interval utama pembacaan sensor setiap 2 detik
+  // Interval utama pembacaan sensor dan buzzer
   timer.setInterval(2000L, sendSensorData);
-
-  // Interval pengecekan buzzer setiap 300ms 
   timer.setInterval(300L, kontrolBuzzer);
 }
 
