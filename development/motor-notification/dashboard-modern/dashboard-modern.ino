@@ -12,26 +12,85 @@
 TFT_eSPI tft = TFT_eSPI();
 
 // ========================================================
-// KONFIGURASI TEMA MODERN - DARK GLASS PREMIUM
+// =============== KONFIGURASI POSISI LAYAR ===============
+// =============== SESUAIKAN NILAI INI ===============
 // ========================================================
-// Warna Dasar
+
+// === HEADER (Jam & Tanggal) ===
+#define HEADER_HEIGHT          55      // Tinggi area header
+#define JAM_POS_Y              8       // Posisi Y jam digital
+#define TANGGAL_POS_Y          58      // Posisi Y tanggal
+#define GARIS_AKSEN_POS_Y      75      // Posisi Y garis aksen
+
+// === CARD NAVIGASI ===
+#define NAV_CARD_Y             82      // Posisi Y card navigasi
+#define NAV_CARD_HEIGHT        75      // Tinggi card navigasi
+#define NAV_TITLE_Y            8       // Offset teks "NAVIGASI"
+#define NAV_INSTR_Y            32      // Offset instruksi
+#define NAV_DIST_ETA_Y         55      // Offset jarak & ETA
+
+// === CARD NOTIFIKASI ===
+#define NOTIF_CARD_Y           82      // Posisi Y card notifikasi
+#define NOTIF_CARD_HEIGHT      95      // Tinggi card notifikasi (5 baris)
+#define NOTIF_SRC_Y            10      // Offset sumber notifikasi
+#define NOTIF_TITLE_Y          25      // Offset judul notifikasi
+#define NOTIF_BODY_LINE1_Y     45      // Offset baris 1 isi pesan
+#define NOTIF_BODY_LINE2_Y     60      // Offset baris 2 isi pesan
+#define NOTIF_BODY_LINE3_Y     75      // Offset baris 3 isi pesan
+
+// === CARD MUSIK ===
+#define MUSIC_CARD_HEIGHT      85      // Tinggi card musik
+#define MUSIC_CARD_Y_DEFAULT   110     // Posisi Y musik default
+#define MUSIC_CARD_Y_WITH_NOTIF 182    // Posisi Y musik + notifikasi
+#define MUSIC_CARD_Y_WITH_NAV  162     // Posisi Y musik + navigasi
+#define MUSIC_TITLE_Y          10      // Offset judul lagu
+#define MUSIC_ARTIST_Y         30      // Offset nama artis
+#define MUSIC_PROGRESS_Y       42      // Offset progress bar
+#define MUSIC_TIME_Y           52      // Offset teks waktu
+#define MUSIC_STATUS_Y         65      // Offset status
+
+// === CARD PANGGILAN ===
+#define CALL_CARD_HEIGHT       70      // Tinggi card panggilan
+#define CALL_CARD_Y_DEFAULT    110     // Posisi Y panggilan default
+#define CALL_CARD_Y_WITH_NOTIF 182     // Posisi Y + notifikasi
+#define CALL_CARD_Y_WITH_NAV   162     // Posisi Y + navigasi
+#define CALL_TITLE_Y           8      // Offset "PANGGILAN MASUK"
+#define CALL_NAME_Y            32      // Offset nama penelepon
+#define CALL_INSTRUCTION_Y     55      // Offset instruksi
+
+// === VOLUME BAR ===
+#define VOLUME_Y_FROM_BOTTOM   45      // Jarak dari bawah layar
+#define VOLUME_BAR_Y           10      // Offset bar volume
+#define VOLUME_PERCENT_Y       18      // Offset persentase
+
+// === FOOTER ===
+#define FOOTER_Y_FROM_BOTTOM   10      // Jarak dari bawah layar
+#define FOOTER_LINE_OFFSET     3       // Offset garis pemisah
+
+// === STANDBY MODE ===
+#define STANDBY_JAM_Y          70      // Posisi Y jam standby
+#define STANDBY_TANGGAL_Y      130     // Posisi Y tanggal standby
+#define STANDBY_TEXT_Y         200     // Posisi Y teks standby
+
+// ========================================================
+// Warna Tema
+// ========================================================
 #define COLOR_BG_TOP      0x2104
 #define COLOR_BG_BOTTOM   0x0000
 #define COLOR_CARD_BG     0x3186
 
-// Warna Aksen Dinamis
 uint16_t COLOR_ACCENT = 0x05FF;
-uint16_t COLOR_SUCCESS = 0x07E0;    // Hijau neon untuk PLAY
-uint16_t COLOR_WARNING = 0xFD20;    // Orange untuk PAUSE
+uint16_t COLOR_SUCCESS = 0x07E0;
+uint16_t COLOR_WARNING = 0xFD20;
 uint16_t COLOR_DANGER = 0xF800;
 uint16_t COLOR_PRIMARY = 0x05FF;
 uint16_t COLOR_GLASS = 0xC618;
-
-// Warna Sekunder
 uint16_t COLOR_TEXT_PRIMARY = TFT_WHITE;
 uint16_t COLOR_TEXT_SECONDARY = 0x7BEF;
 
-// BLE UUID
+// ========================================================
+// BLE & Data Variables
+// ========================================================
 #define SERVICE_UUID "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 #define CHARACTERISTIC_UUID_RX "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
 #define CHARACTERISTIC_UUID_TX "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
@@ -50,7 +109,7 @@ String inputBuffer = "";
 bool refreshDisplay = true;
 bool isNavigating = false;
 
-// Variabel untuk tracking perubahan data
+// Variabel tracking
 String lastArtist = "", lastTitle = "", lastMusicState = "";
 String lastNavInstr = "", lastNavDist = "", lastNavEta = "";
 int lastVolumeLevel = -1;
@@ -67,7 +126,7 @@ bool isNotify = false;
 String notifySrc = "", notifyTitle = "", notifyBody = "";
 bool isIncomingCall = false;
 String callName = "";
-unsigned long lastNotifyTime = 0;  // Untuk tracking waktu muncul notifikasi
+unsigned long lastNotifyTime = 0;
 
 // Timer
 unsigned long lastClockCheck = 0;
@@ -76,6 +135,29 @@ unsigned long lastSDWrite = 0;
 const char *hariIndo[] = { "Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu" };
 const char *bulanIndo[] = { "Januari", "Februari", "Maret", "April", "Mei", "Juni",
                             "Juli", "Agustus", "September", "Oktober", "November", "Desember" };
+
+// ========================================================
+// FUNGSI BANTU POSISI
+// ========================================================
+int getMusicCardY() {
+  if (isNavigating) return MUSIC_CARD_Y_WITH_NAV;
+  if (isNotify) return MUSIC_CARD_Y_WITH_NOTIF;
+  return MUSIC_CARD_Y_DEFAULT;
+}
+
+int getCallCardY() {
+  if (isNavigating) return CALL_CARD_Y_WITH_NAV;
+  if (isNotify) return CALL_CARD_Y_WITH_NOTIF;
+  return CALL_CARD_Y_DEFAULT;
+}
+
+int getVolumeY() {
+  return tft.height() - VOLUME_Y_FROM_BOTTOM;
+}
+
+int getFooterY() {
+  return tft.height() - FOOTER_Y_FROM_BOTTOM;
+}
 
 // ========================================================
 // FUNGSI UTILITY
@@ -98,72 +180,34 @@ uint16_t color565(uint8_t r, uint8_t g, uint8_t b) {
 // ========================================================
 bool hasDataChanged() {
   bool changed = false;
-  
-  if (lastCurrentTime != currentTime) {
-    lastCurrentTime = currentTime;
-    changed = true;
-  }
-  
+  if (lastCurrentTime != currentTime) { lastCurrentTime = currentTime; changed = true; }
   if (lastTitle != title || lastArtist != artist || lastMusicState != musicState) {
-    lastTitle = title;
-    lastArtist = artist;
-    lastMusicState = musicState;
-    changed = true;
+    lastTitle = title; lastArtist = artist; lastMusicState = musicState; changed = true;
   }
-  
   if (musicState == "pause" && lastPositionSec != positionSec) {
-    lastPositionSec = positionSec;
-    changed = true;
+    lastPositionSec = positionSec; changed = true;
   }
-  
   if (lastNavInstr != navInstr || lastNavDist != navDist || lastNavEta != navEta || lastIsNavigating != isNavigating) {
-    lastNavInstr = navInstr;
-    lastNavDist = navDist;
-    lastNavEta = navEta;
-    lastIsNavigating = isNavigating;
-    changed = true;
+    lastNavInstr = navInstr; lastNavDist = navDist; lastNavEta = navEta; lastIsNavigating = isNavigating; changed = true;
   }
-  
-  if (lastVolumeLevel != volumeLevel) {
-    lastVolumeLevel = volumeLevel;
-    changed = true;
-  }
-  
-  if (lastIsNotify != isNotify) {
-    lastIsNotify = isNotify;
-    changed = true;
-  }
+  if (lastVolumeLevel != volumeLevel) { lastVolumeLevel = volumeLevel; changed = true; }
+  if (lastIsNotify != isNotify) { lastIsNotify = isNotify; changed = true; }
   if (isNotify && (lastNotifySrc != notifySrc || lastNotifyTitle != notifyTitle || lastNotifyBody != notifyBody)) {
-    lastNotifySrc = notifySrc;
-    lastNotifyTitle = notifyTitle;
-    lastNotifyBody = notifyBody;
-    changed = true;
+    lastNotifySrc = notifySrc; lastNotifyTitle = notifyTitle; lastNotifyBody = notifyBody; changed = true;
   }
-  
-  if (lastIsIncomingCall != isIncomingCall) {
-    lastIsIncomingCall = isIncomingCall;
-    changed = true;
-  }
-  if (isIncomingCall && lastCallName != callName) {
-    lastCallName = callName;
-    changed = true;
-  }
-  
+  if (lastIsIncomingCall != isIncomingCall) { lastIsIncomingCall = isIncomingCall; changed = true; }
+  if (isIncomingCall && lastCallName != callName) { lastCallName = callName; changed = true; }
   return changed;
 }
 
 // ========================================================
-// MANAJEMEN SD CARD & WAKTU
+// MANAJEMEN SD CARD
 // ========================================================
 void loadTimeFromSD() {
   File file = SD.open("/config.txt", FILE_READ);
-  if (!file) {
-    Serial.println("[SD] config.txt tidak ditemukan");
-    return;
-  }
+  if (!file) { Serial.println("[SD] config.txt tidak ditemukan"); return; }
   String savedTimeStr = file.readStringUntil('\n');
   file.close();
-  
   time_t savedTimestamp = (time_t)savedTimeStr.toInt();
   if (savedTimestamp > 1000000000) {
     lastUnixTime = savedTimestamp;
@@ -171,13 +215,11 @@ void loadTimeFromSD() {
     tv.tv_sec = lastUnixTime;
     tv.tv_usec = 0;
     settimeofday(&tv, NULL);
-    
     struct tm *tmp = localtime(&lastUnixTime);
     char buf[10];
     sprintf(buf, "%02d:%02d", tmp->tm_hour, tmp->tm_min);
     currentTime = String(buf);
     lastCurrentTime = currentTime;
-    
     Serial.println("[SD] Waktu dimuat dari SD Card");
   }
 }
@@ -187,15 +229,12 @@ void saveTimeToSD() {
   time(&now);
   if (now > 1600000000) {
     File file = SD.open("/config.txt", FILE_WRITE);
-    if (file) {
-      file.println(now);
-      file.close();
-    }
+    if (file) { file.println(now); file.close(); }
   }
 }
 
 // ========================================================
-// EFEK VISUAL STATIS
+// EFEK VISUAL
 // ========================================================
 void drawGradientBackground() {
   for (int i = 0; i < tft.height(); i++) {
@@ -219,23 +258,19 @@ void drawBorderWithColor(int x, int y, int w, int h, int radius, uint16_t color)
 void drawNeonProgressBar(int x, int y, int width, int height, float progress, uint16_t color) {
   tft.fillRoundRect(x, y, width, height, height/2, 0x2104);
   tft.drawRoundRect(x, y, width, height, height/2, color);
-  
   int fillWidth = width * progress;
-  if(fillWidth > 0) {
-    tft.fillRoundRect(x, y, fillWidth, height, height/2, color);
-  }
+  if(fillWidth > 0) { tft.fillRoundRect(x, y, fillWidth, height, height/2, color); }
 }
 
 // ========================================================
-// KOMPONEN UI UTAMA
+// KOMPONEN UI (MENGGUNAKAN KONSTANTA POSISI)
 // ========================================================
 void drawModernHeader() {
-  for(int i = 0; i < 55; i++) {
+  for(int i = 0; i < HEADER_HEIGHT; i++) {
     tft.drawFastHLine(0, i, tft.width(), color565(10, 10, 30));
   }
-  
   tft.setTextColor(COLOR_TEXT_PRIMARY, TFT_TRANSPARENT);
-  tft.drawCentreString(currentTime, tft.width() / 2, 8, 6);
+  tft.drawCentreString(currentTime, tft.width() / 2, JAM_POS_Y, 6);
   
   if(lastUnixTime > 0) {
     struct tm *tmp = localtime(&lastUnixTime);
@@ -243,80 +278,68 @@ void drawModernHeader() {
     sprintf(dateBuf, "%s, %02d %s %d", hariIndo[tmp->tm_wday], tmp->tm_mday, 
             bulanIndo[tmp->tm_mon], tmp->tm_year + 1900);
     tft.setTextColor(COLOR_TEXT_SECONDARY, TFT_TRANSPARENT);
-    tft.drawCentreString(dateBuf, tft.width() / 2, 58, 2);
+    tft.drawCentreString(dateBuf, tft.width() / 2, TANGGAL_POS_Y, 2);
   }
-  
-  tft.drawRect(20, 75, tft.width() - 40, 2, COLOR_ACCENT);
+  tft.drawRect(20, GARIS_AKSEN_POS_Y, tft.width() - 40, 2, COLOR_ACCENT);
 }
 
 void drawNavigationCard() {
-  int cardY = 90;
-  int cardHeight = 75;
-  
-  drawGlassEffect(10, cardY, tft.width() - 20, cardHeight, 10);
-  drawBorderWithColor(10, cardY, tft.width() - 20, cardHeight, 10, COLOR_PRIMARY);
+  drawGlassEffect(10, NAV_CARD_Y, tft.width() - 20, NAV_CARD_HEIGHT, 10);
+  drawBorderWithColor(10, NAV_CARD_Y, tft.width() - 20, NAV_CARD_HEIGHT, 10, COLOR_PRIMARY);
   
   tft.setTextColor(COLOR_PRIMARY, COLOR_CARD_BG);
-  tft.drawCentreString("NAVIGASI", tft.width() / 2, cardY + 8, 2);
+  tft.drawCentreString("NAVIGASI", tft.width() / 2, NAV_CARD_Y + NAV_TITLE_Y, 2);
   
   tft.setTextColor(COLOR_TEXT_PRIMARY, COLOR_CARD_BG);
   String displayInstr = navInstr;
-  if(displayInstr.length() > 28) {
-    displayInstr = displayInstr.substring(0, 25) + "...";
-  }
-  tft.drawCentreString(displayInstr, tft.width() / 2, cardY + 32, 2);
+  if(displayInstr.length() > 28) displayInstr = displayInstr.substring(0, 25) + "...";
+  tft.drawCentreString(displayInstr, tft.width() / 2, NAV_CARD_Y + NAV_INSTR_Y, 2);
   
   tft.setTextColor(COLOR_TEXT_SECONDARY, COLOR_CARD_BG);
-  tft.drawString(" " + navDist, 20, cardY + 55, 1);
-  tft.drawRightString(navEta + " ", tft.width() - 20, cardY + 55, 1);
+  tft.drawString(" " + navDist, 20, NAV_CARD_Y + NAV_DIST_ETA_Y, 1);
+  tft.drawRightString(navEta + " ", tft.width() - 20, NAV_CARD_Y + NAV_DIST_ETA_Y, 1);
 }
 
 void drawNotificationPopup() {
   if(!isNotify) return;
   
-  // NOTIFIKASI: 5 BARIS dengan tinggi lebih besar
-  int notifY = 90;
-  int notifHeight = 95;  // 55 -> 95 (tambah 40px untuk 3 baris pesan)
+  drawGlassEffect(10, NOTIF_CARD_Y, tft.width() - 20, NOTIF_CARD_HEIGHT, 10);
+  drawBorderWithColor(10, NOTIF_CARD_Y, tft.width() - 20, NOTIF_CARD_HEIGHT, 10, COLOR_DANGER);
   
-  drawGlassEffect(10, notifY, tft.width() - 20, notifHeight, 10);
-  drawBorderWithColor(10, notifY, tft.width() - 20, notifHeight, 10, COLOR_DANGER);
-  
-  // BARIS 1: Sumber notifikasi (Aplikasi)
   tft.setTextColor(COLOR_DANGER, COLOR_CARD_BG);
-  tft.drawString(notifySrc, 20, notifY + 10, 1);
+  tft.drawString(notifySrc, 20, NOTIF_CARD_Y + NOTIF_SRC_Y, 1);
   
-  // BARIS 2: Judul notifikasi
   tft.setTextColor(COLOR_TEXT_PRIMARY, COLOR_CARD_BG);
   String shortTitle = notifyTitle.length() > 35 ? notifyTitle.substring(0, 32) + "..." : notifyTitle;
-  tft.drawString(shortTitle, 20, notifY + 28, 2);
+  tft.drawString(shortTitle, 20, NOTIF_CARD_Y + NOTIF_TITLE_Y, 2);
   
-  // BARIS 3-5: Isi pesan (3 baris untuk konten panjang)
   tft.setTextColor(COLOR_TEXT_SECONDARY, COLOR_CARD_BG);
-  
-  // Potong pesan menjadi maksimal 3 baris, masing-masing 35 karakter
   String bodyText = notifyBody;
-  
-  // Baris 1 pesan
-  String line1 = "";
-  String line2 = "";
-  String line3 = "";
+  String line1 = "", line2 = "", line3 = "";
   
   if(bodyText.length() > 0) {
-    // Baris 1 (maks 35 karakter)
-    if(bodyText.length() > 35) {
-      line1 = bodyText.substring(0, 32) + "...";
-      String remaining = bodyText.substring(35);
+    int maxChars = 34;  // MAKSIMAL 34 KARAKTER PER BARIS
+    
+    // === BARIS 1 ===
+    if(bodyText.length() > maxChars) {
+      line1 = bodyText.substring(0, maxChars);
+      String remaining = bodyText.substring(maxChars);
       
-      // Baris 2 (maks 35 karakter)
-      if(remaining.length() > 35) {
-        line2 = remaining.substring(0, 32) + "...";
-        String remaining2 = remaining.substring(35);
+      // === BARIS 2 ===
+      if(remaining.length() > maxChars) {
+        line2 = remaining.substring(0, maxChars);
+        String remaining2 = remaining.substring(maxChars);
         
-        // Baris 3 (sisa)
+        // === BARIS 3 (dengan "..." di akhir jika masih ada sisa) ===
         if(remaining2.length() > 0) {
-          line3 = remaining2.length() > 35 ? remaining2.substring(0, 32) + "..." : remaining2;
+          if(remaining2.length() > maxChars - 3) {
+            line3 = remaining2.substring(0, maxChars - 3) + "...";
+          } else {
+            line3 = remaining2;
+          }
         }
-      } else if(remaining.length() > 0) {
+      } else {
+        // Jika sisa baris 2 tidak perlu dipotong lagi
         line2 = remaining;
       }
     } else {
@@ -324,109 +347,73 @@ void drawNotificationPopup() {
     }
     
     // Gambar 3 baris pesan
-    if(line1.length() > 0) {
-      tft.drawString(line1, 20, notifY + 48, 1);
-    }
-    if(line2.length() > 0) {
-      tft.drawString(line2, 20, notifY + 63, 1);
-    }
-    if(line3.length() > 0) {
-      tft.drawString(line3, 20, notifY + 78, 1);
-    }
+    if(line1.length() > 0) tft.drawString(line1, 20, NOTIF_CARD_Y + NOTIF_BODY_LINE1_Y, 1);
+    if(line2.length() > 0) tft.drawString(line2, 20, NOTIF_CARD_Y + NOTIF_BODY_LINE2_Y, 1);
+    if(line3.length() > 0) tft.drawString(line3, 20, NOTIF_CARD_Y + NOTIF_BODY_LINE3_Y, 1);
   }
 }
 
 void drawMusicPlayer() {
-  int musicY;
-  int cardHeight = 85;
-  
-  if (isNavigating) {
-    musicY = 170;  // navigasi Y=90 + tinggi 75 = 165, musicY=170 (jarak 5px)
-  } else if (isNotify) {
-    musicY = 190;  // notif Y=90 + tinggi 95 = 185, musicY=190 (jarak 5px)
-  } else {
-    musicY = 110;
-  }
-  
+  int musicY = getMusicCardY();
   uint16_t borderColor = (musicState == "play") ? COLOR_SUCCESS : COLOR_WARNING;
   
-  drawGlassEffect(10, musicY, tft.width() - 20, cardHeight, 10);
-  drawBorderWithColor(10, musicY, tft.width() - 20, cardHeight, 10, borderColor);
+  drawGlassEffect(10, musicY, tft.width() - 20, MUSIC_CARD_HEIGHT, 10);
+  drawBorderWithColor(10, musicY, tft.width() - 20, MUSIC_CARD_HEIGHT, 10, borderColor);
   
-  // JUDUL LAGU
   tft.setTextColor(COLOR_TEXT_PRIMARY, COLOR_CARD_BG);
   String displayTitle = title;
-  if(displayTitle.length() > 38) {
-    displayTitle = displayTitle.substring(0, 35) + "...";
-  }
-  tft.drawString(displayTitle, 20, musicY + 12, 2);
+  if(displayTitle.length() > 38) displayTitle = displayTitle.substring(0, 35) + "...";
+  tft.drawString(displayTitle, 20, musicY + MUSIC_TITLE_Y, 2);
   
-  // NAMA ARTIS
   tft.setTextColor(COLOR_TEXT_SECONDARY, COLOR_CARD_BG);
   String displayArtist = artist;
-  if(displayArtist.length() > 38) {
-    displayArtist = displayArtist.substring(0, 35) + "...";
-  }
-  tft.drawString(displayArtist, 20, musicY + 35, 1);
+  if(displayArtist.length() > 38) displayArtist = displayArtist.substring(0, 35) + "...";
+  tft.drawString(displayArtist, 20, musicY + MUSIC_ARTIST_Y, 1);
   
-  // PROGRESS BAR (HANYA SAAT PAUSE)
   if (musicState == "pause") {
     float progress = (durationSec > 0) ? (float)positionSec / durationSec : 0;
-    drawNeonProgressBar(20, musicY + 52, tft.width() - 40, 5, progress, COLOR_WARNING);
-    
+    drawNeonProgressBar(20, musicY + MUSIC_PROGRESS_Y, tft.width() - 40, 5, progress, COLOR_WARNING);
     tft.setTextColor(COLOR_TEXT_SECONDARY, COLOR_CARD_BG);
-    tft.drawString(formatTime(positionSec) + " / " + formatTime(durationSec), 20, musicY + 63, 1);
-    
+    tft.drawString(formatTime(positionSec) + " / " + formatTime(durationSec), 20, musicY + MUSIC_TIME_Y, 1);
     tft.setTextColor(COLOR_WARNING, COLOR_CARD_BG);
-    tft.drawString("PAUSED", 20, musicY + 76, 1);
+    tft.drawString("PAUSED", 20, musicY + MUSIC_STATUS_Y, 1);
   } else {
     tft.setTextColor(COLOR_SUCCESS, COLOR_CARD_BG);
-    tft.drawString("NOW PLAYING", 20, musicY + 60, 2);
+    tft.drawString("NOW PLAYING", 20, musicY + MUSIC_STATUS_Y, 2);
   }
 }
 
 void drawCallCard() {
-  int callY;
-  int callHeight = 75;
+  int callY = getCallCardY();
   
-  if (isNavigating) {
-    callY = 170;
-  } else if (isNotify) {
-    callY = 190;
-  } else {
-    callY = 110;
-  }
-  
-  drawGlassEffect(10, callY, tft.width() - 20, callHeight, 10);
-  drawBorderWithColor(10, callY, tft.width() - 20, callHeight, 10, COLOR_DANGER);
+  drawGlassEffect(10, callY, tft.width() - 20, CALL_CARD_HEIGHT, 10);
+  drawBorderWithColor(10, callY, tft.width() - 20, CALL_CARD_HEIGHT, 10, COLOR_DANGER);
   
   tft.setTextColor(COLOR_DANGER, COLOR_CARD_BG);
-  tft.drawCentreString("PANGGILAN MASUK", tft.width() / 2, callY + 10, 2);
+  tft.drawCentreString("PANGGILAN MASUK", tft.width() / 2, callY + CALL_TITLE_Y, 2);
   
   tft.setTextColor(COLOR_TEXT_PRIMARY, COLOR_CARD_BG);
-  tft.drawCentreString(callName, tft.width() / 2, callY + 35, 2);
+  tft.drawCentreString(callName, tft.width() / 2, callY + CALL_NAME_Y, 2);
   
   tft.setTextColor(COLOR_TEXT_SECONDARY, COLOR_CARD_BG);
-  tft.drawCentreString("Angkat di HP Anda", tft.width() / 2, callY + 60, 1);
+  tft.drawCentreString("Angkat di HP Anda", tft.width() / 2, callY + CALL_INSTRUCTION_Y, 1);
 }
 
 void drawVolumeBar() {
-  int volY = tft.height() - 50;
-  
+  int volY = getVolumeY();
   tft.setTextColor(COLOR_TEXT_SECONDARY, COLOR_BG_BOTTOM);
   tft.drawCentreString("VOLUME", tft.width() / 2, volY, 1);
   
   float volumeProgress = volumeLevel / 100.0;
-  drawNeonProgressBar((tft.width() - 180) / 2, volY + 18, 180, 6, volumeProgress, COLOR_PRIMARY);
+  drawNeonProgressBar((tft.width() - 180) / 2, volY + VOLUME_BAR_Y, 180, 6, volumeProgress, COLOR_PRIMARY);
   
   tft.setTextColor(COLOR_PRIMARY, COLOR_BG_BOTTOM);
-  tft.drawCentreString(String(volumeLevel) + "%", tft.width() / 2, volY + 32, 1);
+  tft.drawCentreString(String(volumeLevel) + "%", tft.width() / 2, volY + VOLUME_PERCENT_Y, 1);
 }
 
 void drawFooter() {
-  int footerY = tft.height() - 18;
-  
-  tft.drawFastHLine(20, footerY - 5, tft.width() - 40, COLOR_TEXT_SECONDARY);
+  int footerY = getFooterY();
+  tft.drawFastHLine(20, footerY - FOOTER_LINE_OFFSET, tft.width() - 40, COLOR_TEXT_SECONDARY);
   
   if(deviceConnected) {
     tft.setTextColor(COLOR_SUCCESS, COLOR_BG_BOTTOM);
@@ -435,16 +422,14 @@ void drawFooter() {
     tft.setTextColor(COLOR_DANGER, COLOR_BG_BOTTOM);
     tft.drawString("Disconnected", 20, footerY, 1);
   }
-  
   tft.setTextColor(COLOR_TEXT_SECONDARY, COLOR_BG_BOTTOM);
   tft.drawRightString("Dashboard v2.0", tft.width() - 20, footerY, 1);
 }
 
 void drawStandbyMode() {
   drawGradientBackground();
-  
   tft.setTextColor(COLOR_TEXT_PRIMARY, TFT_TRANSPARENT);
-  tft.drawCentreString(currentTime, tft.width() / 2, 70, 6);
+  tft.drawCentreString(currentTime, tft.width() / 2, STANDBY_JAM_Y, 6);
   
   if(lastUnixTime > 0) {
     struct tm *tmp = localtime(&lastUnixTime);
@@ -452,90 +437,59 @@ void drawStandbyMode() {
     sprintf(dateBuf, "%s, %02d %s %d", hariIndo[tmp->tm_wday], tmp->tm_mday, 
             bulanIndo[tmp->tm_mon], tmp->tm_year + 1900);
     tft.setTextColor(COLOR_TEXT_SECONDARY, TFT_TRANSPARENT);
-    tft.drawCentreString(dateBuf, tft.width() / 2, 130, 2);
+    tft.drawCentreString(dateBuf, tft.width() / 2, STANDBY_TANGGAL_Y, 2);
   }
-  
   tft.setTextColor(COLOR_WARNING, COLOR_BG_BOTTOM);
-  tft.drawCentreString("MENUNGGU KONEKSI", tft.width() / 2, 200, 2);
-  
+  tft.drawCentreString("MENUNGGU KONEKSI", tft.width() / 2, STANDBY_TEXT_Y, 2);
   drawFooter();
 }
 
-// ========================================================
-// UPDATE DISPLAY
-// ========================================================
 void updateDisplay() {
   if (!deviceConnected) {
     drawStandbyMode();
   } else {
     drawGradientBackground();
     drawModernHeader();
-    
-    if (isNavigating) {
-      drawNavigationCard();
-    } else if (isNotify) {
-      drawNotificationPopup();
-    }
-    
-    if (isIncomingCall) {
-      drawCallCard();
-    } else {
-      drawMusicPlayer();
-    }
-    
+    if (isNavigating) drawNavigationCard();
+    else if (isNotify) drawNotificationPopup();
+    if (isIncomingCall) drawCallCard();
+    else drawMusicPlayer();
     drawVolumeBar();
     drawFooter();
   }
-  
   refreshDisplay = false;
 }
 
-// ========================================================
-// UPDATE WAKTU
-// ========================================================
 void updateTimeIfNeeded() {
   time_t now;
   time(&now);
-  
   if (now > lastUnixTime) {
     lastUnixTime = now;
-    
     struct tm *tmp = localtime(&lastUnixTime);
     char buf[10];
     sprintf(buf, "%02d:%02d", tmp->tm_hour, tmp->tm_min);
     String newTime = String(buf);
-    
-    if (newTime != currentTime) {
-      currentTime = newTime;
-      refreshDisplay = true;
-    }
+    if (newTime != currentTime) { currentTime = newTime; refreshDisplay = true; }
   }
 }
 
-// ========================================================
-// BLE & DATA PROCESSING
-// ========================================================
 void processBuffer(String data) {
   Serial.println("\n[PARSING] " + data);
-  
   if (data.indexOf("setTime(") != -1) {
     int startIdx = data.indexOf("(") + 1;
     int endIdx = data.indexOf(")");
     lastUnixTime = data.substring(startIdx, endIdx).toInt();
-    
     if (lastUnixTime > 0) {
       lastUnixTime += 28800;
       struct timeval tv;
       tv.tv_sec = lastUnixTime;
       tv.tv_usec = 0;
       settimeofday(&tv, NULL);
-      
       struct tm *tmp = localtime(&lastUnixTime);
       char buf[10];
       sprintf(buf, "%02d:%02d", tmp->tm_hour, tmp->tm_min);
       currentTime = String(buf);
       lastCurrentTime = currentTime;
-      
       saveTimeToSD();
       refreshDisplay = true;
     }
@@ -547,63 +501,46 @@ void processBuffer(String data) {
   if (start != -1 && end != -1) {
     String jsonStr = data.substring(start + 3, end + 2);
     StaticJsonDocument<768> doc;
-    
     if (deserializeJson(doc, jsonStr) == DeserializationError::Ok) {
       String type = doc["t"] | "";
-      
       if (type == "musicinfo") {
         title = doc["track"] | "No Title";
         artist = doc["artist"] | "No Artist";
         durationSec = doc["dur"] | 0;
         refreshDisplay = true;
-      } 
-      else if (type == "musicstate") {
+      } else if (type == "musicstate") {
         String newState = doc["state"].as<String>();
         long newPosition = doc["position"] | 0;
-        
         if (newState == "pause" || musicState != newState) {
           positionSec = newPosition;
           lastPositionSec = positionSec;
         }
-        
         musicState = newState;
         refreshDisplay = true;
-      } 
-      else if (type == "nav") {
+      } else if (type == "nav") {
         navInstr = doc["instr"] | "";
         String rawDist = doc["distance"] | "";
-        if (rawDist.length() >= 2) {
-          rawDist.setCharAt(rawDist.length() - 2, ' ');
-        }
+        if (rawDist.length() >= 2) rawDist.setCharAt(rawDist.length() - 2, ' ');
         navDist = rawDist;
         navEta = doc["eta"] | "";
         bool newNavigating = (navInstr != "" && navInstr != " " && navInstr != "null");
-        
-        // Notifikasi hilang saat navigasi mulai
-        if (newNavigating && !isNavigating) {
-          isNotify = false;
-        }
-        
+        if (newNavigating && !isNavigating) isNotify = false;
         isNavigating = newNavigating;
         refreshDisplay = true;
-      } 
-      else if (type == "audio") {
+      } else if (type == "audio") {
         volumeLevel = doc["v"];
         refreshDisplay = true;
-      } 
-      else if (type == "notify") {
+      } else if (type == "notify") {
         String tempSrc = doc["src"] | "";
         if (tempSrc != "Incoming call") {
-          // Notifikasi baru menimpa notifikasi lama
           notifySrc = tempSrc;
           notifyTitle = doc["title"] | "";
           notifyBody = doc["body"] | "";
           isNotify = true;
-          lastNotifyTime = millis();  // Catat waktu muncul notifikasi
+          lastNotifyTime = millis();
           refreshDisplay = true;
         }
-      } 
-      else if (type == "call") {
+      } else if (type == "call") {
         String cmd = doc["cmd"] | "";
         if (cmd == "incoming") {
           callName = doc["name"] | "Unknown";
@@ -625,117 +562,61 @@ void sendToGB(String cmd) {
   }
 }
 
-// ========================================================
-// BLE CALLBACKS
-// ========================================================
 class MyCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *pCharacteristic) {
     std::string value = pCharacteristic->getValue();
     for (char c : value) {
-      if (c == '\n') {
-        processBuffer(inputBuffer);
-        inputBuffer = "";
-      } else {
-        inputBuffer += c;
-      }
+      if (c == '\n') { processBuffer(inputBuffer); inputBuffer = ""; }
+      else { inputBuffer += c; }
     }
   }
 };
 
 class MyServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer *pServer) {
-    deviceConnected = true;
-    refreshDisplay = true;
-    
+    deviceConnected = true; refreshDisplay = true;
     delay(500);
     sendToGB("GB({\"t\":\"info\",\"v\":\"2v25\",\"m\":\"ESP32-Modern\"})\n");
     sendToGB("GB({\"t\":\"gps\",\"status\":\"ok\"})\n");
     sendToGB("GB({\"t\":\"music\",\"n\":\"info\"})\n");
   }
-  
   void onDisconnect(BLEServer *pServer) {
-    deviceConnected = false;
-    refreshDisplay = true;
+    deviceConnected = false; refreshDisplay = true;
     pServer->getAdvertising()->start();
   }
 };
 
-// ========================================================
-// SETUP & LOOP
-// ========================================================
 void setup() {
   Serial.begin(115200);
-  
   pinMode(21, OUTPUT);
   digitalWrite(21, HIGH);
   delay(100);
-  
   tft.init();
   tft.setRotation(0);
-  
-  if (!SD.begin(SD_CS)) {
-    Serial.println("[SD] Gagal init SD Card");
-  } else {
-    Serial.println("[SD] SD Card siap");
-    loadTimeFromSD();
-  }
+  if (!SD.begin(SD_CS)) Serial.println("[SD] Gagal init SD Card");
+  else { Serial.println("[SD] SD Card siap"); loadTimeFromSD(); }
   
   BLEDevice::init("ESP32-Dashboard");
   BLEServer *pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
-  
   BLEService *pService = pServer->createService(SERVICE_UUID);
-  pCharacteristicTX = pService->createCharacteristic(
-    CHARACTERISTIC_UUID_TX, 
-    BLECharacteristic::PROPERTY_NOTIFY
-  );
+  pCharacteristicTX = pService->createCharacteristic(CHARACTERISTIC_UUID_TX, BLECharacteristic::PROPERTY_NOTIFY);
   pCharacteristicTX->addDescriptor(new BLE2902());
-  
-  BLECharacteristic *pCharacteristicRX = pService->createCharacteristic(
-    CHARACTERISTIC_UUID_RX, 
-    BLECharacteristic::PROPERTY_WRITE
-  );
+  BLECharacteristic *pCharacteristicRX = pService->createCharacteristic(CHARACTERISTIC_UUID_RX, BLECharacteristic::PROPERTY_WRITE);
   pCharacteristicRX->setCallbacks(new MyCallbacks());
-  
   pService->start();
   pServer->getAdvertising()->start();
   
-  Serial.println("BLE Ready - ESP32 Modern Dashboard (5-Line Notifications)");
+  Serial.println("BLE Ready - Configurable Layout");
   updateDisplay();
 }
 
 void loop() {
   unsigned long currentMillis = millis();
-  
-  // Cek perubahan koneksi
-  if (deviceConnected != lastConnectionState) {
-    lastConnectionState = deviceConnected;
-    refreshDisplay = true;
-  }
-  
-  // Update waktu setiap 1 detik
-  if (currentMillis - lastClockCheck >= 1000) {
-    updateTimeIfNeeded();
-    lastClockCheck = currentMillis;
-  }
-  
-  // AUTO-HIDE NOTIFIKASI SETELAH 5 MENIT (300.000 ms)
-  if (isNotify && (currentMillis - lastNotifyTime >= 300000)) {
-    Serial.println("[NOTIF] Auto-hide setelah 5 menit");
-    isNotify = false;
-    refreshDisplay = true;
-  }
-  
-  // Simpan ke SD setiap menit
-  if (currentMillis - lastSDWrite >= 60000) {
-    saveTimeToSD();
-    lastSDWrite = currentMillis;
-  }
-  
-  // Update layar HANYA jika ada perubahan data
-  if (refreshDisplay) {
-    updateDisplay();
-  }
-  
+  if (deviceConnected != lastConnectionState) { lastConnectionState = deviceConnected; refreshDisplay = true; }
+  if (currentMillis - lastClockCheck >= 1000) { updateTimeIfNeeded(); lastClockCheck = currentMillis; }
+  if (isNotify && (currentMillis - lastNotifyTime >= 300000)) { isNotify = false; refreshDisplay = true; }
+  if (currentMillis - lastSDWrite >= 60000) { saveTimeToSD(); lastSDWrite = currentMillis; }
+  if (refreshDisplay) updateDisplay();
   delay(100);
 }
