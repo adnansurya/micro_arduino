@@ -107,6 +107,7 @@ const uint16_t COLOR_PRIMARY_LIGHT = 0x001F;      // Biru gelap
 const uint16_t COLOR_GLASS_LIGHT = 0xCE79;        // Abu-abu untuk border
 const uint16_t COLOR_TEXT_PRIMARY_LIGHT = TFT_BLACK;
 const uint16_t COLOR_TEXT_SECONDARY_LIGHT = 0x528A; // Abu-abu gelap
+const uint16_t COLOR_SUCCESS_LIGHT = 0x04A0;  // Hijau gelap (RGB: 0, 124, 0)
 
 // Variabel tema
 bool isDarkMode = true;  // Default: mode gelap
@@ -213,6 +214,7 @@ void updateThemeColors() {
     COLOR_GLASS = COLOR_GLASS_DARK;
     COLOR_TEXT_PRIMARY = COLOR_TEXT_PRIMARY_DARK;
     COLOR_TEXT_SECONDARY = COLOR_TEXT_SECONDARY_DARK;
+    COLOR_SUCCESS = 0x07E0;  // Hijau terang untuk mode gelap
   } else {
     // Mode TERANG (siang)
     COLOR_CARD_BG = COLOR_CARD_BG_LIGHT;
@@ -222,6 +224,7 @@ void updateThemeColors() {
     COLOR_GLASS = COLOR_GLASS_LIGHT;
     COLOR_TEXT_PRIMARY = COLOR_TEXT_PRIMARY_LIGHT;
     COLOR_TEXT_SECONDARY = COLOR_TEXT_SECONDARY_LIGHT;
+    COLOR_SUCCESS = COLOR_SUCCESS_LIGHT;  // Hijau gelap untuk mode terang
   }
 }
 
@@ -402,7 +405,11 @@ void drawModernHeader() {
     }
   }
   
-  tft.setTextColor(COLOR_TEXT_PRIMARY, TFT_TRANSPARENT);
+  // === PERBAIKAN: Gunakan background color yang sama dengan header ===
+  // Untuk mode gelap: background header gelap, untuk mode terang: background header terang
+  uint16_t bgColor = isDarkMode ? color565(10, 10, 30) : color565(240, 240, 245);
+  
+  tft.setTextColor(COLOR_TEXT_PRIMARY, bgColor);  // Gunakan bgColor, bukan TFT_TRANSPARENT
   tft.drawCentreString(currentTime, tft.width() / 2, JAM_POS_Y, 6);
 
   if (lastUnixTime > 0) {
@@ -410,7 +417,7 @@ void drawModernHeader() {
     char dateBuf[50];
     sprintf(dateBuf, "%s, %02d %s %d", hariIndo[tmp->tm_wday], tmp->tm_mday,
             bulanIndo[tmp->tm_mon], tmp->tm_year + 1900);
-    tft.setTextColor(COLOR_TEXT_SECONDARY, TFT_TRANSPARENT);
+    tft.setTextColor(COLOR_TEXT_SECONDARY, bgColor);  // Gunakan bgColor
     tft.drawCentreString(dateBuf, tft.width() / 2, TANGGAL_POS_Y, 2);
   }
   tft.drawRect(20, GARIS_AKSEN_POS_Y, tft.width() - 40, 2, COLOR_ACCENT);
@@ -556,7 +563,11 @@ void drawFooter() {
 
 void drawStandbyMode() {
   drawGradientBackground();
-  tft.setTextColor(COLOR_TEXT_PRIMARY, TFT_TRANSPARENT);
+  
+  // Ambil warna background di posisi jam standby untuk menghilangkan efek hijau
+  uint16_t bgColor = getBgColor(STANDBY_JAM_Y, tft.height());
+  
+  tft.setTextColor(COLOR_TEXT_PRIMARY, bgColor);
   tft.drawCentreString(currentTime, tft.width() / 2, STANDBY_JAM_Y, 6);
 
   if (lastUnixTime > 0) {
@@ -564,7 +575,7 @@ void drawStandbyMode() {
     char dateBuf[50];
     sprintf(dateBuf, "%s, %02d %s %d", hariIndo[tmp->tm_wday], tmp->tm_mday,
             bulanIndo[tmp->tm_mon], tmp->tm_year + 1900);
-    tft.setTextColor(COLOR_TEXT_SECONDARY, TFT_TRANSPARENT);
+    tft.setTextColor(COLOR_TEXT_SECONDARY, bgColor);
     tft.drawCentreString(dateBuf, tft.width() / 2, STANDBY_TANGGAL_Y, 2);
   }
   tft.setTextColor(COLOR_WARNING, COLOR_BG_BOTTOM);
