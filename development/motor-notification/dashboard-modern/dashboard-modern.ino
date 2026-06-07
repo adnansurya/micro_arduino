@@ -73,11 +73,6 @@ TFT_eSPI tft = TFT_eSPI();
 #define STANDBY_TEXT_Y 200     
 
 // ========================================================
-// =============== KONFIGURASI LDR ===============
-// ========================================================
-#define LDR_PIN 34  // Pin LDR pada CYD (GPIO34)
-
-// ========================================================
 // Warna Tema (Variabel - bisa diubah saat runtime)
 // ========================================================
 uint16_t COLOR_CARD_BG = 0x3186;
@@ -110,7 +105,7 @@ const uint16_t COLOR_TEXT_PRIMARY_LIGHT = TFT_BLACK;
 const uint16_t COLOR_TEXT_SECONDARY_LIGHT = 0x528A; 
 const uint16_t COLOR_SUCCESS_LIGHT = 0x04A0;  
 
-// Variabel tema
+// Variabel tema (Default dimulai dari mode gelap)
 bool isDarkMode = true;  
 
 // ========================================================
@@ -290,7 +285,7 @@ void updateCSVLastRow(bool isBarisBaru) {
 }
 
 // ========================================================
-// FUNGSI LDR & MANAJEMEN TEMA
+// MANAJEMEN TEMA MANUAL (SET TIAP KALI TRIGER TOUCH)
 // ========================================================
 void updateThemeColors() {
   if (isDarkMode) {
@@ -311,26 +306,6 @@ void updateThemeColors() {
     COLOR_TEXT_PRIMARY = COLOR_TEXT_PRIMARY_LIGHT;
     COLOR_TEXT_SECONDARY = COLOR_TEXT_SECONDARY_LIGHT;
     COLOR_SUCCESS = COLOR_SUCCESS_LIGHT;  
-  }
-}
-
-void checkLDRAndUpdateTheme() {
-  int ldrValue = analogRead(LDR_PIN);
-  bool newDarkMode;
-  
-  if (ldrValue == 0) {
-    newDarkMode = false;  
-    Serial.println("[LDR] Nilai: 0 -> Mode TERANG (Siang)");
-  } else {
-    newDarkMode = true;   
-    Serial.print("[LDR] Nilai: "); Serial.print(ldrValue); Serial.println(" -> Mode GELAP (Malam)");
-  }
-  
-  if (newDarkMode != isDarkMode) {
-    isDarkMode = newDarkMode;
-    updateThemeColors();
-    Serial.println("[LDR] Tema berubah! ✅");
-    refreshDisplay = true;  
   }
 }
 
@@ -577,7 +552,7 @@ void drawFooter() {
     tft.drawString("Disconnected", 20, footerY, 1);
   }
   tft.setTextColor(COLOR_TEXT_SECONDARY, COLOR_BG_BOTTOM);
-  tft.drawRightString("Dashboard v2.3", tft.width() - 20, footerY, 1);
+  tft.drawRightString("Dashboard v2.4", tft.width() - 20, footerY, 1);
 }
 
 void drawStandbyMode() {
@@ -600,7 +575,6 @@ void drawStandbyMode() {
 }
 
 void updateDisplay() {
-  checkLDRAndUpdateTheme();
   if (!deviceConnected) {
     drawStandbyMode();
   } else {
@@ -819,8 +793,9 @@ void setup() {
   tft.init();
   tft.setRotation(0);
   
-  pinMode(LDR_PIN, INPUT);
-  
+  // Menghapus inisialisasi LDR pin lama
+  updateThemeColors(); // Atur warna awal saat booting
+
   if (!SD.begin(SD_CS)) Serial.println("[SD] Gagal init SD Card");
   else {
     Serial.println("[SD] SD Card siap");
@@ -845,7 +820,7 @@ void setup() {
 void loop() {
   unsigned long currentMillis = millis();
   
-  // === INTERSEPSI SERIAL MONITOR INPUT (SINGLE & LONG TOUCH) ===
+  // === INTERSEPSI INPUT SERIAL (SINGLE, LONG, & DOUBLE TOUCH) ===
   while (Serial.available() > 0) {
     char rc = Serial.read();
     if (rc == '\n' || rc == '\r') {
@@ -854,20 +829,27 @@ void loop() {
       if (serialInputStr == "SINGLE_TOUCH") {
         showTripMeter = !showTripMeter; 
         refreshDisplay = true;          
-        Serial.print("[UI] Switch Sub-Halaman Musik -> Trip Meter: ");
+        Serial.print("[UI] Switch Halaman Musik -> Trip Meter: ");
         Serial.println(showTripMeter ? "ON" : "OFF");
       } 
       else if (serialInputStr == "LONG_TOUCH") {
         if (isNotify) {
-          isNotify = false;         // Matikan flag popup notifikasi
-          notifySrc = "";           // Bersihkan isi teks
+          isNotify = false;         
+          notifySrc = "";           
           notifyTitle = "";
           notifyBody = "";
-          refreshDisplay = true;    // Gambar ulang layar instan
+          refreshDisplay = true;    
           Serial.println("[UI] Notifikasi dihapus paksa via LONG_TOUCH.");
         } else {
-          Serial.println("[UI] Perintah LONG_TOUCH diabaikan karena sedang tidak ada notifikasi aktif.");
+          Serial.println("[UI] Perintah LONG_TOUCH diabaikan karena tidak ada notifikasi.");
         }
+      }
+      else if (serialInputStr == "DOUBLE_TOUCH") {
+        isDarkMode = !isDarkMode;       // Balik status tema aktif
+        updateThemeColors();           // Perbarui skema variabel warna komponen
+        refreshDisplay = true;         // Minta render ulang seluruh layar
+        Serial.print("[UI] Tema diubah secara manual via DOUBLE_TOUCH. Dark Mode: ");
+        Serial.println(isDarkMode ? "AKTIF" : "NONAKTIF");
       }
       
       serialInputStr = ""; 
@@ -886,7 +868,6 @@ void loop() {
     lastClockCheck = currentMillis;
   }
   
-  // Timeout otomatis 5 menit jika tidak dihapus manual
   if (isNotify && (currentMillis - lastNotifyTime >= 300000)) {
     isNotify = false;
     refreshDisplay = true;
