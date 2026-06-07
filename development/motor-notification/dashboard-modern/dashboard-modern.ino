@@ -8,6 +8,7 @@
 #include <FS.h>
 #include <SD.h>
 #include <time.h>
+#include <math.h>  // Tambahkan jika belum ada
 
 TFT_eSPI tft = TFT_eSPI();
 
@@ -16,60 +17,60 @@ TFT_eSPI tft = TFT_eSPI();
 // ========================================================
 
 // === HEADER (Jam & Tanggal) ===
-#define HEADER_HEIGHT 55      
-#define JAM_POS_Y 8           
-#define TANGGAL_POS_Y 58      
-#define GARIS_AKSEN_POS_Y 75  
+#define HEADER_HEIGHT 55
+#define JAM_POS_Y 8
+#define TANGGAL_POS_Y 58
+#define GARIS_AKSEN_POS_Y 75
 
 // === CARD NAVIGASI ===
-#define NAV_CARD_Y 82       
-#define NAV_CARD_HEIGHT 75  
-#define NAV_TITLE_Y 8       
-#define NAV_INSTR_Y 28      
-#define NAV_DIST_ETA_Y 52   
+#define NAV_CARD_Y 82
+#define NAV_CARD_HEIGHT 75
+#define NAV_TITLE_Y 8
+#define NAV_INSTR_Y 28
+#define NAV_DIST_ETA_Y 52
 
 // === CARD NOTIFIKASI ===
-#define NOTIF_CARD_Y 82        
-#define NOTIF_CARD_HEIGHT 95   
-#define NOTIF_SRC_Y 10         
-#define NOTIF_TITLE_Y 25       
-#define NOTIF_BODY_LINE1_Y 45  
-#define NOTIF_BODY_LINE2_Y 60  
-#define NOTIF_BODY_LINE3_Y 75  
+#define NOTIF_CARD_Y 82
+#define NOTIF_CARD_HEIGHT 95
+#define NOTIF_SRC_Y 10
+#define NOTIF_TITLE_Y 25
+#define NOTIF_BODY_LINE1_Y 45
+#define NOTIF_BODY_LINE2_Y 60
+#define NOTIF_BODY_LINE3_Y 75
 
 // === CARD MUSIK ===
-#define MUSIC_CARD_HEIGHT 85         
-#define MUSIC_CARD_Y_DEFAULT 110     
-#define MUSIC_CARD_Y_WITH_NOTIF 182  
-#define MUSIC_CARD_Y_WITH_NAV 162    
-#define MUSIC_TITLE_Y 10             
-#define MUSIC_ARTIST_Y 30            
-#define MUSIC_PROGRESS_Y 42          
-#define MUSIC_TIME_Y 52              
-#define MUSIC_STATUS_Y 65            
+#define MUSIC_CARD_HEIGHT 85
+#define MUSIC_CARD_Y_DEFAULT 110
+#define MUSIC_CARD_Y_WITH_NOTIF 182
+#define MUSIC_CARD_Y_WITH_NAV 162
+#define MUSIC_TITLE_Y 10
+#define MUSIC_ARTIST_Y 30
+#define MUSIC_PROGRESS_Y 42
+#define MUSIC_TIME_Y 52
+#define MUSIC_STATUS_Y 65
 
 // === CARD PANGGILAN ===
-#define CALL_CARD_HEIGHT 70         
-#define CALL_CARD_Y_DEFAULT 110     
-#define CALL_CARD_Y_WITH_NOTIF 182  
-#define CALL_CARD_Y_WITH_NAV 162    
-#define CALL_TITLE_Y 8              
-#define CALL_NAME_Y 32              
-#define CALL_INSTRUCTION_Y 55       
+#define CALL_CARD_HEIGHT 70
+#define CALL_CARD_Y_DEFAULT 110
+#define CALL_CARD_Y_WITH_NOTIF 182
+#define CALL_CARD_Y_WITH_NAV 162
+#define CALL_TITLE_Y 8
+#define CALL_NAME_Y 32
+#define CALL_INSTRUCTION_Y 55
 
 // === VOLUME BAR ===
-#define VOLUME_Y_FROM_BOTTOM 45  
-#define VOLUME_BAR_Y 10          
-#define VOLUME_PERCENT_Y 18      
+#define VOLUME_Y_FROM_BOTTOM 45
+#define VOLUME_BAR_Y 10
+#define VOLUME_PERCENT_Y 18
 
 // === FOOTER ===
-#define FOOTER_Y_FROM_BOTTOM 10  
-#define FOOTER_LINE_OFFSET 3     
+#define FOOTER_Y_FROM_BOTTOM 10
+#define FOOTER_LINE_OFFSET 3
 
 // === STANDBY MODE ===
-#define STANDBY_JAM_Y 70       
-#define STANDBY_TANGGAL_Y 130  
-#define STANDBY_TEXT_Y 200     
+#define STANDBY_JAM_Y 70
+#define STANDBY_TANGGAL_Y 130
+#define STANDBY_TEXT_Y 200
 
 // ========================================================
 // =============== KONFIGURASI LDR ===============
@@ -100,14 +101,14 @@ const uint16_t COLOR_TEXT_PRIMARY_DARK = TFT_WHITE;
 const uint16_t COLOR_TEXT_SECONDARY_DARK = 0x7BEF;
 
 // === WARNA MODE TERANG (Light Mode) ===
-const uint16_t COLOR_CARD_BG_LIGHT = 0xE73C;      // Abu-abu muda
-const uint16_t COLOR_BG_BOTTOM_LIGHT = 0xEF5D;    // <-- TAMBAHKAN INI (putih abu-abu)
-const uint16_t COLOR_ACCENT_LIGHT = 0x001F;       // Biru gelap
-const uint16_t COLOR_PRIMARY_LIGHT = 0x001F;      // Biru gelap
-const uint16_t COLOR_GLASS_LIGHT = 0xCE79;        // Abu-abu untuk border
+const uint16_t COLOR_CARD_BG_LIGHT = 0xE73C;    // Abu-abu muda
+const uint16_t COLOR_BG_BOTTOM_LIGHT = 0xEF5D;  // <-- TAMBAHKAN INI (putih abu-abu)
+const uint16_t COLOR_ACCENT_LIGHT = 0x001F;     // Biru gelap
+const uint16_t COLOR_PRIMARY_LIGHT = 0x001F;    // Biru gelap
+const uint16_t COLOR_GLASS_LIGHT = 0xCE79;      // Abu-abu untuk border
 const uint16_t COLOR_TEXT_PRIMARY_LIGHT = TFT_BLACK;
-const uint16_t COLOR_TEXT_SECONDARY_LIGHT = 0x528A; // Abu-abu gelap
-const uint16_t COLOR_SUCCESS_LIGHT = 0x04A0;  // Hijau gelap (RGB: 0, 124, 0)
+const uint16_t COLOR_TEXT_SECONDARY_LIGHT = 0x528A;  // Abu-abu gelap
+const uint16_t COLOR_SUCCESS_LIGHT = 0x04A0;         // Hijau gelap (RGB: 0, 124, 0)
 
 // Variabel tema
 bool isDarkMode = true;  // Default: mode gelap
@@ -159,6 +160,105 @@ unsigned long lastSDWrite = 0;
 const char *hariIndo[] = { "Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu" };
 const char *bulanIndo[] = { "Januari", "Februari", "Maret", "April", "Mei", "Juni",
                             "Juli", "Agustus", "September", "Oktober", "November", "Desember" };
+
+// Variabel untuk menyimpan koordinat dari MacroDroid
+String lat = "0.0";
+String lng = "0.0";
+
+// Variabel untuk menyimpan koordinat terakhir (untuk tracking pergeseran)
+double lastLat = 0.0;
+double lastLng = 0.0;
+
+// Variabel untuk menghitung total jarak tempuh sejak alat menyala (dalam satuan Kilometer)
+double totalJarakTempuh = 0.0;
+bool isFirstGPSLog = true;  // Penanda untuk mengunci koordinat start awal
+
+// Menyimpan posisi byte awal dari baris terakhir di file CSV
+unsigned long posisiBarisTerakhir = 0;
+String waktuAwalTrip = "--:--";
+String koordinatAwalTrip = "-";
+
+// Fungsi menghitung selisih waktu tempuh (Format: j jam m menit s detik)
+String hitungWaktuTempuh(unsigned long msAwal) {
+  unsigned long totalDetik = (millis() - msAwal) / 1000;
+  int jam = totalDetik / 3600;
+  int menit = (totalDetik % 3600) / 60;
+  int detik = totalDetik % 60;
+
+  char buf[30];
+  if (jam > 0) {
+    sprintf(buf, "%dj %dm %ds", jam, menit, detik);
+  } else if (menit > 0) {
+    sprintf(buf, "%dm %ds", menit, detik);
+  } else {
+    sprintf(buf, "%ds", detik);
+  }
+  return String(buf);
+}
+
+// Fungsi utama untuk menulis atau menimpa baris terakhir di CSV
+void updateCSVLastRow(bool isBarisBaru) {
+  // 1. Buka dan perbarui file CSV
+  File file = SD.open("/trip_log.csv", FILE_WRITE);
+  if (!file) {
+    Serial.println("[SD] Gagal membuka trip_log.csv!");
+    return;
+  }
+
+  if (file.size() == 0) {
+    file.println("Waktu Awal,Waktu Akhir,Koordinat Awal,Koordinat Akhir,Waktu Tempuh,Jarak Tempuh");
+  }
+
+  if (isBarisBaru) {
+    file.seek(file.size()); 
+    posisiBarisTerakhir = file.position(); 
+  } else {
+    file.seek(posisiBarisTerakhir);
+  }
+
+  String dataBaris = waktuAwalTrip + "," + 
+                     currentTime + " (RTC)," + 
+                     koordinatAwalTrip + "," + 
+                     (lat + ";" + lng) + "," + 
+                     hitungWaktuTempuh(0) + "," + 
+                     String(totalJarakTempuh, 2) + " Km                    \n";
+
+  file.print(dataBaris);
+  file.close();
+  Serial.println("[SD] CSV Berhasil Diperbarui!");
+
+  // ========================================================
+  // 2. OTOMATIS UPDATE CONFIG.TXT SETELAH CSV DIPERBARUI
+  // ========================================================
+  time_t now;
+  time(&now);
+  if (now > 1600000000) { // Pastikan waktu sudah tersinkron dari HP
+    File configFile = SD.open("/config.txt", FILE_WRITE);
+    if (configFile) {
+      configFile.println(now);
+      configFile.close();
+      Serial.println("[SD-Backup] Waktu internal disinkronkan ke config.txt via GPS Trigger. ✅");
+    }
+  }
+}
+
+// Fungsi menghitung jarak antara dua koordinat (Hasil dalam satuan KILOMETER)
+double hitungJarakHaversine(double lat1, double lon1, double lat2, double lon2) {
+  double R = 6371.0;  // Jari-jari bumi dalam kilometer
+
+  // Mengubah derajat ke radian
+  double dLat = (lat2 - lat1) * M_PI / 180.0;
+  double dLon = (lon2 - lon1) * M_PI / 180.0;
+
+  double rLat1 = lat1 * M_PI / 180.0;
+  double rLat2 = lat2 * M_PI / 180.0;
+
+  // Rumus Haversine
+  double a = sin(dLat / 2) * sin(dLat / 2) + cos(rLat1) * cos(rLat2) * sin(dLon / 2) * sin(dLon / 2);
+  double c = 2 * atan2(sqrt(a), sqrt(1 - a));
+
+  return R * c;  // Jarak dalam Km
+}
 
 // ========================================================
 // FUNGSI BANTU POSISI
@@ -233,18 +333,18 @@ void updateThemeColors() {
 void checkLDRAndUpdateTheme() {
   int ldrValue = analogRead(LDR_PIN);
   bool newDarkMode;
-  
+
   // Logika sederhana: 0 = TERANG, >0 = GELAP
   if (ldrValue == 0) {
     newDarkMode = false;  // Mode TERANG (Siang)
     Serial.println("[LDR] Nilai: 0 -> Mode TERANG (Siang)");
   } else {
-    newDarkMode = true;   // Mode GELAP (Malam)
+    newDarkMode = true;  // Mode GELAP (Malam)
     Serial.print("[LDR] Nilai: ");
     Serial.print(ldrValue);
     Serial.println(" -> Mode GELAP (Malam)");
   }
-  
+
   // Jika mode berubah, update warna dan butuh redraw
   if (newDarkMode != isDarkMode) {
     isDarkMode = newDarkMode;
@@ -404,11 +504,11 @@ void drawModernHeader() {
       tft.drawFastHLine(0, i, tft.width(), color565(240, 240, 245));
     }
   }
-  
+
   // === PERBAIKAN: Gunakan background color yang sama dengan header ===
   // Untuk mode gelap: background header gelap, untuk mode terang: background header terang
   uint16_t bgColor = isDarkMode ? color565(10, 10, 30) : color565(240, 240, 245);
-  
+
   tft.setTextColor(COLOR_TEXT_PRIMARY, bgColor);  // Gunakan bgColor, bukan TFT_TRANSPARENT
   tft.drawCentreString(currentTime, tft.width() / 2, JAM_POS_Y, 6);
 
@@ -563,10 +663,10 @@ void drawFooter() {
 
 void drawStandbyMode() {
   drawGradientBackground();
-  
+
   // Ambil warna background di posisi jam standby untuk menghilangkan efek hijau
   uint16_t bgColor = getBgColor(STANDBY_JAM_Y, tft.height());
-  
+
   tft.setTextColor(COLOR_TEXT_PRIMARY, bgColor);
   tft.drawCentreString(currentTime, tft.width() / 2, STANDBY_JAM_Y, 6);
 
@@ -591,7 +691,7 @@ void updateDisplay() {
   // SEBELUM REDRAW: BACA LDR DAN CEK PERUBAHAN TEMA
   // ========================================================
   checkLDRAndUpdateTheme();
-  
+
   // ========================================================
   // LAKUKAN REDRAW LAYAR
   // ========================================================
@@ -691,9 +791,65 @@ void processBuffer(String data) {
         refreshDisplay = true;
       } else if (type == "notify") {
         String tempSrc = doc["src"] | "";
-        if (tempSrc != "Incoming call") {
+        String tempTitle = doc["title"] | "";
+
+        // Pengecekan Khusus: Jika dari MacroDroid GPS, jangan tampilkan di layar
+        // Pengecekan Khusus: Jika dari MacroDroid GPS, jangan tampilkan di layar
+        if (tempSrc == "MacroDroid" && tempTitle == "[M-GPS]") {
+          String gpsBody = doc["body"] | "";
+
+          if (gpsBody.length() > 0 && gpsBody.indexOf(',') != -1) {
+            int commaIndex = gpsBody.indexOf(',');
+            lat = gpsBody.substring(0, commaIndex);
+            lng = gpsBody.substring(commaIndex + 1);
+            lat.trim();
+            lng.trim();
+
+            double currentLat = lat.toDouble();
+            double currentLng = lng.toDouble();
+
+            if (isFirstGPSLog) {
+              // 1. Kunci titik awal perjalanan saat koordinat pertama didapat
+              lastLat = currentLat;
+              lastLng = currentLng;
+              koordinatAwalTrip = lat + ";" + lng;
+              waktuAwalTrip = currentTime + " (RTC)";
+              isFirstGPSLog = false;
+
+              // 2. Buat BARIS BARU di CSV dan kunci posisi byte-nya
+              updateCSVLastRow(true);
+              Serial.println("\n[GPS] Trip Baru Dimulai. Baris Baru CSV Dibuat.");
+            } else {
+              double selisihJarak = hitungJarakHaversine(lastLat, lastLng, currentLat, currentLng);
+
+              if (selisihJarak > 0.005) {  // Filter noise 5 meter
+                totalJarakTempuh += selisihJarak;
+                lastLat = currentLat;
+                lastLng = currentLng;
+              }
+
+              // 3. SELALU PERBARUI baris paling bawah yang sudah dikunci tadi
+              updateCSVLastRow(false);
+            }
+
+            // Cetak status ke Serial Monitor
+            Serial.println("\n=========================================");
+            Serial.println("[GPS DATA UPDATED TO SD CARD]");
+            Serial.print("Total Jarak   : ");
+            Serial.print(totalJarakTempuh, 2);
+            Serial.println(" Km");
+            Serial.print("Waktu Tempuh  : ");
+            Serial.println(hitungWaktuTempuh(0));
+            Serial.println("=========================================");
+
+          } else {
+            Serial.println("\n[GPS ERROR] Format body koordinat tidak valid!");
+          }
+        }
+        // Notifikasi normal lainnya (selain MacroDroid GPS dan Incoming call)
+        else if (tempSrc != "Incoming call") {
           notifySrc = tempSrc;
-          notifyTitle = doc["title"] | "";
+          notifyTitle = tempTitle;
           notifyBody = doc["body"] | "";
           isNotify = true;
           lastNotifyTime = millis();
@@ -761,10 +917,10 @@ void setup() {
   delay(100);
   tft.init();
   tft.setRotation(0);
-  
+
   // Inisialisasi pin LDR
   pinMode(LDR_PIN, INPUT);
-  
+
   if (!SD.begin(SD_CS)) Serial.println("[SD] Gagal init SD Card");
   else {
     Serial.println("[SD] SD Card siap");
@@ -788,35 +944,44 @@ void setup() {
 
 void loop() {
   unsigned long currentMillis = millis();
-  
+
   // Cek perubahan koneksi
   if (deviceConnected != lastConnectionState) {
     lastConnectionState = deviceConnected;
     refreshDisplay = true;
   }
-  
+
   // Update waktu setiap 1 detik
   if (currentMillis - lastClockCheck >= 1000) {
     updateTimeIfNeeded();
     lastClockCheck = currentMillis;
   }
-  
+
   // Auto-hide notifikasi setelah 5 menit
   if (isNotify && (currentMillis - lastNotifyTime >= 300000)) {
     isNotify = false;
     refreshDisplay = true;
   }
-  
-  // Simpan ke SD setiap menit
+
+  // Back-up cadangan setiap 1 menit (Hanya menulis jika tidak ada update GPS baru-baru ini)
   if (currentMillis - lastSDWrite >= 60000) {
-    saveTimeToSD();
+    time_t now;
+    time(&now);
+    if (now > 1600000000) { 
+      File file = SD.open("/config.txt", FILE_WRITE);
+      if (file) {
+        file.println(now);
+        file.close();
+        Serial.println("[SD-Backup] Waktu dicadangkan via Loop Timer.");
+      }
+    }
     lastSDWrite = currentMillis;
   }
-  
+
   // Redraw layar jika perlu (LDR akan dicek di dalam updateDisplay)
   if (refreshDisplay) {
     updateDisplay();
   }
-  
+
   delay(100);
 }
