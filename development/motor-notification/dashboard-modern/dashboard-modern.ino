@@ -13,6 +13,25 @@
 TFT_eSPI tft = TFT_eSPI();
 
 // ========================================================
+// =============== STATE MANAGEMENT HALAMAN ===============
+// ========================================================
+enum PageState {
+  PAGE_MAIN,
+  PAGE_LAST_TRIP
+};
+PageState currentPageState = PAGE_MAIN;
+
+// Struktur data untuk menampung riwayat trip
+struct TripRecord {
+  String waktu;
+  String jarak;
+  String avgSpeed;
+  String durasi;
+  bool valid = false;
+};
+TripRecord lastTrips[3]; // Menampung maksimal 3 trip terakhir
+
+// ========================================================
 // =============== KONFIGURASI POSISI LAYAR ===============
 // ========================================================
 
@@ -285,6 +304,65 @@ void updateCSVLastRow(bool isBarisBaru) {
 }
 
 // ========================================================
+// FUNGSI MEMBACA DATA HISTORI TRIP DARI SD (3 TERAKHIR)
+// ========================================================
+void readLast3TripsFromSD() {
+  // Reset data lama
+  for (int i = 0; i < 3; i++) lastTrips[i].valid = false;
+
+  File file = SD.open("/trip_log.csv", FILE_READ);
+  if (!file) {
+    Serial.println("[SD] Gagal membaca log untuk riwayat trip!");
+    return;
+  }
+
+  // Karena file CSV dibaca linear, kita tampung baris-barisnya 
+  // Untuk data besar, disarankan membatasi buffer string
+  String lines[50]; 
+  int lineCount = 0;
+
+  // Lewati header csv
+  if (file.available()) file.readStringUntil('\n');
+
+  while (file.available() && lineCount < 50) {
+    String l = file.readStringUntil('\n');
+    l.trim();
+    if (l.length() > 10) {
+      lines[lineCount] = l;
+      lineCount++;
+    }
+  }
+  file.close();
+
+  // Ambil 3 data paling terakhir dari array buffer lines
+  int slot = 0;
+  for (int i = lineCount - 1; i >= 0 && slot < 3; i--) {
+    String currentLine = lines[i];
+    
+    // Parsing manual split berbasis tanda koma (CSV)
+    // Format: Waktu Awal, Waktu Akhir, Koor Awal, Koor Akhir, Waktu Tempuh, Jarak Tempuh, Rata-rata Kecepatan
+    int indices[7];
+    int idxCount = 0;
+    int searchPos = 0;
+    
+    while ((searchPos = currentLine.indexOf(',', searchPos)) != -1 && idxCount < 7) {
+      indices[idxCount++] = searchPos;
+      searchPos++;
+    }
+
+    if (idxCount >= 6) {
+      lastTrips[slot].waktu    = currentLine.substring(0, indices[0]);
+      lastTrips[slot].durasi   = currentLine.substring(indices[3] + 1, indices[4]);
+      lastTrips[slot].jarak    = currentLine.substring(indices[4] + 1, indices[5]);
+      lastTrips[slot].avgSpeed = currentLine.substring(indices[5] + 1);
+      lastTrips[slot].valid    = true;
+      slot++;
+    }
+  }
+  Serial.print("[SD] Berhasil memuat data historis trip. Jumlah: "); Serial.println(slot);
+}
+
+// ========================================================
 // MANAJEMEN TEMA MANUAL (SET TIAP KALI TRIGER TOUCH)
 // ========================================================
 void updateThemeColors() {
@@ -552,7 +630,7 @@ void drawFooter() {
     tft.drawString("Disconnected", 20, footerY, 1);
   }
   tft.setTextColor(COLOR_TEXT_SECONDARY, COLOR_BG_BOTTOM);
-  tft.drawRightString("Dashboard v2.4", tft.width() - 20, footerY, 1);
+  tft.drawRightString("Dashboard v2.5", tft.width() - 20, footerY, 1);
 }
 
 void drawStandbyMode() {
@@ -574,30 +652,90 @@ void drawStandbyMode() {
   drawFooter();
 }
 
-void updateDisplay() {
-  if (!deviceConnected) {
-    drawStandbyMode();
-  } else {
-    drawGradientBackground();
-    drawModernHeader();
+// ========================================================
+// RENDERING FULL SCREEN PAGE: LAST TRIP HISTORY
+// ========================================================
+void drawLastTripPage() {
+  drawGradientBackground();
+  
+  // Perbaikan: tft.setFillColor dihapus karena tidak ada di library TFT_eSPI
+  tft.setTextColor(COLOR_PRIMARY, COLOR_BG_BOTTOM);
+  tft.drawCentreString("RIWAYAT PERJALANAN", tft.width() / 2, 12, 2);
+  tft.drawRect(20, 32, tft.width() - 40, 2, COLOR_ACCENT);
+
+  int startY = 45;
+  int cardH = 55;
+  int spacing = 62;
+
+  for (int i = 0; i < 3; i++) {
+    int currentY = startY + (i * spacing);
+    drawGlassEffect(10, currentY, tft.width() - 20, cardH, 8);
     
-    // LAYER ATAS (NAVIGASI & POPUP NOTIFIKASI STANDARD)
-    if (isNavigating) drawNavigationCard();
-    else if (isNotify) drawNotificationPopup();
-    
-    // LAYER BAWAH (LOGIKA SAKELAR SUB-HALAMAN UTAMA)
-    if (isIncomingCall) {
-      drawCallCard(); 
+    if (lastTrips[i].valid) {
+      drawBorderWithColor(10, currentY, tft.width() - 20, cardH, 8, COLOR_GLASS);
+      
+      // Baris Atas Card: Label ID & Waktu Record
+      tft.setTextColor(COLOR_PRIMARY, COLOR_CARD_BG);
+      tft.drawString("#" + String(i + 1), 20, currentY + 8, 2);
+      tft.setTextColor(COLOR_TEXT_PRIMARY, COLOR_CARD_BG);
+      tft.drawString(lastTrips[i].waktu, 50, currentY + 8, 1);
+
+      // Baris Bawah Card: Metrik Data Trip
+      tft.setTextColor(COLOR_TEXT_SECONDARY, COLOR_CARD_BG);
+      tft.drawString("Dist: ", 20, currentY + 28, 1);
+      tft.setTextColor(COLOR_SUCCESS, COLOR_CARD_BG);
+      tft.drawString(lastTrips[i].jarak, 55, currentY + 28, 1);
+
+      tft.setTextColor(COLOR_TEXT_SECONDARY, COLOR_CARD_BG);
+      tft.drawString("Time: ", 120, currentY + 28, 1);
+      tft.setTextColor(COLOR_TEXT_PRIMARY, COLOR_CARD_BG);
+      tft.drawString(lastTrips[i].durasi, 155, currentY + 28, 1);
+
+      tft.setTextColor(COLOR_TEXT_SECONDARY, COLOR_CARD_BG);
+      tft.drawString("Avg: ", 215, currentY + 28, 1);
+      tft.setTextColor(COLOR_WARNING, COLOR_CARD_BG);
+      tft.drawString(lastTrips[i].avgSpeed, 245, currentY + 28, 1);
     } else {
-      if (showTripMeter) {
-        drawMinimalistTripMeter(); 
-      } else {
-        drawMusicPlayer();         
-      }
+      // Jika data kosong / belum ada log di CSV
+      drawBorderWithColor(10, currentY, tft.width() - 20, cardH, 8, 0x4208);
+      tft.setTextColor(COLOR_TEXT_SECONDARY, COLOR_CARD_BG);
+      tft.drawCentreString("- Belum Ada Data Trip -", tft.width() / 2, currentY + 20, 1);
     }
-    
-    drawVolumeBar();
-    drawFooter();
+  }
+
+  // Petunjuk Navigasi di bagian bawah full-screen
+  tft.setTextColor(COLOR_TEXT_SECONDARY, COLOR_BG_BOTTOM);
+  tft.drawCentreString("Ketik SINGLE_TOUCH untuk kembali", tft.width() / 2, tft.height() - 22, 1);
+}
+
+void updateDisplay() {
+  if (currentPageState == PAGE_LAST_TRIP) {
+    drawLastTripPage();
+  } else {
+    if (!deviceConnected) {
+      drawStandbyMode();
+    } else {
+      drawGradientBackground();
+      drawModernHeader();
+      
+      // LAYER ATAS (NAVIGASI & POPUP NOTIFIKASI STANDARD)
+      if (isNavigating) drawNavigationCard();
+      else if (isNotify) drawNotificationPopup();
+      
+      // LAYER BAWAH (LOGIKA SAKELAR SUB-HALAMAN UTAMA)
+      if (isIncomingCall) {
+        drawCallCard(); 
+      } else {
+        if (showTripMeter) {
+          drawMinimalistTripMeter(); 
+        } else {
+          drawMusicPlayer();         
+        }
+      }
+      
+      drawVolumeBar();
+      drawFooter();
+    }
   }
   refreshDisplay = false;
 }
@@ -717,7 +855,7 @@ void processBuffer(String data) {
             Serial.print("[TRIP LOG] Jarak: "); Serial.print(totalJarakTempuh, 2); Serial.print(" Km | ");
             Serial.print("Kecepatan Rata-rata: "); Serial.print(speedAvg, 1); Serial.println(" Km/h");
             
-            if (showTripMeter) refreshDisplay = true; 
+            if (showTripMeter && currentPageState == PAGE_MAIN) refreshDisplay = true; 
             
             lastSDWrite = millis(); 
           }
@@ -793,8 +931,7 @@ void setup() {
   tft.init();
   tft.setRotation(0);
   
-  // Menghapus inisialisasi LDR pin lama
-  updateThemeColors(); // Atur warna awal saat booting
+  updateThemeColors(); 
 
   if (!SD.begin(SD_CS)) Serial.println("[SD] Gagal init SD Card");
   else {
@@ -820,17 +957,24 @@ void setup() {
 void loop() {
   unsigned long currentMillis = millis();
   
-  // === INTERSEPSI INPUT SERIAL (SINGLE, LONG, & DOUBLE TOUCH) ===
+  // === INTERSEPSI INPUT SERIAL (SINGLE, LONG, DOUBLE, & TRIPLE TOUCH) ===
   while (Serial.available() > 0) {
     char rc = Serial.read();
     if (rc == '\n' || rc == '\r') {
       serialInputStr.trim(); 
       
       if (serialInputStr == "SINGLE_TOUCH") {
-        showTripMeter = !showTripMeter; 
-        refreshDisplay = true;          
-        Serial.print("[UI] Switch Halaman Musik -> Trip Meter: ");
-        Serial.println(showTripMeter ? "ON" : "OFF");
+        if (currentPageState == PAGE_LAST_TRIP) {
+          currentPageState = PAGE_MAIN; // Kembali dari halaman histori ke utama
+          refreshDisplay = true;
+          Serial.println("[UI] Kembali ke Halaman Utama dari Last Trip View.");
+        } else {
+          // Aksi standard halaman utama
+          showTripMeter = !showTripMeter; 
+          refreshDisplay = true;          
+          Serial.print("[UI] Switch Halaman Musik -> Trip Meter: ");
+          Serial.println(showTripMeter ? "ON" : "OFF");
+        }
       } 
       else if (serialInputStr == "LONG_TOUCH") {
         if (isNotify) {
@@ -845,11 +989,19 @@ void loop() {
         }
       }
       else if (serialInputStr == "DOUBLE_TOUCH") {
-        isDarkMode = !isDarkMode;       // Balik status tema aktif
-        updateThemeColors();           // Perbarui skema variabel warna komponen
-        refreshDisplay = true;         // Minta render ulang seluruh layar
+        isDarkMode = !isDarkMode;       
+        updateThemeColors();           
+        refreshDisplay = true;         
         Serial.print("[UI] Tema diubah secara manual via DOUBLE_TOUCH. Dark Mode: ");
         Serial.println(isDarkMode ? "AKTIF" : "NONAKTIF");
+      }
+      else if (serialInputStr == "TRIPLE_TOUCH") {
+        if (currentPageState != PAGE_LAST_TRIP) {
+          readLast3TripsFromSD();        // Tarik data 3 baris terbawah dari log csv
+          currentPageState = PAGE_LAST_TRIP; // Pindah ke halaman full screen
+          refreshDisplay = true;
+          Serial.println("[UI] Membuka Halaman Riwayat Perjalanan (Last Trip).");
+        }
       }
       
       serialInputStr = ""; 
