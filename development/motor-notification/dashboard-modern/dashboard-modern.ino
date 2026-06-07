@@ -38,8 +38,8 @@ TFT_eSPI tft = TFT_eSPI();
 #define NOTIF_BODY_LINE2_Y 60  
 #define NOTIF_BODY_LINE3_Y 75  
 
-// === CARD MUSIK ===
-#define MUSIC_CARD_HEIGHT 85         
+// === CARD MUSIK & TRIP COMPUTER (POSISI DISAMAKAN) ===
+#define MUSIC_CARD_HEIGHT 95         
 #define MUSIC_CARD_Y_DEFAULT 110     
 #define MUSIC_CARD_Y_WITH_NOTIF 182  
 #define MUSIC_CARD_Y_WITH_NAV 162    
@@ -101,17 +101,17 @@ const uint16_t COLOR_TEXT_PRIMARY_DARK = TFT_WHITE;
 const uint16_t COLOR_TEXT_SECONDARY_DARK = 0x7BEF;
 
 // === WARNA MODE TERANG (Light Mode) ===
-const uint16_t COLOR_CARD_BG_LIGHT = 0xE73C;      // Abu-abu muda
-const uint16_t COLOR_BG_BOTTOM_LIGHT = 0xEF5D;    // Putih abu-abu
-const uint16_t COLOR_ACCENT_LIGHT = 0x001F;       // Biru gelap
-const uint16_t COLOR_PRIMARY_LIGHT = 0x001F;      // Biru gelap
-const uint16_t COLOR_GLASS_LIGHT = 0xCE79;        // Abu-abu untuk border
+const uint16_t COLOR_CARD_BG_LIGHT = 0xE73C;      
+const uint16_t COLOR_BG_BOTTOM_LIGHT = 0xEF5D;    
+const uint16_t COLOR_ACCENT_LIGHT = 0x001F;       
+const uint16_t COLOR_PRIMARY_LIGHT = 0x001F;      
+const uint16_t COLOR_GLASS_LIGHT = 0xCE79;        
 const uint16_t COLOR_TEXT_PRIMARY_LIGHT = TFT_BLACK;
-const uint16_t COLOR_TEXT_SECONDARY_LIGHT = 0x528A; // Abu-abu gelap
-const uint16_t COLOR_SUCCESS_LIGHT = 0x04A0;  // Hijau gelap
+const uint16_t COLOR_TEXT_SECONDARY_LIGHT = 0x528A; 
+const uint16_t COLOR_SUCCESS_LIGHT = 0x04A0;  
 
 // Variabel tema
-bool isDarkMode = true;  // Default: mode gelap
+bool isDarkMode = true;  
 
 // ========================================================
 // BLE & Data Variables
@@ -134,7 +134,7 @@ String inputBuffer = "";
 bool refreshDisplay = true;
 bool isNavigating = false;
 
-// Variabel tracking
+// Variabel tracking UI lama
 String lastArtist = "", lastTitle = "", lastMusicState = "";
 String lastNavInstr = "", lastNavDist = "", lastNavEta = "";
 int lastVolumeLevel = -1;
@@ -146,7 +146,7 @@ String lastCurrentTime = "";
 String lastNotifySrc = "", lastNotifyTitle = "", lastNotifyBody = "";
 String lastCallName = "";
 
-// Variabel UI
+// Variabel UI Popup
 bool isNotify = false;
 String notifySrc = "", notifyTitle = "", notifyBody = "";
 bool isIncomingCall = false;
@@ -162,7 +162,7 @@ const char *bulanIndo[] = { "Januari", "Februari", "Maret", "April", "Mei", "Jun
                             "Juli", "Agustus", "September", "Oktober", "November", "Desember" };
 
 // ========================================================
-// NEW VARIABLES FOR GPS LOGGING & TRIP METRICS
+// VARIABLES FOR GPS LOGGING & TRIP METRICS
 // ========================================================
 String lat = "0.0";
 String lng = "0.0";
@@ -174,6 +174,10 @@ bool isFirstGPSLog = true;
 unsigned long posisiBarisTerakhir = 0; 
 String waktuAwalTrip = "--:--";
 String koordinatAwalTrip = "-";
+
+// Variabel Sakelar Tampilan Trip Meter via Serial
+bool showTripMeter = false; 
+String serialInputStr = "";
 
 // ========================================================
 // FUNGSI BANTU POSISI & UTILITY
@@ -210,7 +214,6 @@ uint16_t color565(uint8_t r, uint8_t g, uint8_t b) {
 // FUNGSI TRIP KALKULASI & SD LOGGING
 // ========================================================
 
-// Menghitung selisih durasi berjalan internal CYD (Output format string teks)
 String hitungWaktuTempuhStr() {
   unsigned long totalDetik = millis() / 1000;
   int jam = totalDetik / 3600;
@@ -218,13 +221,12 @@ String hitungWaktuTempuhStr() {
   int detik = totalDetik % 60;
   
   char buf[30];
-  if (jam > 0) sprintf(buf, "%dj %dm %ds", jam, menit, detik);
+  if (jam > 0) sprintf(buf, "%dj %dm", jam, menit); // Dibuat lebih ringkas tanpa detik agar pas font besar
   else if (menit > 0) sprintf(buf, "%dm %ds", menit, detik);
   else sprintf(buf, "%ds", detik);
   return String(buf);
 }
 
-// Rumus Haversine: Mengukur jarak 2 koordinat bumi (Output: Kilometer)
 double hitungJarakHaversine(double lat1, double lon1, double lat2, double lon2) {
   double R = 6371.0; 
   double dLat = (lat2 - lat1) * M_PI / 180.0;
@@ -239,7 +241,6 @@ double hitungJarakHaversine(double lat1, double lon1, double lat2, double lon2) 
   return R * c;
 }
 
-// Fungsi utama manajemen pembaruan database baris terbawah CSV & config
 void updateCSVLastRow(bool isBarisBaru) {
   File file = SD.open("/trip_log.csv", FILE_WRITE);
   if (!file) {
@@ -258,7 +259,6 @@ void updateCSVLastRow(bool isBarisBaru) {
     file.seek(posisiBarisTerakhir);
   }
 
-  // Hitung rata-rata kecepatan (Kecepatan = Jarak (Km) / Waktu (Jam))
   double waktuJam = (double)millis() / 3600000.0; 
   double rataRataKecepatan = 0.0;
   if (waktuJam > 0.0) {
@@ -277,7 +277,6 @@ void updateCSVLastRow(bool isBarisBaru) {
   file.close();
   Serial.println("[SD] trip_log.csv berhasil diperbarui.");
 
-  // Sinkronisasi paksa data RTC mentah ke config.txt pasca CSV sukses terisi
   time_t now;
   time(&now);
   if (now > 1600000000) { 
@@ -439,6 +438,38 @@ void drawModernHeader() {
   tft.drawRect(20, GARIS_AKSEN_POS_Y, tft.width() - 40, 2, COLOR_ACCENT);
 }
 
+// TAMPILAN BARU: Trip computer super minimalis & teks ekstra besar menggantikan media player area
+void drawMinimalistTripMeter() {
+  int targetY = getMusicCardY(); // Mengambil koordinat Y dinamis milik media player
+  
+  drawGlassEffect(10, targetY, tft.width() - 20, MUSIC_CARD_HEIGHT, 10);
+  drawBorderWithColor(10, targetY, tft.width() - 20, MUSIC_CARD_HEIGHT, 10, COLOR_ACCENT);
+  
+  // === KOLOM KIRI: JARAK TEMPUH (FONT BESAR) ===
+  tft.setTextColor(COLOR_TEXT_SECONDARY, COLOR_CARD_BG);
+  tft.drawString("DIST", 20, targetY + 12, 1);
+  tft.setTextColor(COLOR_SUCCESS, COLOR_CARD_BG);
+  tft.drawString(String(totalJarakTempuh, 1), 20, targetY + 28, 4); // Font Size 4 (Sangat Besar)
+  tft.setTextColor(COLOR_TEXT_PRIMARY, COLOR_CARD_BG);
+  tft.drawString("Km", 20, targetY + 68, 2);
+
+  // === KOLOM TENGAH: AVG SPEED (FONT BESAR) ===
+  tft.setTextColor(COLOR_TEXT_SECONDARY, COLOR_CARD_BG);
+  tft.drawCentreString("AVG SPD", tft.width() / 2, targetY + 12, 1);
+  tft.setTextColor(COLOR_WARNING, COLOR_CARD_BG);
+  double waktuJam = (double)millis() / 3600000.0;
+  double speedAvg = waktuJam > 0 ? (totalJarakTempuh / waktuJam) : 0.0;
+  tft.drawCentreString(String(speedAvg, 0), tft.width() / 2, targetY + 28, 4); // Font Size 4
+  tft.setTextColor(COLOR_TEXT_PRIMARY, COLOR_CARD_BG);
+  tft.drawCentreString("Km/h", tft.width() / 2, targetY + 68, 2);
+
+  // === KOLOM KANAN: WAKTU TEMPUH (FONT STANDARD BERSIH) ===
+  tft.setTextColor(COLOR_TEXT_SECONDARY, COLOR_CARD_BG);
+  tft.drawRightString("TIME", tft.width() - 20, targetY + 12, 1);
+  tft.setTextColor(COLOR_TEXT_PRIMARY, COLOR_CARD_BG);
+  tft.drawRightString(hitungWaktuTempuhStr(), tft.width() - 20, targetY + 38, 2);
+}
+
 void drawNavigationCard() {
   drawGlassEffect(10, NAV_CARD_Y, tft.width() - 20, NAV_CARD_HEIGHT, 10);
   drawBorderWithColor(10, NAV_CARD_Y, tft.width() - 20, NAV_CARD_HEIGHT, 10, COLOR_PRIMARY);
@@ -547,7 +578,7 @@ void drawFooter() {
     tft.drawString("Disconnected", 20, footerY, 1);
   }
   tft.setTextColor(COLOR_TEXT_SECONDARY, COLOR_BG_BOTTOM);
-  tft.drawRightString("Dashboard v2.0", tft.width() - 20, footerY, 1);
+  tft.drawRightString("Dashboard v2.2", tft.width() - 20, footerY, 1);
 }
 
 void drawStandbyMode() {
@@ -576,10 +607,22 @@ void updateDisplay() {
   } else {
     drawGradientBackground();
     drawModernHeader();
+    
+    // LAYER ATAS (NAVIGASI & POPUP NOTIFIKASI STANDARD)
     if (isNavigating) drawNavigationCard();
     else if (isNotify) drawNotificationPopup();
-    if (isIncomingCall) drawCallCard();
-    else drawMusicPlayer();
+    
+    // LAYER BAWAH (LOGIKA SAKELAR SUB-HALAMAN UTAMA)
+    if (isIncomingCall) {
+      drawCallCard(); // Selalu prioritaskan telepon masuk jika ada
+    } else {
+      if (showTripMeter) {
+        drawMinimalistTripMeter(); // Menggantikan slot area musik dengan data trip minimalis teks besar
+      } else {
+        drawMusicPlayer();         // Slot default pemutar media
+      }
+    }
+    
     drawVolumeBar();
     drawFooter();
   }
@@ -624,7 +667,7 @@ void processBuffer(String data) {
       lastCurrentTime = currentTime;
       
       saveTimeToSD();
-      lastSDWrite = millis(); // <-- SINKRONISASI COOLDOWN TIMER DI SINI
+      lastSDWrite = millis(); 
       
       refreshDisplay = true;
     }
@@ -668,7 +711,6 @@ void processBuffer(String data) {
         String tempSrc = doc["src"] | "";
         String tempTitle = doc["title"] | "";
         
-        // === CEK INTERSEPSI MACRODROID LOG GPS ===
         if (tempSrc == "MacroDroid" && tempTitle == "[M-GPS]") {
           String gpsBody = doc["body"] | "";
           if (gpsBody.length() > 0 && gpsBody.indexOf(',') != -1) {
@@ -686,27 +728,27 @@ void processBuffer(String data) {
               koordinatAwalTrip = lat + ";" + lng;
               waktuAwalTrip = currentTime + " (RTC)";
               isFirstGPSLog = false;
-              updateCSVLastRow(true); // Create new trip entry row
+              updateCSVLastRow(true); 
             } else {
               double selisihJarak = hitungJarakHaversine(lastLat, lastLng, currentLat, currentLng);
-              if (selisihJarak > 0.005) { // Filter noise GPS drift 5 meter
+              if (selisihJarak > 0.005) { 
                 totalJarakTempuh += selisihJarak;
                 lastLat = currentLat;
                 lastLng = currentLng;
               }
-              updateCSVLastRow(false); // Update current trip entry bottom row
+              updateCSVLastRow(false); 
             }
             
-            // Output monitor status kecepatan
             double totalJam = (double)millis() / 3600000.0;
             double speedAvg = totalJam > 0 ? (totalJarakTempuh / totalJam) : 0.0;
             Serial.print("[TRIP LOG] Jarak: "); Serial.print(totalJarakTempuh, 2); Serial.print(" Km | ");
             Serial.print("Kecepatan Rata-rata: "); Serial.print(speedAvg, 1); Serial.println(" Km/h");
             
-            lastSDWrite = millis(); // Reset loop backup interval timer karena baru saja menulis ke SD
+            if (showTripMeter) refreshDisplay = true; 
+            
+            lastSDWrite = millis(); 
           }
         } 
-        // Notifikasi standar regular smartphone
         else if (tempSrc != "Incoming call") {
           notifySrc = tempSrc;
           notifyTitle = tempTitle;
@@ -804,6 +846,22 @@ void setup() {
 void loop() {
   unsigned long currentMillis = millis();
   
+  while (Serial.available() > 0) {
+    char rc = Serial.read();
+    if (rc == '\n' || rc == '\r') {
+      serialInputStr.trim(); 
+      if (serialInputStr == "SINGLE_TOUCH") {
+        showTripMeter = !showTripMeter; 
+        refreshDisplay = true;          
+        Serial.print("[UI] Switch Sub-Halaman Musik -> Trip Meter: ");
+        Serial.println(showTripMeter ? "ON" : "OFF");
+      }
+      serialInputStr = ""; 
+    } else {
+      serialInputStr += rc;
+    }
+  }
+
   if (deviceConnected != lastConnectionState) {
     lastConnectionState = deviceConnected;
     refreshDisplay = true;
@@ -819,7 +877,6 @@ void loop() {
     refreshDisplay = true;
   }
   
-  // Backup Pengaman Waktu RTC Internal (Hanya mengeksekusi jika data GPS kosong/absen lama)
   if (currentMillis - lastSDWrite >= 60000) {
     saveTimeToSD();
     lastSDWrite = currentMillis;
