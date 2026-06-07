@@ -221,7 +221,7 @@ String hitungWaktuTempuhStr() {
   int detik = totalDetik % 60;
   
   char buf[30];
-  if (jam > 0) sprintf(buf, "%dj %dm", jam, menit); // Dibuat lebih ringkas tanpa detik agar pas font besar
+  if (jam > 0) sprintf(buf, "%dj %dm", jam, menit); 
   else if (menit > 0) sprintf(buf, "%dm %ds", menit, detik);
   else sprintf(buf, "%ds", detik);
   return String(buf);
@@ -438,32 +438,31 @@ void drawModernHeader() {
   tft.drawRect(20, GARIS_AKSEN_POS_Y, tft.width() - 40, 2, COLOR_ACCENT);
 }
 
-// TAMPILAN BARU: Trip computer super minimalis & teks ekstra besar menggantikan media player area
 void drawMinimalistTripMeter() {
-  int targetY = getMusicCardY(); // Mengambil koordinat Y dinamis milik media player
+  int targetY = getMusicCardY(); 
   
   drawGlassEffect(10, targetY, tft.width() - 20, MUSIC_CARD_HEIGHT, 10);
   drawBorderWithColor(10, targetY, tft.width() - 20, MUSIC_CARD_HEIGHT, 10, COLOR_ACCENT);
   
-  // === KOLOM KIRI: JARAK TEMPUH (FONT BESAR) ===
+  // === KOLOM KIRI: JARAK TEMPUH ===
   tft.setTextColor(COLOR_TEXT_SECONDARY, COLOR_CARD_BG);
   tft.drawString("DIST", 20, targetY + 12, 1);
   tft.setTextColor(COLOR_SUCCESS, COLOR_CARD_BG);
-  tft.drawString(String(totalJarakTempuh, 1), 20, targetY + 28, 4); // Font Size 4 (Sangat Besar)
+  tft.drawString(String(totalJarakTempuh, 1), 20, targetY + 28, 4); 
   tft.setTextColor(COLOR_TEXT_PRIMARY, COLOR_CARD_BG);
   tft.drawString("Km", 20, targetY + 68, 2);
 
-  // === KOLOM TENGAH: AVG SPEED (FONT BESAR) ===
+  // === KOLOM TENGAH: AVG SPEED ===
   tft.setTextColor(COLOR_TEXT_SECONDARY, COLOR_CARD_BG);
   tft.drawCentreString("AVG SPD", tft.width() / 2, targetY + 12, 1);
   tft.setTextColor(COLOR_WARNING, COLOR_CARD_BG);
   double waktuJam = (double)millis() / 3600000.0;
   double speedAvg = waktuJam > 0 ? (totalJarakTempuh / waktuJam) : 0.0;
-  tft.drawCentreString(String(speedAvg, 0), tft.width() / 2, targetY + 28, 4); // Font Size 4
+  tft.drawCentreString(String(speedAvg, 0), tft.width() / 2, targetY + 28, 4); 
   tft.setTextColor(COLOR_TEXT_PRIMARY, COLOR_CARD_BG);
   tft.drawCentreString("Km/h", tft.width() / 2, targetY + 68, 2);
 
-  // === KOLOM KANAN: WAKTU TEMPUH (FONT STANDARD BERSIH) ===
+  // === KOLOM KANAN: WAKTU TEMPUH ===
   tft.setTextColor(COLOR_TEXT_SECONDARY, COLOR_CARD_BG);
   tft.drawRightString("TIME", tft.width() - 20, targetY + 12, 1);
   tft.setTextColor(COLOR_TEXT_PRIMARY, COLOR_CARD_BG);
@@ -578,7 +577,7 @@ void drawFooter() {
     tft.drawString("Disconnected", 20, footerY, 1);
   }
   tft.setTextColor(COLOR_TEXT_SECONDARY, COLOR_BG_BOTTOM);
-  tft.drawRightString("Dashboard v2.2", tft.width() - 20, footerY, 1);
+  tft.drawRightString("Dashboard v2.3", tft.width() - 20, footerY, 1);
 }
 
 void drawStandbyMode() {
@@ -614,12 +613,12 @@ void updateDisplay() {
     
     // LAYER BAWAH (LOGIKA SAKELAR SUB-HALAMAN UTAMA)
     if (isIncomingCall) {
-      drawCallCard(); // Selalu prioritaskan telepon masuk jika ada
+      drawCallCard(); 
     } else {
       if (showTripMeter) {
-        drawMinimalistTripMeter(); // Menggantikan slot area musik dengan data trip minimalis teks besar
+        drawMinimalistTripMeter(); 
       } else {
-        drawMusicPlayer();         // Slot default pemutar media
+        drawMusicPlayer();         
       }
     }
     
@@ -846,16 +845,31 @@ void setup() {
 void loop() {
   unsigned long currentMillis = millis();
   
+  // === INTERSEPSI SERIAL MONITOR INPUT (SINGLE & LONG TOUCH) ===
   while (Serial.available() > 0) {
     char rc = Serial.read();
     if (rc == '\n' || rc == '\r') {
       serialInputStr.trim(); 
+      
       if (serialInputStr == "SINGLE_TOUCH") {
         showTripMeter = !showTripMeter; 
         refreshDisplay = true;          
         Serial.print("[UI] Switch Sub-Halaman Musik -> Trip Meter: ");
         Serial.println(showTripMeter ? "ON" : "OFF");
+      } 
+      else if (serialInputStr == "LONG_TOUCH") {
+        if (isNotify) {
+          isNotify = false;         // Matikan flag popup notifikasi
+          notifySrc = "";           // Bersihkan isi teks
+          notifyTitle = "";
+          notifyBody = "";
+          refreshDisplay = true;    // Gambar ulang layar instan
+          Serial.println("[UI] Notifikasi dihapus paksa via LONG_TOUCH.");
+        } else {
+          Serial.println("[UI] Perintah LONG_TOUCH diabaikan karena sedang tidak ada notifikasi aktif.");
+        }
       }
+      
       serialInputStr = ""; 
     } else {
       serialInputStr += rc;
@@ -872,6 +886,7 @@ void loop() {
     lastClockCheck = currentMillis;
   }
   
+  // Timeout otomatis 5 menit jika tidak dihapus manual
   if (isNotify && (currentMillis - lastNotifyTime >= 300000)) {
     isNotify = false;
     refreshDisplay = true;
