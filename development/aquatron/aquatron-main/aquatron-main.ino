@@ -5,13 +5,14 @@
 #include <DallasTemperature.h>
 #include <Firebase_ESP_Client.h>
 #include <WiFiManager.h>
+#include <time.h> // Library bawaan ESP32 untuk mengambil waktu NTP
 
 // Helper code untuk Firebase data logging dan token generation
 #include <addons/TokenHelper.h>
 #include <addons/RTDBHelper.h>
 
 // 1. Konfigurasi Firebase
-#define FIREBASE_HOST "https://aquatron-app-default-rtdb.asia-southeast1.firebasedatabase.app/"
+#define FIREBASE_HOST "https://aquatron-app-default-rtdb.asia-southeast1.firebasedatabase.app/" 
 #define FIREBASE_AUTH "PacMY6HzqqijY7X44xesrqZG8cd1sCsuQNs47JgG"
 
 // 2. Konfigurasi Sensor Suhu (DS18B20)
@@ -26,8 +27,8 @@ DallasTemperature sensors(&oneWire);
 #define ECHO_PIN_2 26
 
 // 4. Konfigurasi Pin Relay untuk Pompa
-#define RELAY_PUMP_1 4  // Jalur ke Relay Pompa Main
-#define RELAY_PUMP_2 5  // Jalur ke Relay Pompa Reservoir
+#define RELAY_PUMP_1 4   
+#define RELAY_PUMP_2 5   
 
 // 5. Inisialisasi LCD I2C
 LiquidCrystal_I2C lcd(0x27, 16, 2);
@@ -37,18 +38,23 @@ FirebaseData fbdo;
 FirebaseAuth auth;
 FirebaseConfig config;
 
+// Konfigurasi NTP Server
+const char* ntpServer = "pool.ntp.org";
+const long  gmtOffset_sec = 25200;     // UTC+7 untuk WIB (Sesuaikan jika Anda di WITA/WIT)
+const int   daylightOffset_sec = 0;
+
 // Manajemen Waktu Non-blocking
 unsigned long firebasePrevMillis = 0;
-const long firebaseInterval = 5000;
-bool toggleTask = true;
-bool firebaseReadyToTrigger = true;
+const long firebaseInterval = 5000;  
+bool toggleTask = true;               
+bool firebaseReadyToTrigger = true;   
 
 unsigned long changePagePrevMillis = 0;
-const long pageInterval = 2000;
+const long pageInterval = 2000;       
 
 // Variabel Kontrol Tampilan LCD
-int currentPage = 0;
-int iconStatus = 0;
+int currentPage = 0;                 
+int iconStatus = 0;                  
 unsigned long iconTurnOffMillis = 0;
 
 // Byte kustom untuk karakter panah atas & bawah
@@ -63,9 +69,42 @@ byte panahBawah[8] = {
 // Variabel Sensor & Dummy
 float suhu1 = 0, suhu2 = 0;
 float jarak1 = 0, jarak2 = 0;
-float dummyPH = 7.00;
-String dummyPompa1 = "OFF";
-String dummyPompa2 = "OFF";
+float dummyPH = 7.00;               
+String dummyPompa1 = "OFF";         
+String dummyPompa2 = "OFF";         
+
+// Fungsi mengambil Timestamp Epoch terkini
+unsigned long getEpochTime() {
+  time_t now;
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    return 0; // Gagal mengambil waktu
+  }
+  time(&now);
+  return now;
+}
+
+// Fungsi cetak nilai variabel ke Serial Monitor untuk Debugging
+void printDebugData() {
+  Serial.println("\n=== [DEBUG] DATA VARIABEL TERKINI ===");
+  Serial.print("Main Temperature (Suhu 1)      : "); 
+  if (suhu1 == DEVICE_DISCONNECTED_C) Serial.println("TERPUTUS (-127C)"); else { Serial.print(suhu1, 2); Serial.println(" C"); }
+  
+  Serial.print("Reservoir Temperature (Suhu 2) : "); 
+  if (suhu2 == DEVICE_DISCONNECTED_C) Serial.println("TERPUTUS (-127C)"); else { Serial.print(suhu2, 2); Serial.println(" C"); }
+  
+  Serial.print("Main Water Level (Jarak 1)     : "); 
+  if (jarak1 == -1) Serial.println("ERROR / NO ECHO"); else { Serial.print(jarak1, 2); Serial.println(" cm"); }
+  
+  Serial.print("Reservoir Water Level (Jarak 2): "); 
+  if (jarak2 == -1) Serial.println("ERROR / NO ECHO"); else { Serial.print(jarak2, 2); Serial.println(" cm"); }
+  
+  Serial.print("Dummy pH Value                 : "); Serial.println(dummyPH, 2);
+  Serial.print("Status Relay / Tampilan P1     : "); Serial.println(dummyPompa1);
+  Serial.print("Status Relay / Tampilan P2     : "); Serial.println(dummyPompa2);
+  Serial.print("Current Epoch Time (NTP)       : "); Serial.println(getEpochTime());
+  Serial.println("======================================");
+}
 
 // Fungsi membaca jarak ultrasonik
 float bacaJarak(int trigPin, int echoPin) {
@@ -74,25 +113,21 @@ float bacaJarak(int trigPin, int echoPin) {
   digitalWrite(trigPin, HIGH);
   delayMicroseconds(10);
   digitalWrite(trigPin, LOW);
-
+  
   long duration = pulseIn(echoPin, HIGH, 30000);
   float distance = duration * 0.034 / 2;
-
+  
   if (distance == 0) return -1;
   return distance;
 }
 
 void setup() {
   Serial.begin(115200);
-  randomSeed(analogRead(34));
+  randomSeed(analogRead(34)); 
 
-  // Inisialisasi Pin Relay
   pinMode(RELAY_PUMP_1, OUTPUT);
   pinMode(RELAY_PUMP_2, OUTPUT);
-
-  // Kondisi awal: Matikan pompa saat ESP32 pertama kali menyala
-  // Catatan: Jika menggunakan modul relay Active-LOW, ubah HIGH menjadi LOW atau sebaliknya
-  digitalWrite(RELAY_PUMP_1, LOW);
+  digitalWrite(RELAY_PUMP_1, LOW); 
   digitalWrite(RELAY_PUMP_2, LOW);
 
   pinMode(TRIG_PIN_1, OUTPUT);
@@ -101,19 +136,19 @@ void setup() {
   pinMode(ECHO_PIN_2, INPUT);
 
   sensors.begin();
-
+  
   lcd.init();
   lcd.backlight();
-  lcd.createChar(0, panahAtas);
-  lcd.createChar(1, panahBawah);
-
+  lcd.createChar(0, panahAtas);  
+  lcd.createChar(1, panahBawah); 
+  
   lcd.setCursor(0, 0);
   lcd.print("Memulai WiFi...");
 
   WiFiManager wm;
   lcd.setCursor(0, 1);
   lcd.print("Cek AP: ESP32...");
-
+  
   if (!wm.autoConnect("ESP32_Aquatron_AP")) {
     Serial.println("Gagal konek WiFi, merestart...");
     ESP.restart();
@@ -122,20 +157,22 @@ void setup() {
   Serial.println("\nTersambung ke Wi-Fi!");
   lcd.clear();
   lcd.print("WiFi Terhubung!");
+  
+  // Sinkronisasi Waktu via NTP Server
+  lcd.setCursor(0, 1);
+  lcd.print("Sinkron Waktu...");
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   delay(1500);
-
-  // Konfigurasi Kredensial Firebase
+  
   config.host = FIREBASE_HOST;
   config.signer.tokens.legacy_token = FIREBASE_AUTH;
-
-  // === SET TIMEOUT FIREBASE MENJADI 5 DETIK ===
-  config.timeout.serverResponse = 5000;  // Mengatur timeout respon server menjadi 5 detik
-
+  config.timeout.serverResponse = 5000;  
+  
   Firebase.reconnectWiFi(true);
   Firebase.begin(&config, &auth);
 
   lcd.clear();
-  firebasePrevMillis = millis() - firebaseInterval;
+  firebasePrevMillis = millis() - firebaseInterval; 
 }
 
 void loop() {
@@ -157,104 +194,76 @@ void loop() {
     changePagePrevMillis = millis();
     currentPage++;
     if (currentPage > 3) currentPage = 0;
-
-    lcd.clear();
-    perluUpdateLayar = true;
+    
+    lcd.clear(); 
+    perluUpdateLayar = true; 
   }
 
-  // Menampilkan data ke LCD jika halaman berganti
   if (perluUpdateLayar) {
     switch (currentPage) {
       case 0:
-        lcd.setCursor(0, 0);
-        lcd.print("TEMP");
-        lcd.setCursor(0, 1);
-        lcd.print("M:");
-        lcd.print(suhu1, 1);
-        lcd.print((char)223);
-        lcd.print("C ");
-        lcd.setCursor(9, 1);
-        lcd.print("R:");
-        lcd.print(suhu2, 1);
-        lcd.print((char)223);
-        lcd.print("C");
+        lcd.setCursor(0, 0); lcd.print("TEMP");
+        lcd.setCursor(0, 1); lcd.print("M:"); lcd.print(suhu1, 1); lcd.print((char)223); lcd.print("C ");
+        lcd.setCursor(9, 1); lcd.print("R:"); lcd.print(suhu2, 1); lcd.print((char)223); lcd.print("C");
         break;
 
       case 1:
-        lcd.setCursor(0, 0);
-        lcd.print("W. LEVEL");
-        lcd.setCursor(0, 1);
-        lcd.print("M:");
-        lcd.print(jarak1, 0);
-        lcd.print("cm ");
-        lcd.setCursor(9, 1);
-        lcd.print("R:");
-        lcd.print(jarak2, 0);
-        lcd.print("cm");
+        lcd.setCursor(0, 0); lcd.print("W. LEVEL");
+        lcd.setCursor(0, 1); lcd.print("M:"); lcd.print(jarak1, 0); lcd.print("cm ");
+        lcd.setCursor(9, 1); lcd.print("R:"); lcd.print(jarak2, 0); lcd.print("cm");
         break;
 
       case 2:
-        lcd.setCursor(0, 0);
-        lcd.print("PH METER");
-        lcd.setCursor(0, 1);
-        lcd.print("Nilai pH : ");
-        lcd.print(dummyPH, 2);
+        lcd.setCursor(0, 0); lcd.print("PH METER");
+        lcd.setCursor(0, 1); lcd.print("Nilai pH : "); lcd.print(dummyPH, 2);
         break;
 
       case 3:
-        lcd.setCursor(0, 0);
-        lcd.print("PUMP ST.");
-        lcd.setCursor(0, 1);
-        lcd.print("P1:");
-        lcd.print(dummyPompa1);
-        lcd.setCursor(9, 1);
-        lcd.print("P2:");
-        lcd.print(dummyPompa2);
+        lcd.setCursor(0, 0); lcd.print("PUMP ST.");
+        lcd.setCursor(0, 1); lcd.print("P1:"); lcd.print(dummyPompa1);
+        lcd.setCursor(9, 1); lcd.print("P2:"); lcd.print(dummyPompa2);
         break;
     }
-
-    if (iconStatus == 1) {
-      lcd.setCursor(15, 0);
-      lcd.write(0);
-    } else if (iconStatus == 2) {
-      lcd.setCursor(15, 0);
-      lcd.write(1);
-    }
+    
+    if (iconStatus == 1) { lcd.setCursor(15, 0); lcd.write(0); }
+    else if (iconStatus == 2) { lcd.setCursor(15, 0); lcd.write(1); }
   }
 
   // ==========================================
   // 3. LOGIKA AKTIVITAS FIREBASE (SINKRONISASI & RELAY)
   // ==========================================
   if (!firebaseReadyToTrigger && (millis() - firebasePrevMillis >= firebaseInterval)) {
-    firebaseReadyToTrigger = true;
+    firebaseReadyToTrigger = true; 
   }
 
   if (firebaseReadyToTrigger) {
-    firebaseReadyToTrigger = false;
-    iconTurnOffMillis = millis() + 1000;
+    firebaseReadyToTrigger = false; 
+    iconTurnOffMillis = millis() + 1000; 
+
+    // Tampilkan data ke serial monitor tepat sebelum proses komunikasi Firebase dimulai
+    printDebugData();
 
     if (toggleTask) {
       // -----------------------------------------------------------------
-      // TUGAS A: KIRIM DATA SENSOR (Indikator Panah Atas)
+      // TUGAS A: KIRIM DATA SENSOR + TIMESTAMP NTP
       // -----------------------------------------------------------------
       iconStatus = 1;
       lcd.setCursor(15, 0);
-      lcd.write(0);
+      lcd.write(0); 
 
-      dummyPH = random(200, 1201) / 100.0;
+      dummyPH = random(500, 701) / 100.0; 
 
       float selisihSuhu = abs(suhu1 - suhu2);
       bool phAbnormal = (dummyPH < 6.0 || dummyPH > 7.5);
       bool suhuStabil = (suhu1 != DEVICE_DISCONNECTED_C && suhu2 != DEVICE_DISCONNECTED_C && selisihSuhu <= 0.5);
 
       if (phAbnormal && suhuStabil) {
-        Serial.println("[KIRIM] DARURAT! Mengaktifkan kedua pompa via Firebase...");
+        Serial.println("[KIRIM] DARURAT! Mengaktifkan kedua pompa...");
         FirebaseJson jsonPumps;
         jsonPumps.set("mainPump", 1);
         jsonPumps.set("reservoirPump", 1);
         Firebase.RTDB.updateNode(&fbdo, "test/pumps", &jsonPumps);
-
-        // Langsung nyalakan fisik relay demi keamanan tanpa menunggu giliran TUGAS B
+        
         digitalWrite(RELAY_PUMP_1, HIGH);
         digitalWrite(RELAY_PUMP_2, HIGH);
         dummyPompa1 = "ON";
@@ -268,21 +277,26 @@ void loop() {
       if (suhu2 != DEVICE_DISCONNECTED_C) json.set("reservoirTemperature", suhu2);
       if (jarak2 != -1) json.set("reservoirWaterLevel", jarak2);
       json.set("ph", dummyPH);
+      
+      // Mengisi variabel updatedAt dengan data Epoch unix timestamp hasil NTP
+      unsigned long currentEpoch = getEpochTime();
+      if (currentEpoch != 0) {
+        json.set("updatedAt", currentEpoch);
+      }
 
       if (Firebase.RTDB.updateNode(&fbdo, path, &json)) {
-        Serial.println("[KIRIM] Berhasil memperbarui data sensor.");
+        Serial.println("[KIRIM] Berhasil memperbarui data sensor + updatedAt.");
       } else {
-        Serial.print("[KIRIM] Gagal/Timeout: ");
-        Serial.println(fbdo.errorReason());
+        Serial.print("[KIRIM] Gagal: "); Serial.println(fbdo.errorReason());
       }
 
     } else {
       // -----------------------------------------------------------------
-      // TUGAS B: BACA STATUS POMPA & KONTROL FISIK RELAY (Indikator Panah Bawah)
+      // TUGAS B: BACA STATUS POMPA & KONTROL FISIK RELAY
       // -----------------------------------------------------------------
       iconStatus = 2;
       lcd.setCursor(15, 0);
-      lcd.write(1);
+      lcd.write(1); 
 
       Serial.println("[BACA] Mengambil status pompa dari test/pumps...");
 
@@ -290,39 +304,36 @@ void loop() {
         FirebaseJson &jsonResult = fbdo.jsonObject();
         FirebaseJsonData jsonData;
 
-        // Kontrol fisik Relay 1 (Main Pump)
         jsonResult.get(jsonData, "mainPump");
         if (jsonData.success) {
           int p1 = jsonData.to<int>();
-          digitalWrite(RELAY_PUMP_1, p1);  // Logika High/Low mengikuti nilai 1/0 dari Firebase
+          digitalWrite(RELAY_PUMP_1, p1); 
           dummyPompa1 = (p1 == 1) ? "ON" : "OFF";
         }
 
-        // Kontrol fisik Relay 2 (Reservoir Pump)
         jsonResult.get(jsonData, "reservoirPump");
         if (jsonData.success) {
           int p2 = jsonData.to<int>();
-          digitalWrite(RELAY_PUMP_2, p2);  // Logika High/Low mengikuti nilai 1/0 dari Firebase
+          digitalWrite(RELAY_PUMP_2, p2); 
           dummyPompa2 = (p2 == 1) ? "ON" : "OFF";
         }
 
         Serial.println("[BACA] Berhasil menyelaraskan fisik relay.");
       } else {
-        Serial.print("[BACA] Gagal/Timeout mengambil status pompa: ");
-        Serial.println(fbdo.errorReason());
+        Serial.print("[BACA] Gagal: "); Serial.println(fbdo.errorReason());
       }
     }
 
-    firebasePrevMillis = millis();
-    toggleTask = !toggleTask;
+    firebasePrevMillis = millis(); 
+    toggleTask = !toggleTask; 
   }
 
   // Menghapus ikon indikator panah setelah 1 detik
   if (iconStatus != 0 && millis() > iconTurnOffMillis) {
     iconStatus = 0;
     lcd.setCursor(15, 0);
-    lcd.print(" ");
+    lcd.print(" "); 
   }
 
-  delay(50);
+  delay(50); 
 }
