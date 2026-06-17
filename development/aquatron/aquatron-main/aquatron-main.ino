@@ -40,7 +40,7 @@ FirebaseConfig config;
 
 // Konfigurasi NTP Server (Disesuaikan ke WITA UTC+8)
 const char* ntpServer = "pool.ntp.org";
-const long  gmtOffset_sec = 28800;     // UTC+8 untuk WITA (Makassar, Bali, dll.)
+const long  gmtOffset_sec = 28800;     // UTC+8 untuk WITA
 const int   daylightOffset_sec = 0;
 
 // Manajemen Waktu Non-blocking
@@ -91,7 +91,6 @@ void printLocalTime() {
     Serial.println("Gagal mendapatkan waktu lokal");
     return;
   }
-  // Mencetak dengan format: Hari, Tanggal/Bulan/Tahun Jam:Menit:Detik
   Serial.print("Waktu Sistem Saat Ini (WITA): ");
   Serial.println(&timeinfo, "%A, %d/%m/%Y %H:%M:%S");
 }
@@ -99,7 +98,7 @@ void printLocalTime() {
 // Fungsi cetak nilai variabel ke Serial Monitor untuk Debugging
 void printDebugData() {
   Serial.println("\n=== [DEBUG] DATA VARIABEL TERKINI ===");
-  printLocalTime(); // Menampilkan waktu lokal terformat di dalam log debug
+  printLocalTime(); 
   
   Serial.print("Main Temperature (Suhu 1)      : "); 
   if (suhu1 == DEVICE_DISCONNECTED_C) Serial.println("TERPUTUS (-127C)"); else { Serial.print(suhu1, 2); Serial.println(" C"); }
@@ -177,7 +176,6 @@ void setup() {
   lcd.print("Sinkron WITA...");
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   
-  // Validasi tunggu sampai NTP berhasil sinkron (maksimal 10 kali coba)
   struct tm timeinfo;
   int retry = 0;
   while(!getLocalTime(&timeinfo) && retry < 10) {
@@ -187,16 +185,36 @@ void setup() {
   }
   Serial.println("");
   
-  // === MENAMPILKAN TANGGAL & WAKTU SEBELUM MASUK LOOP ===
+  // Cetak Tanggal & Waktu ke Serial Monitor
   Serial.println("\n==========================================");
   Serial.println(" KONEKSI BERHASIL & SISTEM SIAP ");
   printLocalTime(); 
   Serial.println("==========================================\n");
-  delay(1500);
+  
+  // === TAMPILKAN TANGGAL & WAKTU KE LCD SEBELUM MASUK LOOP ===
+  if (getLocalTime(&timeinfo)) {
+    char bufferJam[16];
+    char bufferTanggal[16];
+    
+    // Format teks jam dan tanggal sesuai kapasitas kolom LCD
+    strftime(bufferJam, sizeof(bufferJam), "Jam: %H:%M:%S", &timeinfo);
+    strftime(bufferTanggal, sizeof(bufferTanggal), "Tgl: %d/%m/%Y", &timeinfo);
+    
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print(bufferJam);     // Menampilkan "Jam: HH:MM:SS"
+    lcd.setCursor(0, 1);
+    lcd.print(bufferTanggal); // Menampilkan "Tgl: DD/MM/YYYY"
+    delay(4000);              // Tahan layar selama 4 detik agar user sempat membaca
+  } else {
+    lcd.clear();
+    lcd.print("Gagal Sinkron Waktu");
+    delay(2000);
+  }
   
   config.host = FIREBASE_HOST;
   config.signer.tokens.legacy_token = FIREBASE_AUTH;
-  config.timeout.serverResponse = 5000;  
+  config.timeout.serverResponse = 2000;  
   
   Firebase.reconnectWiFi(true);
   Firebase.begin(&config, &auth);
@@ -270,10 +288,7 @@ void loop() {
     firebaseReadyToTrigger = false; 
     iconTurnOffMillis = millis() + 1000; 
 
-    // Acak nilai pH di kisaran 5.0 - 8.0 sebelum debug diprint
     dummyPH = random(500, 801) / 100.0; 
-
-    // Tampilkan data ke serial monitor tepat sebelum proses komunikasi Firebase dimulai
     printDebugData();
 
     if (toggleTask) {
