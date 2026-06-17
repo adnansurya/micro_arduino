@@ -33,36 +33,35 @@ FirebaseData fbdo;
 FirebaseAuth auth;
 FirebaseConfig config;
 
-// Manajemen Waktu (Non-blocking)
-unsigned long sendDataPrevMillis = 0;
-const long updateInterval = 5000;    // Kirim data setiap 5 detik
+// Manajemen Waktu Non-blocking
+unsigned long firebasePrevMillis = 0;
+const long firebaseInterval = 5000;  // Jeda 5 detik DIHITUNG SETELAH proses Firebase selesai
+bool toggleTask = true;               // true = Kirim Data, false = Baca Pompa
+bool firebaseReadyToTrigger = true;   // Flag untuk mengunci antrean proses Firebase
 
 unsigned long changePagePrevMillis = 0;
-const long pageInterval = 4000;      // Ganti halaman LCD setiap 4 detik
+const long pageInterval = 2000;       // REFRESH / GANTI HALAMAN LCD SETIAP 2 DETIK
 
 // Variabel Kontrol Tampilan LCD
 int currentPage = 0;                 // 0:Suhu, 1:Water Level, 2:pH, 3:Pompa
-bool isSending = false;              // Status indikator panah pengiriman data
-unsigned long arrowTurnOffMillis = 0;
+int iconStatus = 0;                  // 0: Bersih, 1: Panah Atas (Kirim), 2: Panah Bawah (Baca)
+unsigned long iconTurnOffMillis = 0;
 
-// Byte kustom untuk karakter panah atas (Custom Character)
+// Byte kustom untuk karakter panah atas & bawah
 byte panahAtas[8] = {
-  B00100,
-  B01110,
-  B11111,
-  B00100,
-  B00100,
-  B00100,
-  B00100,
-  B00100
+  B00100, B01110, B11111, B00100, B00100, B00100, B00100, B00100
+};
+
+byte panahBawah[8] = {
+  B00100, B00100, B00100, B00100, B00100, B11111, B01110, B00100
 };
 
 // Variabel Sensor & Dummy
 float suhu1 = 0, suhu2 = 0;
 float jarak1 = 0, jarak2 = 0;
-float dummyPH = 7.35;               // Nilai dummy sensor pH
-String dummyPompa1 = "ON";          // Status dummy pompa 1
-String dummyPompa2 = "OFF";         // Status dummy pompa 2
+float dummyPH = 7.00;               
+String dummyPompa1 = "OFF";         
+String dummyPompa2 = "OFF";         
 
 // Fungsi membaca jarak ultrasonik
 float bacaJarak(int trigPin, int echoPin) {
@@ -81,6 +80,7 @@ float bacaJarak(int trigPin, int echoPin) {
 
 void setup() {
   Serial.begin(115200);
+  randomSeed(analogRead(34)); 
 
   pinMode(TRIG_PIN_1, OUTPUT);
   pinMode(ECHO_PIN_1, INPUT);
@@ -89,15 +89,14 @@ void setup() {
 
   sensors.begin();
   
-  // Inisialisasi LCD & Karakter Kustom
   lcd.init();
   lcd.backlight();
-  lcd.createChar(0, panahAtas); // Daftarkan karakter panah sebagai karakter index ke-0
+  lcd.createChar(0, panahAtas);  
+  lcd.createChar(1, panahBawah); 
   
   lcd.setCursor(0, 0);
   lcd.print("Memulai WiFi...");
 
-  // WiFiManager
   WiFiManager wm;
   lcd.setCursor(0, 1);
   lcd.print("Cek AP: ESP32...");
@@ -119,11 +118,14 @@ void setup() {
   Firebase.begin(&config, &auth);
 
   lcd.clear();
+  
+  // Set waktu awal agar Firebase langsung tereksekusi pertama kali saat startup
+  firebasePrevMillis = millis() - firebaseInterval; 
 }
 
 void loop() {
   // ==========================================
-  // 1. MEMBACA DATA SENSOR
+  // 1. MEMBACA DATA SENSOR INTERNAL ESP32
   // ==========================================
   sensors.requestTemperatures();
   suhu1 = sensors.getTempCByIndex(0);
@@ -132,7 +134,7 @@ void loop() {
   jarak2 = bacaJarak(TRIG_PIN_2, ECHO_PIN_2);
 
   // ==========================================
-  // 2. LOGIKA PERGANTIAN HALAMAN LCD (4 DETIK)
+  // 2. LOGIKA PERGANTIAN HALAMAN LCD (2 DETIK)
   // ==========================================
   bool perluUpdateLayar = false;
 
@@ -172,60 +174,103 @@ void loop() {
         break;
     }
     
-    if (isSending) {
+    if (iconStatus == 1) { lcd.setCursor(15, 0); lcd.write(0); }
+    else if (iconStatus == 2) { lcd.setCursor(15, 0); lcd.write(1); }
+  }
+
+  // ==========================================
+  // 3. LOGIKA AKTIVITAS FIREBASE (BERDASARKAN RESPON BERHASIL/GAGAL)
+  // ==========================================
+  
+  // Cek apakah jeda waktu pasca-proses sebelumnya sudah melewati 5 detik
+  if (!firebaseReadyToTrigger && (millis() - firebasePrevMillis >= firebaseInterval)) {
+    firebaseReadyToTrigger = true; // Buka kunci antrean, siap eksekusi tugas berikutnya
+  }
+
+  if (firebaseReadyToTrigger) {
+    firebaseReadyToTrigger = false; // Kunci kembali agar tidak terjadi double trigger
+    iconTurnOffMillis = millis() + 1000; 
+
+    if (toggleTask) {
+      // -----------------------------------------------------------------
+      // TUGAS A: KIRIM DATA SENSOR (Indikator Panah Atas)
+      // -----------------------------------------------------------------
+      iconStatus = 1;
       lcd.setCursor(15, 0);
-      lcd.write(0);
-    }
-  }
+      lcd.write(0); 
 
-  // ==========================================
-  // 3. LOGIKA PENGIRIMAN DATA JSON (1x TEMBAK)
-  // ==========================================
-  if (millis() - sendDataPrevMillis > updateInterval || sendDataPrevMillis == 0) {
-    sendDataPrevMillis = millis();
-    isSending = true; 
-    arrowTurnOffMillis = millis() + 1000; // Indikator panah menyala 1 detik
+      dummyPH = random(200, 1201) / 100.0; 
 
-    // Munculkan indikator panah secara instan di LCD
-    lcd.setCursor(15, 0);
-    lcd.write(0);
+      float selisihSuhu = abs(suhu1 - suhu2);
+      bool phAbnormal = (dummyPH < 6.0 || dummyPH > 7.5);
+      bool suhuStabil = (suhu1 != DEVICE_DISCONNECTED_C && suhu2 != DEVICE_DISCONNECTED_C && selisihSuhu <= 0.5);
 
-    String path = "test/sensorData/aquatron_001/latest";
-    Serial.println("Menggabungkan data ke JSON & Mengirim...");
+      if (phAbnormal && suhuStabil) {
+        Serial.println("[KIRIM] DARURAT! Mengaktifkan kedua pompa via Firebase...");
+        FirebaseJson jsonPumps;
+        jsonPumps.set("mainPump", 1);
+        jsonPumps.set("reservoirPump", 1);
+        Firebase.RTDB.updateNode(&fbdo, "test/pumps", &jsonPumps);
+      }
 
-    // Membuat objek JSON bawaan dari library Firebase ESP Client
-    FirebaseJson json;
-    
-    // Memasukkan data ke JSON hanya jika sensor valid/terdeteksi
-    if (suhu1 != DEVICE_DISCONNECTED_C) {
-      json.set("mainTemperature", suhu1);
-    }
-    if (jarak1 != -1) {
-      json.set("mainWaterLevel", jarak1);
-    }
-    if (suhu2 != DEVICE_DISCONNECTED_C) {
-      json.set("reservoirTemperature", suhu2);
-    }
-    if (jarak2 != -1) {
-      json.set("reservoirWaterLevel", jarak2);
-    }
-    
-    // Memasukkan data dummy ke dalam JSON
-    json.set("ph", dummyPH);
+      String path = "test/sensorData/aquatron_001/latest";
+      FirebaseJson json;
+      if (suhu1 != DEVICE_DISCONNECTED_C) json.set("mainTemperature", suhu1);
+      if (jarak1 != -1) json.set("mainWaterLevel", jarak1);
+      if (suhu2 != DEVICE_DISCONNECTED_C) json.set("reservoirTemperature", suhu2);
+      if (jarak2 != -1) json.set("reservoirWaterLevel", jarak2);
+      json.set("ph", dummyPH);
 
-    // Mengirimkan semua data sekaligus menggunakan metode updateNode
-    // updateNode akan memperbarui data di dalam folder 'latest' tanpa menghapus data lain yang sudah ada di sana (seperti ammoniaRisk)
-    if (Firebase.RTDB.updateNode(&fbdo, path, &json)) {
-      Serial.println("Kirim JSON BERHASIL!");
+      // Eksekusi kirim data (Proses ini blocking/menunggu respon server)
+      if (Firebase.RTDB.updateNode(&fbdo, path, &json)) {
+        Serial.println("[KIRIM] Berhasil. Memulai hitung mundur 5 detik untuk tugas B...");
+      } else {
+        Serial.print("[KIRIM] Gagal: "); Serial.println(fbdo.errorReason());
+        Serial.println("Memulai hitung mundur 5 detik untuk tugas B...");
+      }
+
     } else {
-      Serial.print("Kirim JSON GAGAL! Alasan: ");
-      Serial.println(fbdo.errorReason());
+      // -----------------------------------------------------------------
+      // TUGAS B: BACA STATUS POMPA (Indikator Panah Bawah)
+      // -----------------------------------------------------------------
+      iconStatus = 2;
+      lcd.setCursor(15, 0);
+      lcd.write(1); 
+
+      Serial.println("[BACA] Mengambil status pompa dari test/pumps...");
+
+      // Eksekusi baca data (Proses ini blocking/menunggu respon server)
+      if (Firebase.RTDB.getJSON(&fbdo, "test/pumps")) {
+        FirebaseJson &jsonResult = fbdo.jsonObject();
+        FirebaseJsonData jsonData;
+
+        jsonResult.get(jsonData, "mainPump");
+        if (jsonData.success) {
+          int p1 = jsonData.to<int>();
+          dummyPompa1 = (p1 == 1) ? "ON" : "OFF";
+        }
+
+        jsonResult.get(jsonData, "reservoirPump");
+        if (jsonData.success) {
+          int p2 = jsonData.to<int>();
+          dummyPompa2 = (p2 == 1) ? "ON" : "OFF";
+        }
+
+        Serial.println("[BACA] Berhasil. Memulai hitung mundur 5 detik untuk tugas A...");
+      } else {
+        Serial.print("[BACA] Gagal: "); Serial.println(fbdo.errorReason());
+        Serial.println("Memulai hitung mundur 5 detik untuk tugas A...");
+      }
     }
+
+    // PENTING: Penanda waktu jeda 5 detik diperbarui DI SINI (setelah fungsi Firebase selesai berjalan)
+    firebasePrevMillis = millis(); 
+    toggleTask = !toggleTask; // Tukar tugas untuk antrean berikutnya
   }
 
-  // Menghentikan status indikator panah secara independen
-  if (isSending && millis() > arrowTurnOffMillis) {
-    isSending = false;
+  // Menghapus ikon indikator panah setelah 1 detik
+  if (iconStatus != 0 && millis() > iconTurnOffMillis) {
+    iconStatus = 0;
     lcd.setCursor(15, 0);
     lcd.print(" "); 
   }
