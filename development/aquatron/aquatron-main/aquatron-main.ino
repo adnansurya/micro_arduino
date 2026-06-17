@@ -5,7 +5,7 @@
 #include <DallasTemperature.h>
 #include <Firebase_ESP_Client.h>
 #include <WiFiManager.h>
-#include <time.h> // Library bawaan ESP32 untuk mengambil waktu NTP
+#include <time.h> 
 
 // Helper code untuk Firebase data logging dan token generation
 #include <addons/TokenHelper.h>
@@ -38,9 +38,9 @@ FirebaseData fbdo;
 FirebaseAuth auth;
 FirebaseConfig config;
 
-// Konfigurasi NTP Server
+// Konfigurasi NTP Server (Disesuaikan ke WITA UTC+8)
 const char* ntpServer = "pool.ntp.org";
-const long  gmtOffset_sec = 25200;     // UTC+7 untuk WIB (Sesuaikan jika Anda di WITA/WIT)
+const long  gmtOffset_sec = 28800;     // UTC+8 untuk WITA (Makassar, Bali, dll.)
 const int   daylightOffset_sec = 0;
 
 // Manajemen Waktu Non-blocking
@@ -78,15 +78,29 @@ unsigned long getEpochTime() {
   time_t now;
   struct tm timeinfo;
   if (!getLocalTime(&timeinfo)) {
-    return 0; // Gagal mengambil waktu
+    return 0; 
   }
   time(&now);
   return now;
 }
 
+// Fungsi untuk mencetak Tanggal & Waktu Lokal terformat (WITA)
+void printLocalTime() {
+  struct tm timeinfo;
+  if(!getLocalTime(&timeinfo)){
+    Serial.println("Gagal mendapatkan waktu lokal");
+    return;
+  }
+  // Mencetak dengan format: Hari, Tanggal/Bulan/Tahun Jam:Menit:Detik
+  Serial.print("Waktu Sistem Saat Ini (WITA): ");
+  Serial.println(&timeinfo, "%A, %d/%m/%Y %H:%M:%S");
+}
+
 // Fungsi cetak nilai variabel ke Serial Monitor untuk Debugging
 void printDebugData() {
   Serial.println("\n=== [DEBUG] DATA VARIABEL TERKINI ===");
+  printLocalTime(); // Menampilkan waktu lokal terformat di dalam log debug
+  
   Serial.print("Main Temperature (Suhu 1)      : "); 
   if (suhu1 == DEVICE_DISCONNECTED_C) Serial.println("TERPUTUS (-127C)"); else { Serial.print(suhu1, 2); Serial.println(" C"); }
   
@@ -99,7 +113,7 @@ void printDebugData() {
   Serial.print("Reservoir Water Level (Jarak 2): "); 
   if (jarak2 == -1) Serial.println("ERROR / NO ECHO"); else { Serial.print(jarak2, 2); Serial.println(" cm"); }
   
-  Serial.print("Dummy pH Value                 : "); Serial.println(dummyPH, 2);
+  Serial.print("Dummy pH Value (Range 5-8)     : "); Serial.println(dummyPH, 2);
   Serial.print("Status Relay / Tampilan P1     : "); Serial.println(dummyPompa1);
   Serial.print("Status Relay / Tampilan P2     : "); Serial.println(dummyPompa2);
   Serial.print("Current Epoch Time (NTP)       : "); Serial.println(getEpochTime());
@@ -158,10 +172,26 @@ void setup() {
   lcd.clear();
   lcd.print("WiFi Terhubung!");
   
-  // Sinkronisasi Waktu via NTP Server
+  // Sinkronisasi Waktu via NTP Server (WITA)
   lcd.setCursor(0, 1);
-  lcd.print("Sinkron Waktu...");
+  lcd.print("Sinkron WITA...");
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  
+  // Validasi tunggu sampai NTP berhasil sinkron (maksimal 10 kali coba)
+  struct tm timeinfo;
+  int retry = 0;
+  while(!getLocalTime(&timeinfo) && retry < 10) {
+    Serial.print(".");
+    delay(500);
+    retry++;
+  }
+  Serial.println("");
+  
+  // === MENAMPILKAN TANGGAL & WAKTU SEBELUM MASUK LOOP ===
+  Serial.println("\n==========================================");
+  Serial.println(" KONEKSI BERHASIL & SISTEM SIAP ");
+  printLocalTime(); 
+  Serial.println("==========================================\n");
   delay(1500);
   
   config.host = FIREBASE_HOST;
@@ -240,6 +270,9 @@ void loop() {
     firebaseReadyToTrigger = false; 
     iconTurnOffMillis = millis() + 1000; 
 
+    // Acak nilai pH di kisaran 5.0 - 8.0 sebelum debug diprint
+    dummyPH = random(500, 801) / 100.0; 
+
     // Tampilkan data ke serial monitor tepat sebelum proses komunikasi Firebase dimulai
     printDebugData();
 
@@ -250,8 +283,6 @@ void loop() {
       iconStatus = 1;
       lcd.setCursor(15, 0);
       lcd.write(0); 
-
-      dummyPH = random(500, 701) / 100.0; 
 
       float selisihSuhu = abs(suhu1 - suhu2);
       bool phAbnormal = (dummyPH < 6.0 || dummyPH > 7.5);
@@ -278,7 +309,6 @@ void loop() {
       if (jarak2 != -1) json.set("reservoirWaterLevel", jarak2);
       json.set("ph", dummyPH);
       
-      // Mengisi variabel updatedAt dengan data Epoch unix timestamp hasil NTP
       unsigned long currentEpoch = getEpochTime();
       if (currentEpoch != 0) {
         json.set("updatedAt", currentEpoch);
