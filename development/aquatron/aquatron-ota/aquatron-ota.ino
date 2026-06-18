@@ -462,9 +462,7 @@ void loop() {
       bool phAbnormal = (dummyPH < 6.0 || dummyPH > 7.5);
       bool suhuStabil = (suhu1 != DEVICE_DISCONNECTED_C && suhu2 != DEVICE_DISCONNECTED_C && selisihSuhu <= 0.5);
 
-      // === PERUBAHAN BARU: Logika Auto ON & Auto OFF berdasarkan State ===
       if (!statusDaruratPH) {
-        // JIKA sedang tidak darurat, dan tiba-tiba pH abnormal (dan suhu valid) -> TRIGGER DARURAT
         if (phAbnormal && suhuStabil) {
           Serial.println("[KIRIM] DARURAT! pH Abnormal. Mengaktifkan kedua pompa via Firebase...");
           statusDaruratPH = true; 
@@ -474,7 +472,6 @@ void loop() {
           jsonPumps.set("reservoirPump", 1);
           Firebase.RTDB.updateNode(&fbdo, "test/pumps", &jsonPumps);
           
-          // Langsung respon fisik pin
           digitalWrite(RELAY_PUMP_1, LOW);
           digitalWrite(RELAY_PUMP_2, LOW);
           dummyPompa1 = "ON";
@@ -482,7 +479,6 @@ void loop() {
         }
       } 
       else {
-        // JIKA sebelumnya sedang dalam mode darurat, namun SEKARANG pH sudah kembali normal -> SELESAI DARURAT
         if (!phAbnormal) {
           Serial.println("[KIRIM] AMAN! pH Kembali Normal. Mematikan kedua pompa via Firebase...");
           statusDaruratPH = false; 
@@ -492,7 +488,6 @@ void loop() {
           jsonPumps.set("reservoirPump", 0);
           Firebase.RTDB.updateNode(&fbdo, "test/pumps", &jsonPumps);
           
-          // Langsung respon fisik pin
           digitalWrite(RELAY_PUMP_1, HIGH);
           digitalWrite(RELAY_PUMP_2, HIGH);
           dummyPompa1 = "OFF";
@@ -500,7 +495,7 @@ void loop() {
         }
       }
 
-      String path = "test/sensorData/aquatron_001/latest";
+      // Mempersiapkan struktur JSON data sensor
       FirebaseJson json;
       if (suhu1 != DEVICE_DISCONNECTED_C) json.set("mainTemperature", suhu1);
       if (tinggiAir1 != -1) json.set("mainWaterLevel", tinggiAir1);
@@ -513,11 +508,22 @@ void loop() {
       unsigned long currentEpoch = getEpochTime();
       if (currentEpoch != 0) json.set("updatedAt", currentEpoch);
 
-      if (Firebase.RTDB.updateNode(&fbdo, path, &json)) {
-        Serial.println("[KIRIM] Berhasil memperbarui data sensor + updatedAt.");
+      // 1. Update ke lokasi data terbaru (/latest)
+      String pathLatest = "test/sensorData/aquatron_001/latest";
+      if (Firebase.RTDB.updateNode(&fbdo, pathLatest, &json)) {
+        Serial.println("[LATEST] Berhasil memperbarui data terbaru.");
       } else {
-        Serial.print("[KIRIM] Gagal: "); Serial.println(fbdo.errorReason());
+        Serial.print("[LATEST] Gagal: "); Serial.println(fbdo.errorReason());
       }
+
+      // === PERUBAHAN BARU: 2. Push data yang sama ke lokasi histori (/history) ===
+      String pathHistory = "test/history";
+      if (Firebase.RTDB.push(&fbdo, pathHistory, &json)) {
+        Serial.println("[HISTORY] Berhasil menambahkan log histori baru.");
+      } else {
+        Serial.print("[HISTORY] Gagal membuat log histori: "); Serial.println(fbdo.errorReason());
+      }
+
     } else {
       // -----------------------------------------------------------------
       // TUGAS B: BACA STATUS POMPA & KONTROL FISIK RELAY
