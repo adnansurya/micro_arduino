@@ -192,9 +192,7 @@ void setup() {
   Serial.println("\nTersambung ke Wi-Fi!");
   lcd.clear(); lcd.print("WiFi Terhubung!");
   
-  // =========================================================================
-  // === PERUBAHAN BARU: PENGECEKAN MODE OTA TEPAT SETELAH WIFI TERHUBUNG ===
-  // =========================================================================
+  // PENGECEKAN MODE OTA TEPAT SETELAH WIFI TERHUBUNG
   if (digitalRead(OTA_TRIGGER_PIN) == LOW) {
     lcd.clear();
     lcd.setCursor(0, 0); lcd.print("   MODE OTA   ");
@@ -202,27 +200,23 @@ void setup() {
     Serial.print("\n[OTA] Masuk Mode OTA Statis! Buka: http://");
     Serial.println(WiFi.localIP());
 
-    // Setup server lokal untuk ElegantOTA
     server.on("/", []() {
       server.send(200, "text/plain", "ESP32 Mode OTA Aktif setelah Booting Wi-Fi.");
     });
     ElegantOTA.begin(&server);    
     server.begin();
 
-    // Loop selamanya di sini selama pin masih di-short ke GND
     while (digitalRead(OTA_TRIGGER_PIN) == LOW) {
       server.handleClient();
       ElegantOTA.loop();
       delay(1);
     }
     
-    // Jika short dilepas setelah masuk mode ini, restart ESP32 untuk booting normal
     Serial.println("[OTA] Pin dilepas, merestart ESP32 ke mode normal...");
     lcd.clear(); lcd.print("Restarting...");
     delay(1000);
     ESP.restart();
   }
-  // =========================================================================
 
   lcd.setCursor(0, 1); lcd.print("Sinkron WITA...");
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
@@ -241,18 +235,45 @@ void setup() {
   Firebase.reconnectWiFi(true);
   Firebase.begin(&config, &auth);
 
+  // =========================================================================
+  // === PERUBAHAN BARU: LOAD ALL CONFIG DALAM SATU JSON BESAR (SINGLE FETCH) ===
+  // =========================================================================
   lcd.clear(); lcd.print("Load Config...");
-  if (Firebase.RTDB.getFloat(&fbdo, "test/config/mainSensorHeight")) {
-    mainSensorHeight = fbdo.to<float>();
-  } else {
-    mainSensorHeight = 50.0; 
-  }
+  Serial.println("\n[CONFIG] Mengunduh seluruh node /test/config dalam 1 JSON...");
 
-  if (Firebase.RTDB.getFloat(&fbdo, "test/config/reservoirSensorHeight")) {
-    reservoirSensorHeight = fbdo.to<float>();
-  } else {
-    reservoirSensorHeight = 50.0; 
+  if (Firebase.RTDB.getJSON(&fbdo, "test/config")) {
+    // Ambil referensi ke objek JSON yang didapatkan dari server
+    FirebaseJson &jsonResult = fbdo.jsonObject();
+    FirebaseJsonData jsonData;
+
+    // Pisah data mainSensorHeight
+    jsonResult.get(jsonData, "mainSensorHeight");
+    if (jsonData.success) {
+      mainSensorHeight = jsonData.to<float>();
+      Serial.print("[CONFIG] Dipisah -> mainSensorHeight: "); Serial.println(mainSensorHeight);
+    } else {
+      mainSensorHeight = 50.0; // Default cadangan jika key tidak ditemukan
+      Serial.println("[CONFIG] mainSensorHeight tidak ditemukan di JSON, gunakan default.");
+    }
+
+    // Pisah data reservoirSensorHeight
+    jsonResult.get(jsonData, "reservoirSensorHeight");
+    if (jsonData.success) {
+      reservoirSensorHeight = jsonData.to<float>();
+      Serial.print("[CONFIG] Dipisah -> reservoirSensorHeight: "); Serial.println(reservoirSensorHeight);
+    } else {
+      reservoirSensorHeight = 50.0; // Default cadangan jika key tidak ditemukan
+      Serial.println("[CONFIG] reservoirSensorHeight tidak ditemukan di JSON, gunakan default.");
+    }
+  } 
+  else {
+    // Jika koneksi atau pembacaan folder utama /test/config gagal total
+    Serial.print("[CONFIG] Gagal mengambil JSON Config: "); Serial.println(fbdo.errorReason());
+    mainSensorHeight = 50.0;
+    reservoirSensorHeight = 50.0;
+    Serial.println("[CONFIG] Seluruh konfigurasi di-set ke nilai default (50.0 cm).");
   }
+  // =========================================================================
 
   lcd.clear();
   firebasePrevMillis = millis() - firebaseInterval; 
@@ -261,8 +282,6 @@ void setup() {
 
 void loop() {
   struct tm timeinfo; 
-
-  // Pengecekan OTA di dalam loop() dihapus total agar loop fokus pada tugas utama
 
   // ==========================================
   // 1. MEMBACA DATA SENSOR INTERNAL ESP32 & KALKULASI TINGGI AIR
