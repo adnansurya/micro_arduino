@@ -19,10 +19,9 @@
 #define FIREBASE_HOST "https://aquatron-app-default-rtdb.asia-southeast1.firebasedatabase.app/" 
 #define FIREBASE_AUTH "PacMY6HzqqijY7X44xesrqZG8cd1sCsuQNs47JgG"
 
-// === TAMBAHAN OTA 2: Definisi Pin Trigger OTA (Hubungkan ke GND untuk Aktif) ===
+// === TAMBAHAN OTA 2: Definisi Pin Trigger OTA ===
 #define OTA_TRIGGER_PIN 19
-bool modeOtaAktif = false;
-WebServer server(80); // Membuat server pada port 80
+WebServer server(80); 
 
 // 2. Konfigurasi Sensor Suhu (DS18B20)
 #define ONE_WIRE_BUS 13
@@ -35,13 +34,13 @@ DallasTemperature sensors(&oneWire);
 #define TRIG_PIN_2 27
 #define ECHO_PIN_2 26
 
-// === PERUBAHAN BARU: Variabel Konfigurasi Tinggi Sensor & Ketinggian Air ===
+// Variabel Konfigurasi Tinggi Sensor & Ketinggian Air
 float mainSensorHeight = 0.0;       
 float reservoirSensorHeight = 0.0;  
 float tinggiAir1 = 0.0;             
 float tinggiAir2 = 0.0;             
 
-// === TAMBAHAN BARU: Status Tracking untuk Darurat pH ===
+// Status Tracking untuk Darurat pH
 bool statusDaruratPH = false; 
 
 // 4. Konfigurasi Pin Relay 
@@ -62,13 +61,13 @@ const char* ntpServer = "pool.ntp.org";
 const long   gmtOffset_sec = 28800;     
 const int    daylightOffset_sec = 0;
 
-// Tabel Kesepakatan Jam (00.00 s/d 23.00) -> Total 24 Jam
+// Tabel Kesepakatan Jam
 const int tabelLighting[24] = {
   9, 9, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 
   0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 9  
 };
 
-// Variabel Tracking Level Lighting Fisik Saat Ini
+// Variabel Tracking Level Lighting Fisik
 int currentLightingLevel = 0; 
 bool lightingDirectionUp = true; 
 int lastCheckedHour = -1;        
@@ -87,14 +86,9 @@ int currentPage = 0;
 int iconStatus = 0;                                    
 unsigned long iconTurnOffMillis = 0;
 
-// Byte kustom untuk karakter panah atas & bawah
-byte panahAtas[8] = {
-  B00100, B01110, B11111, B00100, B00100, B00100, B00100, B00100
-};
-
-byte panahBawah[8] = {
-  B00100, B00100, B00100, B00100, B00100, B11111, B01110, B00100
-};
+// Byte kustom untuk karakter panah
+byte panahAtas[8] = { B00100, B01110, B11111, B00100, B00100, B00100, B00100, B00100 };
+byte panahBawah[8] = { B00100, B00100, B00100, B00100, B00100, B11111, B01110, B00100 };
 
 // Variabel Sensor & Dummy
 float suhu1 = 0, suhu2 = 0;
@@ -103,29 +97,21 @@ float dummyPH = 7.00;
 String dummyPompa1 = "OFF";         
 String dummyPompa2 = "OFF";         
 
-// Fungsi mengambil Timestamp Epoch terkini
 unsigned long getEpochTime() {
   time_t now;
   struct tm timeinfo;
-  if (!getLocalTime(&timeinfo)) {
-    return 0; 
-  }
+  if (!getLocalTime(&timeinfo)) return 0; 
   time(&now);
   return now;
 }
 
-// Fungsi untuk mencetak Tanggal & Waktu Lokal terformat (WITA)
 void printLocalTime() {
   struct tm timeinfo;
-  if(!getLocalTime(&timeinfo)){
-    Serial.println("Gagal mendapatkan waktu lokal");
-    return;
-  }
+  if(!getLocalTime(&timeinfo)) return;
   Serial.print("Waktu Sistem Saat Ini (WITA): ");
   Serial.println(&timeinfo, "%A, %d/%m/%Y %H:%M:%S");
 }
 
-// Fungsi Trigger Simulasi Tekan Tombol via Relay 3 (UBAH KE ACTIVE-LOW)
 void tekanTombolLighting() {
   Serial.println("[LIGHTING] Relay 3 LOW (Menekan Tombol...)");
   digitalWrite(RELAY_LIGHTING, LOW);  
@@ -135,81 +121,40 @@ void tekanTombolLighting() {
 
   if (lightingDirectionUp) {
     currentLightingLevel++;
-    if (currentLightingLevel >= 9) {
-      currentLightingLevel = 9;
-      lightingDirectionUp = false; 
-    }
+    if (currentLightingLevel >= 9) { currentLightingLevel = 9; lightingDirectionUp = false; }
   } else {
     currentLightingLevel--;
-    if (currentLightingLevel <= 0) {
-      currentLightingLevel = 0;
-      lightingDirectionUp = true;  
-    }
+    if (currentLightingLevel <= 0) { currentLightingLevel = 0; lightingDirectionUp = true; }
   }
-  Serial.print("[LIGHTING] Level Saat Ini Berubah Menjadi: ");
-  Serial.println(currentLightingLevel);
 }
 
-// Fungsi menyelaraskan level fisik lampu dengan tabel target berdasarkan Jam saat ini
 void sinkronisasiLighting() {
   struct tm timeinfo;
   if (!getLocalTime(&timeinfo)) return;
-
   int jamSekarang = timeinfo.tm_hour;
   int levelTarget = tabelLighting[jamSekarang];
-
   while (currentLightingLevel != levelTarget) {
-    Serial.print("[LIGHTING] Jam: "); Serial.print(jamSekarang);
-    Serial.print(" | Target: "); Serial.print(levelTarget);
-    Serial.print(" | Posisi Sekarang: "); Serial.println(currentLightingLevel);
-    
     tekanTombolLighting();
     yield(); 
   }
 }
 
-// Fungsi cetak nilai variabel ke Serial Monitor untuk Debugging
 void printDebugData() {
   struct tm timeinfo;
   int jamSekarang = 0;
   if (getLocalTime(&timeinfo)) jamSekarang = timeinfo.tm_hour;
-
   Serial.println("\n=== [DEBUG] DATA VARIABEL TERKINI ===");
   printLocalTime(); 
-  
-  Serial.print("Main Temperature (Suhu 1)      : "); 
-  if (suhu1 == DEVICE_DISCONNECTED_C) Serial.println("TERPUTUS (-127C)"); else { Serial.print(suhu1, 2); Serial.println(" C"); }
-  
-  Serial.print("Reservoir Temperature (Suhu 2) : "); 
-  if (suhu2 == DEVICE_DISCONNECTED_C) Serial.println("TERPUTUS (-127C)"); else { Serial.print(suhu2, 2); Serial.println(" C"); }
-  
-  Serial.print("Main Water Level (Tinggi Air 1): "); 
-  if (jarak1 == -1) Serial.println("ERROR / NO ECHO"); else { Serial.print(tinggiAir1, 2); Serial.print(" cm (Jarak Sensor: "); Serial.print(jarak1, 2); Serial.println(" cm)"); }
-  
-  Serial.print("Reservoir Water Level (Tinggi 2): "); 
-  if (jarak2 == -1) Serial.println("ERROR / NO ECHO"); else { Serial.print(tinggiAir2, 2); Serial.print(" cm (Jarak Sensor: "); Serial.print(jarak2, 2); Serial.println(" cm)"); }
-  
-  Serial.print("Dummy pH Value (Range 5-8)     : "); Serial.println(dummyPH, 2);
-  Serial.print("Status Relay / Tampilan P1     : "); Serial.println(dummyPompa1);
-  Serial.print("Status Relay / Tampilan P2     : "); Serial.println(dummyPompa2);
-  Serial.print("Status Emergency Mode pH       : "); Serial.println(statusDaruratPH ? "AKTIF (Mencari Normal)" : "STANDBY (Aman)");
-  Serial.print("Lighting Level (Fisik)         : "); Serial.print(currentLightingLevel);
-  Serial.print(" (Target Jam "); Serial.print(jamSekarang); Serial.print(": "); Serial.print(tabelLighting[jamSekarang]); Serial.println(")");
-  Serial.print("Current Epoch Time (NTP)       : "); Serial.println(getEpochTime());
+  Serial.print("Status Emergency Mode pH       : "); Serial.println(statusDaruratPH ? "AKTIF" : "STANDBY");
   Serial.println("======================================");
 }
 
-// Fungsi membaca jarak ultrasonik
 float bacaJarak(int trigPin, int echoPin) {
+  digitalWrite(trigPin, LOW); delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH); delayMicroseconds(10);
   digitalWrite(trigPin, LOW);
-  delayMicroseconds(2);
-  digitalWrite(trigPin, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(trigPin, LOW);
-  
   long duration = pulseIn(echoPin, HIGH, 30000);
   float distance = duration * 0.034 / 2;
-  
   if (distance == 0) return -1;
   return distance;
 }
@@ -218,37 +163,26 @@ void setup() {
   Serial.begin(115200);
   randomSeed(analogRead(34)); 
 
-  // === TAMBAHAN OTA 3: Inisialisasi Pin Trigger Mode INPUT_PULLUP ===
   pinMode(OTA_TRIGGER_PIN, INPUT_PULLUP);
 
-  // Inisialisasi Semua Pin Relay
   pinMode(RELAY_PUMP_1, OUTPUT);
   pinMode(RELAY_PUMP_2, OUTPUT);
   pinMode(RELAY_LIGHTING, OUTPUT);
-  
-  // === UBAH KE HIGH UNTUK MODUL ACTIVE-LOW AGAR AWALNYA MATI ===
   digitalWrite(RELAY_PUMP_1, HIGH); 
   digitalWrite(RELAY_PUMP_2, HIGH);
   digitalWrite(RELAY_LIGHTING, HIGH); 
 
-  pinMode(TRIG_PIN_1, OUTPUT);
-  pinMode(ECHO_PIN_1, INPUT);
-  pinMode(TRIG_PIN_2, OUTPUT);
-  pinMode(ECHO_PIN_2, INPUT);
+  pinMode(TRIG_PIN_1, OUTPUT); pinMode(ECHO_PIN_1, INPUT);
+  pinMode(TRIG_PIN_2, OUTPUT); pinMode(ECHO_PIN_2, INPUT);
 
   sensors.begin();
+  lcd.init(); lcd.backlight();
+  lcd.createChar(0, panahAtas); lcd.createChar(1, panahBawah); 
   
-  lcd.init();
-  lcd.backlight();
-  lcd.createChar(0, panahAtas);  
-  lcd.createChar(1, panahBawah); 
-  
-  lcd.setCursor(0, 0);
-  lcd.print("Memulai WiFi...");
+  lcd.setCursor(0, 0); lcd.print("Memulai WiFi...");
 
   WiFiManager wm;
-  lcd.setCursor(0, 1);
-  lcd.print("Cek AP: ESP32...");
+  lcd.setCursor(0, 1); lcd.print("Cek AP: ESP32...");
   
   if (!wm.autoConnect("ESP32_Aquatron_AP")) {
     Serial.println("Gagal konek WiFi, merestart...");
@@ -256,38 +190,49 @@ void setup() {
   }
 
   Serial.println("\nTersambung ke Wi-Fi!");
-  lcd.clear();
-  lcd.print("WiFi Terhubung!");
+  lcd.clear(); lcd.print("WiFi Terhubung!");
   
-  lcd.setCursor(0, 1);
-  lcd.print("Sinkron WITA...");
+  // =========================================================================
+  // === PERUBAHAN BARU: PENGECEKAN MODE OTA TEPAT SETELAH WIFI TERHUBUNG ===
+  // =========================================================================
+  if (digitalRead(OTA_TRIGGER_PIN) == LOW) {
+    lcd.clear();
+    lcd.setCursor(0, 0); lcd.print("   MODE OTA   ");
+    lcd.setCursor(0, 1); lcd.print(WiFi.localIP().toString());
+    Serial.print("\n[OTA] Masuk Mode OTA Statis! Buka: http://");
+    Serial.println(WiFi.localIP());
+
+    // Setup server lokal untuk ElegantOTA
+    server.on("/", []() {
+      server.send(200, "text/plain", "ESP32 Mode OTA Aktif setelah Booting Wi-Fi.");
+    });
+    ElegantOTA.begin(&server);    
+    server.begin();
+
+    // Loop selamanya di sini selama pin masih di-short ke GND
+    while (digitalRead(OTA_TRIGGER_PIN) == LOW) {
+      server.handleClient();
+      ElegantOTA.loop();
+      delay(1);
+    }
+    
+    // Jika short dilepas setelah masuk mode ini, restart ESP32 untuk booting normal
+    Serial.println("[OTA] Pin dilepas, merestart ESP32 ke mode normal...");
+    lcd.clear(); lcd.print("Restarting...");
+    delay(1000);
+    ESP.restart();
+  }
+  // =========================================================================
+
+  lcd.setCursor(0, 1); lcd.print("Sinkron WITA...");
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   
   struct tm timeinfo;
   int retry = 0;
   while(!getLocalTime(&timeinfo) && retry < 10) {
-    Serial.print(".");
-    delay(500);
-    retry++;
+    Serial.print("."); delay(500); retry++;
   }
   Serial.println("");
-  
-  Serial.println("\n==========================================");
-  Serial.println(" KONEKSI BERHASIL & SISTEM SIAP ");
-  printLocalTime(); 
-  Serial.println("==========================================\n");
-  
-  if (getLocalTime(&timeinfo)) {
-    char bufferJam[16];
-    char bufferTanggal[16];
-    strftime(bufferJam, sizeof(bufferJam), "Jam: %H:%M:%S", &timeinfo);
-    strftime(bufferTanggal, sizeof(bufferTanggal), "Tgl: %d/%m/%Y", &timeinfo);
-    
-    lcd.clear();
-    lcd.setCursor(0, 0); lcd.print(bufferJam);     
-    lcd.setCursor(0, 1); lcd.print(bufferTanggal); 
-    delay(4000);              
-  }
   
   config.host = FIREBASE_HOST;
   config.signer.tokens.legacy_token = FIREBASE_AUTH;
@@ -296,65 +241,28 @@ void setup() {
   Firebase.reconnectWiFi(true);
   Firebase.begin(&config, &auth);
 
-  // === PERUBAHAN BARU: Load Config Tinggi Sensor dari Firebase ===
-  lcd.clear();
-  lcd.setCursor(0, 0); lcd.print("Load Config...");
-  Serial.println("[CONFIG] Mengambil data tinggi sensor dari Firebase...");
-  
+  lcd.clear(); lcd.print("Load Config...");
   if (Firebase.RTDB.getFloat(&fbdo, "test/config/mainSensorHeight")) {
     mainSensorHeight = fbdo.to<float>();
-    Serial.print("[CONFIG] mainSensorHeight: "); Serial.println(mainSensorHeight);
   } else {
     mainSensorHeight = 50.0; 
-    Serial.print("[CONFIG] Gagal baca mainSensorHeight, gunakan default: "); Serial.println(mainSensorHeight);
   }
 
   if (Firebase.RTDB.getFloat(&fbdo, "test/config/reservoirSensorHeight")) {
     reservoirSensorHeight = fbdo.to<float>();
-    Serial.print("[CONFIG] reservoirSensorHeight: "); Serial.println(reservoirSensorHeight);
   } else {
     reservoirSensorHeight = 50.0; 
-    Serial.print("[CONFIG] Gagal baca reservoirSensorHeight, gunakan default: "); Serial.println(reservoirSensorHeight);
   }
 
   lcd.clear();
   firebasePrevMillis = millis() - firebaseInterval; 
-  
   sinkronisasiLighting();
-
-  // === TAMBAHAN OTA 4: Setup Server ElegantOTA ===
-  server.on("/", []() {
-    server.send(200, "text/plain", "ESP32 ini berjalan normal. Short PIN 19 ke GND untuk masuk Mode Update.");
-  });
-  ElegantOTA.begin(&server);    
-  server.begin();
-  Serial.println("HTTP Server & OTA Siap.");
 }
 
 void loop() {
   struct tm timeinfo; 
 
-  // === TAMBAHAN OTA 5: Cek apakah Pin 19 di-short ke GND (LOW) ===
-  if (digitalRead(OTA_TRIGGER_PIN) == LOW) {
-    if (!modeOtaAktif) {
-      modeOtaAktif = true;
-      lcd.clear();
-      lcd.setCursor(0, 0); lcd.print("   MODE OTA   ");
-      lcd.setCursor(0, 1); lcd.print(WiFi.localIP().toString());
-      Serial.print("Masuk Mode OTA. Silakan buka browser di: http://");
-      Serial.println(WiFi.localIP());
-    }
-    
-    server.handleClient();
-    ElegantOTA.loop();
-    delay(1);
-    return; 
-  } else {
-    if (modeOtaAktif) {
-      modeOtaAktif = false;
-      lcd.clear();
-    }
-  }
+  // Pengecekan OTA di dalam loop() dihapus total agar loop fokus pada tugas utama
 
   // ==========================================
   // 1. MEMBACA DATA SENSOR INTERNAL ESP32 & KALKULASI TINGGI AIR
@@ -369,16 +277,12 @@ void loop() {
   if (jarak1 != -1) {
     tinggiAir1 = mainSensorHeight - jarak1;
     if (tinggiAir1 < 0) tinggiAir1 = 0; 
-  } else {
-    tinggiAir1 = -1; 
-  }
+  } else { tinggiAir1 = -1; }
 
   if (jarak2 != -1) {
     tinggiAir2 = reservoirSensorHeight - jarak2;
     if (tinggiAir2 < 0) tinggiAir2 = 0;
-  } else {
-    tinggiAir2 = -1; 
-  }
+  } else { tinggiAir2 = -1; }
 
   // ==========================================
   // 2. CHECK PERUBAHAN JAM UNTUK LIGHTING SYSTEM
@@ -398,8 +302,7 @@ void loop() {
     changePagePrevMillis = millis();
     currentPage++;
     if (currentPage > 4) currentPage = 0; 
-    lcd.clear(); 
-    perluUpdateLayar = true; 
+    lcd.clear(); perluUpdateLayar = true; 
   }
 
   if (perluUpdateLayar) {
@@ -409,26 +312,20 @@ void loop() {
         lcd.setCursor(0, 1); lcd.print("M:"); lcd.print(suhu1, 1); lcd.print((char)223); lcd.print("C ");
         lcd.setCursor(9, 1); lcd.print("R:"); lcd.print(suhu2, 1); lcd.print((char)223); lcd.print("C");
         break;
-
       case 1:
         lcd.setCursor(0, 0); lcd.print("WATER LEVEL");
-        lcd.setCursor(0, 1); 
-        if (tinggiAir1 == -1) lcd.print("M:ERR "); else { lcd.print("M:"); lcd.print(tinggiAir1, 0); lcd.print("cm "); }
-        lcd.setCursor(9, 1); 
-        if (tinggiAir2 == -1) lcd.print("R:ERR"); else { lcd.print("R:"); lcd.print(tinggiAir2, 0); lcd.print("cm"); }
+        lcd.setCursor(0, 1); if (tinggiAir1 == -1) lcd.print("M:ERR "); else { lcd.print("M:"); lcd.print(tinggiAir1, 0); lcd.print("cm "); }
+        lcd.setCursor(9, 1); if (tinggiAir2 == -1) lcd.print("R:ERR"); else { lcd.print("R:"); lcd.print(tinggiAir2, 0); lcd.print("cm"); }
         break;
-
       case 2:
         lcd.setCursor(0, 0); lcd.print("PH METER");
         lcd.setCursor(0, 1); lcd.print("Nilai pH : "); lcd.print(dummyPH, 2);
         break;
-
       case 3:
         lcd.setCursor(0, 0); lcd.print("PUMP ST.");
         lcd.setCursor(0, 1); lcd.print("P1:"); lcd.print(dummyPompa1);
         lcd.setCursor(9, 1); lcd.print("P2:"); lcd.print(dummyPompa2);
         break;
-
       case 4: 
         lcd.setCursor(0, 0); lcd.print("LIGHTING SYSTEM");
         lcd.setCursor(0, 1); lcd.print("Current Lvl: "); lcd.print(currentLightingLevel);
@@ -452,90 +349,53 @@ void loop() {
     printDebugData();
 
     if (toggleTask) {
-      // -----------------------------------------------------------------
-      // TUGAS A: KIRIM DATA SENSOR + CEK EMERGENSI pH
-      // -----------------------------------------------------------------
-      iconStatus = 1;
-      lcd.setCursor(15, 0); lcd.write(0); 
-
+      iconStatus = 1; lcd.setCursor(15, 0); lcd.write(0); 
       float selisihSuhu = abs(suhu1 - suhu2);
       bool phAbnormal = (dummyPH < 6.0 || dummyPH > 7.5);
       bool suhuStabil = (suhu1 != DEVICE_DISCONNECTED_C && suhu2 != DEVICE_DISCONNECTED_C && selisihSuhu <= 0.5);
 
       if (!statusDaruratPH) {
         if (phAbnormal && suhuStabil) {
-          Serial.println("[KIRIM] DARURAT! pH Abnormal. Mengaktifkan kedua pompa via Firebase...");
           statusDaruratPH = true; 
-
           FirebaseJson jsonPumps;
-          jsonPumps.set("mainPump", 1);
-          jsonPumps.set("reservoirPump", 1);
+          jsonPumps.set("mainPump", 1); jsonPumps.set("reservoirPump", 1);
           Firebase.RTDB.updateNode(&fbdo, "test/pumps", &jsonPumps);
-          
-          digitalWrite(RELAY_PUMP_1, LOW);
-          digitalWrite(RELAY_PUMP_2, LOW);
-          dummyPompa1 = "ON";
-          dummyPompa2 = "ON";
+          digitalWrite(RELAY_PUMP_1, LOW); digitalWrite(RELAY_PUMP_2, LOW);
+          dummyPompa1 = "ON"; dummyPompa2 = "ON";
         }
-      } 
-      else {
+      } else {
         if (!phAbnormal) {
-          Serial.println("[KIRIM] AMAN! pH Kembali Normal. Mematikan kedua pompa via Firebase...");
           statusDaruratPH = false; 
-
           FirebaseJson jsonPumps;
-          jsonPumps.set("mainPump", 0);
-          jsonPumps.set("reservoirPump", 0);
+          jsonPumps.set("mainPump", 0); jsonPumps.set("reservoirPump", 0);
           Firebase.RTDB.updateNode(&fbdo, "test/pumps", &jsonPumps);
-          
-          digitalWrite(RELAY_PUMP_1, HIGH);
-          digitalWrite(RELAY_PUMP_2, HIGH);
-          dummyPompa1 = "OFF";
-          dummyPompa2 = "OFF";
+          digitalWrite(RELAY_PUMP_1, HIGH); digitalWrite(RELAY_PUMP_2, HIGH);
+          dummyPompa1 = "OFF"; dummyPompa2 = "OFF";
         }
       }
 
-      // Mempersiapkan struktur JSON data sensor
       FirebaseJson json;
       if (suhu1 != DEVICE_DISCONNECTED_C) json.set("mainTemperature", suhu1);
       if (tinggiAir1 != -1) json.set("mainWaterLevel", tinggiAir1);
       if (suhu2 != DEVICE_DISCONNECTED_C) json.set("reservoirTemperature", suhu2);
       if (tinggiAir2 != -1) json.set("reservoirWaterLevel", tinggiAir2);
-      
       json.set("ph", dummyPH);
       json.set("lightingLevel", currentLightingLevel); 
       
       unsigned long currentEpoch = getEpochTime();
       if (currentEpoch != 0) json.set("updatedAt", currentEpoch);
 
-      // 1. Update ke lokasi data terbaru (/latest)
       String pathLatest = "test/sensorData/aquatron_001/latest";
-      if (Firebase.RTDB.updateNode(&fbdo, pathLatest, &json)) {
-        Serial.println("[LATEST] Berhasil memperbarui data terbaru.");
-      } else {
-        Serial.print("[LATEST] Gagal: "); Serial.println(fbdo.errorReason());
-      }
+      Firebase.RTDB.updateNode(&fbdo, pathLatest, &json);
 
-      // === PERUBAHAN BARU: 2. Push data yang sama ke lokasi histori (/history) ===
       String pathHistory = "test/history";
-      if (Firebase.RTDB.push(&fbdo, pathHistory, &json)) {
-        Serial.println("[HISTORY] Berhasil menambahkan log histori baru.");
-      } else {
-        Serial.print("[HISTORY] Gagal membuat log histori: "); Serial.println(fbdo.errorReason());
-      }
+      Firebase.RTDB.push(&fbdo, pathHistory, &json);
 
     } else {
-      // -----------------------------------------------------------------
-      // TUGAS B: BACA STATUS POMPA & KONTROL FISIK RELAY
-      // -----------------------------------------------------------------
-      iconStatus = 2;
-      lcd.setCursor(15, 0); lcd.write(1); 
-      Serial.println("[BACA] Mengambil status pompa dari test/pumps...");
-
+      iconStatus = 2; lcd.setCursor(15, 0); lcd.write(1); 
       if (Firebase.RTDB.getJSON(&fbdo, "test/pumps")) {
         FirebaseJson &jsonResult = fbdo.jsonObject();
         FirebaseJsonData jsonData;
-
         jsonResult.get(jsonData, "mainPump");
         if (jsonData.success) {
           int p1 = jsonData.to<int>();
@@ -548,9 +408,6 @@ void loop() {
           digitalWrite(RELAY_PUMP_2, !p2);
           dummyPompa2 = (p2 == 1) ? "ON" : "OFF";
         }
-        Serial.println("[BACA] Berhasil menyelaraskan fisik relay.");
-      } else {
-        Serial.print("[BACA] Gagal: "); Serial.println(fbdo.errorReason());
       }
     }
     firebasePrevMillis = millis(); 
@@ -558,8 +415,7 @@ void loop() {
   }
 
   if (iconStatus != 0 && millis() > iconTurnOffMillis) {
-    iconStatus = 0;
-    lcd.setCursor(15, 0); lcd.print(" "); 
+    iconStatus = 0; lcd.setCursor(15, 0); lcd.print(" "); 
   }
   delay(50); 
 }
