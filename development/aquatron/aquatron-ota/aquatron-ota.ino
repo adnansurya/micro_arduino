@@ -36,10 +36,13 @@ DallasTemperature sensors(&oneWire);
 #define ECHO_PIN_2 26
 
 // === PERUBAHAN BARU: Variabel Konfigurasi Tinggi Sensor & Ketinggian Air ===
-float mainSensorHeight = 0.0;       // Diambil dari Firebase saat setup
-float reservoirSensorHeight = 0.0;  // Diambil dari Firebase saat setup
-float tinggiAir1 = 0.0;             // Hasil akhir kalkulasi air Main
-float tinggiAir2 = 0.0;             // Hasil akhir kalkulasi air Reservoir
+float mainSensorHeight = 0.0;       
+float reservoirSensorHeight = 0.0;  
+float tinggiAir1 = 0.0;             
+float tinggiAir2 = 0.0;             
+
+// === TAMBAHAN BARU: Status Tracking untuk Darurat pH ===
+bool statusDaruratPH = false; 
 
 // 4. Konfigurasi Pin Relay 
 #define RELAY_PUMP_1 4   
@@ -125,9 +128,9 @@ void printLocalTime() {
 // Fungsi Trigger Simulasi Tekan Tombol via Relay 3 (UBAH KE ACTIVE-LOW)
 void tekanTombolLighting() {
   Serial.println("[LIGHTING] Relay 3 LOW (Menekan Tombol...)");
-  digitalWrite(RELAY_LIGHTING, LOW);  // LOW = Relay Menyala / Menutup Kontak Sakelar
+  digitalWrite(RELAY_LIGHTING, LOW);  
   delay(200);                         
-  digitalWrite(RELAY_LIGHTING, HIGH); // HIGH = Relay Mati / Memutus Kontak Sakelar
+  digitalWrite(RELAY_LIGHTING, HIGH); 
   delay(200);                         
 
   if (lightingDirectionUp) {
@@ -180,7 +183,6 @@ void printDebugData() {
   Serial.print("Reservoir Temperature (Suhu 2) : "); 
   if (suhu2 == DEVICE_DISCONNECTED_C) Serial.println("TERPUTUS (-127C)"); else { Serial.print(suhu2, 2); Serial.println(" C"); }
   
-  // === PERUBAHAN BARU: Output Serial menampilkan Tinggi Air dan Jarak Sensor ===
   Serial.print("Main Water Level (Tinggi Air 1): "); 
   if (jarak1 == -1) Serial.println("ERROR / NO ECHO"); else { Serial.print(tinggiAir1, 2); Serial.print(" cm (Jarak Sensor: "); Serial.print(jarak1, 2); Serial.println(" cm)"); }
   
@@ -190,6 +192,7 @@ void printDebugData() {
   Serial.print("Dummy pH Value (Range 5-8)     : "); Serial.println(dummyPH, 2);
   Serial.print("Status Relay / Tampilan P1     : "); Serial.println(dummyPompa1);
   Serial.print("Status Relay / Tampilan P2     : "); Serial.println(dummyPompa2);
+  Serial.print("Status Emergency Mode pH       : "); Serial.println(statusDaruratPH ? "AKTIF (Mencari Normal)" : "STANDBY (Aman)");
   Serial.print("Lighting Level (Fisik)         : "); Serial.print(currentLightingLevel);
   Serial.print(" (Target Jam "); Serial.print(jamSekarang); Serial.print(": "); Serial.print(tabelLighting[jamSekarang]); Serial.println(")");
   Serial.print("Current Epoch Time (NTP)       : "); Serial.println(getEpochTime());
@@ -293,7 +296,7 @@ void setup() {
   Firebase.reconnectWiFi(true);
   Firebase.begin(&config, &auth);
 
-  // === PERUBAHAN BARU: Load Config Tinggi Sensor dari Firebase (Sebelum Loop) ===
+  // === PERUBAHAN BARU: Load Config Tinggi Sensor dari Firebase ===
   lcd.clear();
   lcd.setCursor(0, 0); lcd.print("Load Config...");
   Serial.println("[CONFIG] Mengambil data tinggi sensor dari Firebase...");
@@ -302,7 +305,7 @@ void setup() {
     mainSensorHeight = fbdo.to<float>();
     Serial.print("[CONFIG] mainSensorHeight: "); Serial.println(mainSensorHeight);
   } else {
-    mainSensorHeight = 50.0; // Nilai default cadangan jika RTDB Firebase gagal membaca
+    mainSensorHeight = 50.0; 
     Serial.print("[CONFIG] Gagal baca mainSensorHeight, gunakan default: "); Serial.println(mainSensorHeight);
   }
 
@@ -310,7 +313,7 @@ void setup() {
     reservoirSensorHeight = fbdo.to<float>();
     Serial.print("[CONFIG] reservoirSensorHeight: "); Serial.println(reservoirSensorHeight);
   } else {
-    reservoirSensorHeight = 50.0; // Nilai default cadangan
+    reservoirSensorHeight = 50.0; 
     Serial.print("[CONFIG] Gagal baca reservoirSensorHeight, gunakan default: "); Serial.println(reservoirSensorHeight);
   }
 
@@ -329,7 +332,7 @@ void setup() {
 }
 
 void loop() {
-  struct tm timeinfo; // Perbaikan scope error sebelumnya
+  struct tm timeinfo; 
 
   // === TAMBAHAN OTA 5: Cek apakah Pin 19 di-short ke GND (LOW) ===
   if (digitalRead(OTA_TRIGGER_PIN) == LOW) {
@@ -363,19 +366,18 @@ void loop() {
   jarak1 = bacaJarak(TRIG_PIN_1, ECHO_PIN_1);
   jarak2 = bacaJarak(TRIG_PIN_2, ECHO_PIN_2);
 
-  // === PERUBAHAN BARU: Rumus Tinggi Air = Tinggi Sensor - Jarak ===
   if (jarak1 != -1) {
     tinggiAir1 = mainSensorHeight - jarak1;
-    if (tinggiAir1 < 0) tinggiAir1 = 0; // Proteksi pembacaan jika nilai minus
+    if (tinggiAir1 < 0) tinggiAir1 = 0; 
   } else {
-    tinggiAir1 = -1; // Menandakan sensor error
+    tinggiAir1 = -1; 
   }
 
   if (jarak2 != -1) {
     tinggiAir2 = reservoirSensorHeight - jarak2;
     if (tinggiAir2 < 0) tinggiAir2 = 0;
   } else {
-    tinggiAir2 = -1; // Menandakan sensor error
+    tinggiAir2 = -1; 
   }
 
   // ==========================================
@@ -409,7 +411,6 @@ void loop() {
         break;
 
       case 1:
-        // === PERUBAHAN BARU: Mengubah Tampilan Jarak Menjadi Tinggi Air ===
         lcd.setCursor(0, 0); lcd.print("WATER LEVEL");
         lcd.setCursor(0, 1); 
         if (tinggiAir1 == -1) lcd.print("M:ERR "); else { lcd.print("M:"); lcd.print(tinggiAir1, 0); lcd.print("cm "); }
@@ -452,7 +453,7 @@ void loop() {
 
     if (toggleTask) {
       // -----------------------------------------------------------------
-      // TUGAS A: KIRIM DATA SENSOR + TIMESTAMP NTP
+      // TUGAS A: KIRIM DATA SENSOR + CEK EMERGENSI pH
       // -----------------------------------------------------------------
       iconStatus = 1;
       lcd.setCursor(15, 0); lcd.write(0); 
@@ -461,24 +462,47 @@ void loop() {
       bool phAbnormal = (dummyPH < 6.0 || dummyPH > 7.5);
       bool suhuStabil = (suhu1 != DEVICE_DISCONNECTED_C && suhu2 != DEVICE_DISCONNECTED_C && selisihSuhu <= 0.5);
 
-      if (phAbnormal && suhuStabil) {
-        Serial.println("[KIRIM] DARURAT! Mengaktifkan kedua pompa...");
-        FirebaseJson jsonPumps;
-        jsonPumps.set("mainPump", 1);
-        jsonPumps.set("reservoirPump", 1);
-        Firebase.RTDB.updateNode(&fbdo, "test/pumps", &jsonPumps);
-        
-        digitalWrite(RELAY_PUMP_1, LOW);
-        digitalWrite(RELAY_PUMP_2, LOW);
-        dummyPompa1 = "ON";
-        dummyPompa2 = "ON";
+      // === PERUBAHAN BARU: Logika Auto ON & Auto OFF berdasarkan State ===
+      if (!statusDaruratPH) {
+        // JIKA sedang tidak darurat, dan tiba-tiba pH abnormal (dan suhu valid) -> TRIGGER DARURAT
+        if (phAbnormal && suhuStabil) {
+          Serial.println("[KIRIM] DARURAT! pH Abnormal. Mengaktifkan kedua pompa via Firebase...");
+          statusDaruratPH = true; 
+
+          FirebaseJson jsonPumps;
+          jsonPumps.set("mainPump", 1);
+          jsonPumps.set("reservoirPump", 1);
+          Firebase.RTDB.updateNode(&fbdo, "test/pumps", &jsonPumps);
+          
+          // Langsung respon fisik pin
+          digitalWrite(RELAY_PUMP_1, LOW);
+          digitalWrite(RELAY_PUMP_2, LOW);
+          dummyPompa1 = "ON";
+          dummyPompa2 = "ON";
+        }
+      } 
+      else {
+        // JIKA sebelumnya sedang dalam mode darurat, namun SEKARANG pH sudah kembali normal -> SELESAI DARURAT
+        if (!phAbnormal) {
+          Serial.println("[KIRIM] AMAN! pH Kembali Normal. Mematikan kedua pompa via Firebase...");
+          statusDaruratPH = false; 
+
+          FirebaseJson jsonPumps;
+          jsonPumps.set("mainPump", 0);
+          jsonPumps.set("reservoirPump", 0);
+          Firebase.RTDB.updateNode(&fbdo, "test/pumps", &jsonPumps);
+          
+          // Langsung respon fisik pin
+          digitalWrite(RELAY_PUMP_1, HIGH);
+          digitalWrite(RELAY_PUMP_2, HIGH);
+          dummyPompa1 = "OFF";
+          dummyPompa2 = "OFF";
+        }
       }
 
       String path = "test/sensorData/aquatron_001/latest";
       FirebaseJson json;
       if (suhu1 != DEVICE_DISCONNECTED_C) json.set("mainTemperature", suhu1);
-      
-      // === PERUBAHAN BARU: Kirim data yang sudah terkalibrasi menjadi Tinggi Air ke Firebase ===
       if (tinggiAir1 != -1) json.set("mainWaterLevel", tinggiAir1);
       if (suhu2 != DEVICE_DISCONNECTED_C) json.set("reservoirTemperature", suhu2);
       if (tinggiAir2 != -1) json.set("reservoirWaterLevel", tinggiAir2);
