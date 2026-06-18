@@ -44,8 +44,9 @@ float tinggiAir2 = 0.0;
 float mainMinWaterLevel = 0.0;
 float reservoirMinWaterLevel = 0.0;
 
-// Variabel Konfigurasi Waktu Feeding
+// Variabel Konfigurasi Waktu & Durasi Feeding
 String feedingTime = "00:00"; 
+int delayFeeder = 3000;      // === TAMBAHAN BARU: Menyimpan durasi aktif feeder (ms) ===
 int hariTerakhirReset = -1; 
 
 // Status Tracking untuk Darurat pH dan Air
@@ -56,7 +57,7 @@ bool statusDaruratAir = false;
 #define RELAY_PUMP_1 4   
 #define RELAY_PUMP_2 5   
 #define RELAY_LIGHTING 18  
-#define RELAY_FEEDER 2     
+#define SIGNAL_FEEDER 2     // === PERUBAHAN NAMA: Dari RELAY_FEEDER menjadi SIGNAL_FEEDER ===
 
 // 5. Inisialisasi LCD I2C
 LiquidCrystal_I2C lcd(0x27, 16, 2);
@@ -152,13 +153,14 @@ void sinkronisasiLighting() {
 void jalankanFeeder() {
   Serial.println("[FEEDER] Mengaktifkan Feeder pakan ikan...");
   
+  // Tampilkan teks di LCD saat waktu feeding tiba
   lcd.clear();
   lcd.setCursor(0, 0); lcd.print(" TIME TO FEED! ");
   lcd.setCursor(0, 1); lcd.print("  GIVE ME FOOD  ");
   
-  digitalWrite(RELAY_FEEDER, LOW);  
-  delay(3000);                      
-  digitalWrite(RELAY_FEEDER, HIGH); 
+  digitalWrite(SIGNAL_FEEDER, LOW);  // Mengubah signal_feeder menjadi LOW
+  delay(delayFeeder);                // Durasi aktif dinamis berdasarkan variabel delayFeeder dari Firebase
+  digitalWrite(SIGNAL_FEEDER, HIGH); // Kembali menjadi HIGH setelah waktu habis
   
   lcd.clear();
 }
@@ -172,6 +174,7 @@ void printDebugData() {
   Serial.print("Status Emergency Mode pH       : "); Serial.println(statusDaruratPH ? "AKTIF" : "STANDBY");
   Serial.print("Status Emergency Mode Air      : "); Serial.println(statusDaruratAir ? "DANGER (LOW WATER)" : "AMAN");
   Serial.print("Jadwal Feeding Terpasang       : "); Serial.println(feedingTime);
+  Serial.print("Durasi Delay Feeder            : "); Serial.print(delayFeeder); Serial.println(" ms");
   Serial.println("======================================");
 }
 
@@ -194,31 +197,29 @@ void setup() {
   pinMode(RELAY_PUMP_1, OUTPUT);
   pinMode(RELAY_PUMP_2, OUTPUT);
   pinMode(RELAY_LIGHTING, OUTPUT);
-  pinMode(RELAY_FEEDER, OUTPUT);    
+  pinMode(SIGNAL_FEEDER, OUTPUT);    // === UPDATE NAMA VARIABEL ===
   
   digitalWrite(RELAY_PUMP_1, HIGH); 
   digitalWrite(RELAY_PUMP_2, HIGH);
   digitalWrite(RELAY_LIGHTING, HIGH); 
-  digitalWrite(RELAY_FEEDER, HIGH);  
+  digitalWrite(SIGNAL_FEEDER, HIGH);  // === SET NILAI AWAL HIGH ===
 
   pinMode(TRIG_PIN_1, OUTPUT); pinMode(ECHO_PIN_1, INPUT);
   pinMode(TRIG_PIN_2, OUTPUT); pinMode(ECHO_PIN_2, INPUT);
 
   sensors.begin();
   
-  // 1. Inisialisasi Layar LCD
   lcd.init(); 
   lcd.backlight();
   lcd.createChar(0, panahAtas); 
   lcd.createChar(1, panahBawah); 
   
-  // === TAMBAHAN BARU: WELCOME SCREEN AQUATRON APP ===
+  // WELCOME SCREEN AQUATRON APP
   lcd.clear();
-  lcd.setCursor(2, 0);               // Koordinat kolom 2, baris 0 (Agar teks berada di tengah)
+  lcd.setCursor(2, 0);               
   lcd.print("AQUATRON APP");
-  delay(3000);                       // Menampilkan welcome screen selama 3 detik
+  delay(3000);                       
   
-  // 2. Memulai Proses Sistem WiFi
   lcd.clear();
   lcd.setCursor(0, 0); lcd.print("Memulai WiFi...");
 
@@ -299,9 +300,18 @@ void setup() {
     jsonResult.get(jsonData, "feedingTime");
     if (jsonData.success) {
       feedingTime = jsonData.to<String>();
-      Serial.print("[CONFIG] Dipisah -> feedingTime: "); Serial.println(feedingTime);
     } else { 
       feedingTime = "08:00"; 
+    }
+
+    // === TAMBAHAN BARU: Mengambil durasi feeding (milidetik) dari Firebase JSON ===
+    jsonResult.get(jsonData, "delayFeeder");
+    if (jsonData.success) {
+      delayFeeder = jsonData.to<int>();
+      Serial.print("[CONFIG] Dipisah -> delayFeeder: "); Serial.print(delayFeeder); Serial.println(" ms");
+    } else {
+      delayFeeder = 3000; // Default jika data kosong di Firebase (3 detik)
+      Serial.println("[CONFIG] Key delayFeeder absent, set default 3000ms");
     }
   } 
   else {
@@ -309,6 +319,7 @@ void setup() {
     mainSensorHeight = 50.0; reservoirSensorHeight = 50.0;
     mainMinWaterLevel = 10.0; reservoirMinWaterLevel = 10.0;
     feedingTime = "08:00";
+    delayFeeder = 3000;
   }
 
   if (getLocalTime(&timeinfo)) {
