@@ -40,13 +40,13 @@ float reservoirSensorHeight = 0.0;
 float tinggiAir1 = 0.0;             
 float tinggiAir2 = 0.0;             
 
-// === TAMBAHAN BARU: Konfigurasi Batas Minimum Air dari Firebase ===
-float mainMinWaterLevel = 0.0;
-float reservoirMinWaterLevel = 0.0;
+// Konfigurasi Batas Minimum Air dari Firebase
+float mainMinWaterLevel = 20.0;
+float reservoirMinWaterLevel = 20.0;
 
 // Status Tracking untuk Darurat pH dan Air
 bool statusDaruratPH = false; 
-bool statusDaruratAir = false; // === TAMBAHAN BARU ===
+bool statusDaruratAir = false; 
 
 // 4. Konfigurasi Pin Relay 
 #define RELAY_PUMP_1 4   
@@ -86,7 +86,7 @@ bool firebaseReadyToTrigger = true;
 unsigned long changePagePrevMillis = 0;
 const long pageInterval = 2000;       
 
-// Variabel Kontrol Tampilan LCD (Diubah ke maksimal 5 halaman)
+// Variabel Kontrol Tampilan LCD
 int currentPage = 0; 
 int iconStatus = 0;                                    
 unsigned long iconTurnOffMillis = 0;
@@ -152,7 +152,6 @@ void printDebugData() {
   printLocalTime(); 
   Serial.print("Status Emergency Mode pH       : "); Serial.println(statusDaruratPH ? "AKTIF" : "STANDBY");
   Serial.print("Status Emergency Mode Air      : "); Serial.println(statusDaruratAir ? "DANGER (LOW WATER)" : "AMAN");
-  Serial.print("Batas Min Air (M / R)          : "); Serial.print(mainMinWaterLevel); Serial.print(" cm / "); Serial.print(reservoirMinWaterLevel); Serial.println(" cm");
   Serial.println("======================================");
 }
 
@@ -250,33 +249,17 @@ void setup() {
     FirebaseJson &jsonResult = fbdo.jsonObject();
     FirebaseJsonData jsonData;
 
-    // Pisah data mainSensorHeight
     jsonResult.get(jsonData, "mainSensorHeight");
-    if (jsonData.success) {
-      mainSensorHeight = jsonData.to<float>();
-      Serial.print("[CONFIG] Dipisah -> mainSensorHeight: "); Serial.println(mainSensorHeight);
-    } else { mainSensorHeight = 50.0; }
+    if (jsonData.success) mainSensorHeight = jsonData.to<float>(); else mainSensorHeight = 50.0;
 
-    // Pisah data reservoirSensorHeight
     jsonResult.get(jsonData, "reservoirSensorHeight");
-    if (jsonData.success) {
-      reservoirSensorHeight = jsonData.to<float>();
-      Serial.print("[CONFIG] Dipisah -> reservoirSensorHeight: "); Serial.println(reservoirSensorHeight);
-    } else { reservoirSensorHeight = 50.0; }
+    if (jsonData.success) reservoirSensorHeight = jsonData.to<float>(); else reservoirSensorHeight = 50.0;
 
-    // === TAMBAHAN BARU: Pisah data mainMinWaterLevel ===
     jsonResult.get(jsonData, "mainMinWaterLevel");
-    if (jsonData.success) {
-      mainMinWaterLevel = jsonData.to<float>();
-      Serial.print("[CONFIG] Dipisah -> mainMinWaterLevel: "); Serial.println(mainMinWaterLevel);
-    } else { mainMinWaterLevel = 10.0; Serial.println("[CONFIG] Key mainMinWaterLevel absent, set default 10.0"); }
+    if (jsonData.success) mainMinWaterLevel = jsonData.to<float>(); else mainMinWaterLevel = 10.0;
 
-    // === TAMBAHAN BARU: Pisah data reservoirMinWaterLevel ===
     jsonResult.get(jsonData, "reservoirMinWaterLevel");
-    if (jsonData.success) {
-      reservoirMinWaterLevel = jsonData.to<float>();
-      Serial.print("[CONFIG] Dipisah -> reservoirMinWaterLevel: "); Serial.println(reservoirMinWaterLevel);
-    } else { reservoirMinWaterLevel = 10.0; Serial.println("[CONFIG] Key reservoirMinWaterLevel absent, set default 10.0"); }
+    if (jsonData.success) reservoirMinWaterLevel = jsonData.to<float>(); else reservoirMinWaterLevel = 10.0;
   } 
   else {
     Serial.print("[CONFIG] Gagal mengambil JSON Config: "); Serial.println(fbdo.errorReason());
@@ -312,15 +295,11 @@ void loop() {
     if (tinggiAir2 < 0) tinggiAir2 = 0;
   } else { tinggiAir2 = -1; }
 
-  // === TAMBAHAN BARU: Evaluasi Batas Air Minimum ===
+  // Evaluasi Batas Air Minimum
   bool airMainLow = (tinggiAir1 != -1 && tinggiAir1 < mainMinWaterLevel);
   bool airReservoirLow = (tinggiAir2 != -1 && tinggiAir2 < reservoirMinWaterLevel);
   
-  if (airMainLow || airReservoirLow) {
-    statusDaruratAir = true;
-  } else {
-    statusDaruratAir = false;
-  }
+  if (airMainLow || airReservoirLow) statusDaruratAir = true; else statusDaruratAir = false;
 
   // ==========================================
   // 2. CHECK PERUBAHAN JAM UNTUK LIGHTING SYSTEM
@@ -340,46 +319,44 @@ void loop() {
     changePagePrevMillis = millis();
     currentPage++;
     
-    // === PERUBAHAN BARU: Logika lompat halaman Warning jika kondisi aman ===
-    if (currentPage > 5) {
-      currentPage = 0; 
-    }
-    
-    // Jika menuju halaman 5 (WARNING) tapi kondisi pH dan Air AMAN, lewati langsung ke halaman 0
-    if (currentPage == 5 && !statusDaruratPH && !statusDaruratAir) {
-      currentPage = 0;
-    }
+    if (currentPage > 5) currentPage = 0; 
+    if (currentPage == 5 && !statusDaruratPH && !statusDaruratAir) currentPage = 0;
 
     lcd.clear(); perluUpdateLayar = true; 
   }
 
   if (perluUpdateLayar) {
     switch (currentPage) {
+      // === PERUBAHAN TULISAN: TEMP -> TEMPERATURE ===
       case 0:
-        lcd.setCursor(0, 0); lcd.print("TEMP");
+        lcd.setCursor(0, 0); lcd.print("TEMPERATURE");
         lcd.setCursor(0, 1); lcd.print("M:"); lcd.print(suhu1, 1); lcd.print((char)223); lcd.print("C ");
         lcd.setCursor(9, 1); lcd.print("R:"); lcd.print(suhu2, 1); lcd.print((char)223); lcd.print("C");
         break;
+
       case 1:
         lcd.setCursor(0, 0); lcd.print("WATER LEVEL");
         lcd.setCursor(0, 1); if (tinggiAir1 == -1) lcd.print("M:ERR "); else { lcd.print("M:"); lcd.print(tinggiAir1, 0); lcd.print("cm "); }
         lcd.setCursor(9, 1); if (tinggiAir2 == -1) lcd.print("R:ERR"); else { lcd.print("R:"); lcd.print(tinggiAir2, 0); lcd.print("cm"); }
         break;
+
       case 2:
         lcd.setCursor(0, 0); lcd.print("PH METER");
         lcd.setCursor(0, 1); lcd.print("Nilai pH : "); lcd.print(dummyPH, 2);
         break;
+
+      // === PERUBAHAN TULISAN: PUMP ST. -> PUMP STATUS & P1/P2 -> M/R ===
       case 3:
-        lcd.setCursor(0, 0); lcd.print("PUMP ST.");
-        lcd.setCursor(0, 1); lcd.print("P1:"); lcd.print(dummyPompa1);
-        lcd.setCursor(9, 1); lcd.print("P2:"); lcd.print(dummyPompa2);
+        lcd.setCursor(0, 0); lcd.print("PUMP STATUS");
+        lcd.setCursor(0, 1); lcd.print("M:"); lcd.print(dummyPompa1);
+        lcd.setCursor(9, 1); lcd.print("R:"); lcd.print(dummyPompa2);
         break;
+
       case 4: 
         lcd.setCursor(0, 0); lcd.print("LIGHTING SYSTEM");
         lcd.setCursor(0, 1); lcd.print("Current Lvl: "); lcd.print(currentLightingLevel);
         break;
       
-      // === TAMBAHAN BARU: TAMPILAN HALAMAN WARNING ===
       case 5:
         lcd.setCursor(0, 0); lcd.print("!! WARNING !!");
         lcd.setCursor(0, 1);
