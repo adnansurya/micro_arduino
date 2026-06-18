@@ -40,8 +40,13 @@ float reservoirSensorHeight = 0.0;
 float tinggiAir1 = 0.0;             
 float tinggiAir2 = 0.0;             
 
-// Status Tracking untuk Darurat pH
+// === TAMBAHAN BARU: Konfigurasi Batas Minimum Air dari Firebase ===
+float mainMinWaterLevel = 0.0;
+float reservoirMinWaterLevel = 0.0;
+
+// Status Tracking untuk Darurat pH dan Air
 bool statusDaruratPH = false; 
+bool statusDaruratAir = false; // === TAMBAHAN BARU ===
 
 // 4. Konfigurasi Pin Relay 
 #define RELAY_PUMP_1 4   
@@ -81,7 +86,7 @@ bool firebaseReadyToTrigger = true;
 unsigned long changePagePrevMillis = 0;
 const long pageInterval = 2000;       
 
-// Variabel Kontrol Tampilan LCD
+// Variabel Kontrol Tampilan LCD (Diubah ke maksimal 5 halaman)
 int currentPage = 0; 
 int iconStatus = 0;                                    
 unsigned long iconTurnOffMillis = 0;
@@ -146,6 +151,8 @@ void printDebugData() {
   Serial.println("\n=== [DEBUG] DATA VARIABEL TERKINI ===");
   printLocalTime(); 
   Serial.print("Status Emergency Mode pH       : "); Serial.println(statusDaruratPH ? "AKTIF" : "STANDBY");
+  Serial.print("Status Emergency Mode Air      : "); Serial.println(statusDaruratAir ? "DANGER (LOW WATER)" : "AMAN");
+  Serial.print("Batas Min Air (M / R)          : "); Serial.print(mainMinWaterLevel); Serial.print(" cm / "); Serial.print(reservoirMinWaterLevel); Serial.println(" cm");
   Serial.println("======================================");
 }
 
@@ -235,14 +242,11 @@ void setup() {
   Firebase.reconnectWiFi(true);
   Firebase.begin(&config, &auth);
 
-  // =========================================================================
-  // === PERUBAHAN BARU: LOAD ALL CONFIG DALAM SATU JSON BESAR (SINGLE FETCH) ===
-  // =========================================================================
+  // LOAD ALL CONFIG DALAM SATU JSON BESAR (SINGLE FETCH)
   lcd.clear(); lcd.print("Load Config...");
   Serial.println("\n[CONFIG] Mengunduh seluruh node /test/config dalam 1 JSON...");
 
   if (Firebase.RTDB.getJSON(&fbdo, "test/config")) {
-    // Ambil referensi ke objek JSON yang didapatkan dari server
     FirebaseJson &jsonResult = fbdo.jsonObject();
     FirebaseJsonData jsonData;
 
@@ -251,29 +255,34 @@ void setup() {
     if (jsonData.success) {
       mainSensorHeight = jsonData.to<float>();
       Serial.print("[CONFIG] Dipisah -> mainSensorHeight: "); Serial.println(mainSensorHeight);
-    } else {
-      mainSensorHeight = 50.0; // Default cadangan jika key tidak ditemukan
-      Serial.println("[CONFIG] mainSensorHeight tidak ditemukan di JSON, gunakan default.");
-    }
+    } else { mainSensorHeight = 50.0; }
 
     // Pisah data reservoirSensorHeight
     jsonResult.get(jsonData, "reservoirSensorHeight");
     if (jsonData.success) {
       reservoirSensorHeight = jsonData.to<float>();
       Serial.print("[CONFIG] Dipisah -> reservoirSensorHeight: "); Serial.println(reservoirSensorHeight);
-    } else {
-      reservoirSensorHeight = 50.0; // Default cadangan jika key tidak ditemukan
-      Serial.println("[CONFIG] reservoirSensorHeight tidak ditemukan di JSON, gunakan default.");
-    }
+    } else { reservoirSensorHeight = 50.0; }
+
+    // === TAMBAHAN BARU: Pisah data mainMinWaterLevel ===
+    jsonResult.get(jsonData, "mainMinWaterLevel");
+    if (jsonData.success) {
+      mainMinWaterLevel = jsonData.to<float>();
+      Serial.print("[CONFIG] Dipisah -> mainMinWaterLevel: "); Serial.println(mainMinWaterLevel);
+    } else { mainMinWaterLevel = 10.0; Serial.println("[CONFIG] Key mainMinWaterLevel absent, set default 10.0"); }
+
+    // === TAMBAHAN BARU: Pisah data reservoirMinWaterLevel ===
+    jsonResult.get(jsonData, "reservoirMinWaterLevel");
+    if (jsonData.success) {
+      reservoirMinWaterLevel = jsonData.to<float>();
+      Serial.print("[CONFIG] Dipisah -> reservoirMinWaterLevel: "); Serial.println(reservoirMinWaterLevel);
+    } else { reservoirMinWaterLevel = 10.0; Serial.println("[CONFIG] Key reservoirMinWaterLevel absent, set default 10.0"); }
   } 
   else {
-    // Jika koneksi atau pembacaan folder utama /test/config gagal total
     Serial.print("[CONFIG] Gagal mengambil JSON Config: "); Serial.println(fbdo.errorReason());
-    mainSensorHeight = 50.0;
-    reservoirSensorHeight = 50.0;
-    Serial.println("[CONFIG] Seluruh konfigurasi di-set ke nilai default (50.0 cm).");
+    mainSensorHeight = 50.0; reservoirSensorHeight = 50.0;
+    mainMinWaterLevel = 10.0; reservoirMinWaterLevel = 10.0;
   }
-  // =========================================================================
 
   lcd.clear();
   firebasePrevMillis = millis() - firebaseInterval; 
@@ -303,6 +312,16 @@ void loop() {
     if (tinggiAir2 < 0) tinggiAir2 = 0;
   } else { tinggiAir2 = -1; }
 
+  // === TAMBAHAN BARU: Evaluasi Batas Air Minimum ===
+  bool airMainLow = (tinggiAir1 != -1 && tinggiAir1 < mainMinWaterLevel);
+  bool airReservoirLow = (tinggiAir2 != -1 && tinggiAir2 < reservoirMinWaterLevel);
+  
+  if (airMainLow || airReservoirLow) {
+    statusDaruratAir = true;
+  } else {
+    statusDaruratAir = false;
+  }
+
   // ==========================================
   // 2. CHECK PERUBAHAN JAM UNTUK LIGHTING SYSTEM
   // ==========================================
@@ -320,7 +339,17 @@ void loop() {
   if (millis() - changePagePrevMillis > pageInterval) {
     changePagePrevMillis = millis();
     currentPage++;
-    if (currentPage > 4) currentPage = 0; 
+    
+    // === PERUBAHAN BARU: Logika lompat halaman Warning jika kondisi aman ===
+    if (currentPage > 5) {
+      currentPage = 0; 
+    }
+    
+    // Jika menuju halaman 5 (WARNING) tapi kondisi pH dan Air AMAN, lewati langsung ke halaman 0
+    if (currentPage == 5 && !statusDaruratPH && !statusDaruratAir) {
+      currentPage = 0;
+    }
+
     lcd.clear(); perluUpdateLayar = true; 
   }
 
@@ -348,6 +377,21 @@ void loop() {
       case 4: 
         lcd.setCursor(0, 0); lcd.print("LIGHTING SYSTEM");
         lcd.setCursor(0, 1); lcd.print("Current Lvl: "); lcd.print(currentLightingLevel);
+        break;
+      
+      // === TAMBAHAN BARU: TAMPILAN HALAMAN WARNING ===
+      case 5:
+        lcd.setCursor(0, 0); lcd.print("!! WARNING !!");
+        lcd.setCursor(0, 1);
+        if (statusDaruratPH && statusDaruratAir) {
+          lcd.print("BAD pH & LOW WTR");
+        } else if (statusDaruratPH) {
+          lcd.print("PH ABNORMAL! ");
+        } else if (statusDaruratAir) {
+          if (airMainLow && airReservoirLow) lcd.print("ALL WATER LOW!");
+          else if (airMainLow) lcd.print("MAIN WATER LOW!");
+          else if (airReservoirLow) lcd.print("RESV WATER LOW!");
+        }
         break;
     }
     if (iconStatus == 1) { lcd.setCursor(15, 0); lcd.write(0); }
