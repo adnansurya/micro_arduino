@@ -41,12 +41,12 @@ float tinggiAir1 = 0.0;
 float tinggiAir2 = 0.0;             
 
 // Konfigurasi Batas Minimum Air dari Firebase
-float mainMinWaterLevel = 20.0;
-float reservoirMinWaterLevel = 20.0;
+float mainMinWaterLevel = 0.0;
+float reservoirMinWaterLevel = 0.0;
 
 // Variabel Konfigurasi Waktu Feeding
 String feedingTime = "00:00"; 
-int hariTerakhirReset = -1; // Variabel lokal untuk melacak pergantian hari untuk reset Firebase
+int hariTerakhirReset = -1; 
 
 // Status Tracking untuk Darurat pH dan Air
 bool statusDaruratPH = false; 
@@ -205,9 +205,21 @@ void setup() {
   pinMode(TRIG_PIN_2, OUTPUT); pinMode(ECHO_PIN_2, INPUT);
 
   sensors.begin();
-  lcd.init(); lcd.backlight();
-  lcd.createChar(0, panahAtas); lcd.createChar(1, panahBawah); 
   
+  // 1. Inisialisasi Layar LCD
+  lcd.init(); 
+  lcd.backlight();
+  lcd.createChar(0, panahAtas); 
+  lcd.createChar(1, panahBawah); 
+  
+  // === TAMBAHAN BARU: WELCOME SCREEN AQUATRON APP ===
+  lcd.clear();
+  lcd.setCursor(2, 0);               // Koordinat kolom 2, baris 0 (Agar teks berada di tengah)
+  lcd.print("AQUATRON APP");
+  delay(3000);                       // Menampilkan welcome screen selama 3 detik
+  
+  // 2. Memulai Proses Sistem WiFi
+  lcd.clear();
   lcd.setCursor(0, 0); lcd.print("Memulai WiFi...");
 
   WiFiManager wm;
@@ -299,7 +311,6 @@ void setup() {
     feedingTime = "08:00";
   }
 
-  // Set nilai awal hari reset berdasarkan tanggal booting saat ini
   if (getLocalTime(&timeinfo)) {
     hariTerakhirReset = timeinfo.tm_mday;
   }
@@ -352,7 +363,7 @@ void loop() {
     char jamSekarangStr[6];
     sprintf(jamSekarangStr, "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
     
-    // Reset status di Firebase jika hari berganti (Jam 00:00 ke atas)
+    // Reset status di Firebase jika hari berganti
     if (timeinfo.tm_mday != hariTerakhirReset) {
       Serial.println("[FEEDER] Hari berganti. Reset status feedingToday di Firebase ke 0...");
       if (Firebase.RTDB.setInt(&fbdo, "test/feeder/feedingToday", 0)) {
@@ -362,15 +373,10 @@ void loop() {
 
     // Cek Firebase tepat ketika waktu feeding tiba
     if (feedingTime.equalsIgnoreCase(jamSekarangStr)) {
-      // Ambil nilai feedingToday dari Firebase secara real-time
       if (Firebase.RTDB.getInt(&fbdo, "test/feeder/feedingToday")) {
         int statusFeeding = fbdo.to<int>();
-        
-        // Jika bernilai 0 (artinya belum diberi makan hari ini)
         if (statusFeeding == 0) {
           jalankanFeeder();
-          
-          // Tandai di Firebase menjadi 1 agar jika ESP32 restart tidak berulang
           Serial.println("[FEEDER] Update status feedingToday ke Firebase -> 1");
           Firebase.RTDB.setInt(&fbdo, "test/feeder/feedingToday", 1);
         }
