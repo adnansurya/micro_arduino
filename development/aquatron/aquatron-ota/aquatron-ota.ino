@@ -35,6 +35,12 @@ DallasTemperature sensors(&oneWire);
 #define TRIG_PIN_2 27
 #define ECHO_PIN_2 26
 
+// === PERUBAHAN BARU: Variabel Konfigurasi Tinggi Sensor & Ketinggian Air ===
+float mainSensorHeight = 0.0;       // Diambil dari Firebase saat setup
+float reservoirSensorHeight = 0.0;  // Diambil dari Firebase saat setup
+float tinggiAir1 = 0.0;             // Hasil akhir kalkulasi air Main
+float tinggiAir2 = 0.0;             // Hasil akhir kalkulasi air Reservoir
+
 // 4. Konfigurasi Pin Relay 
 #define RELAY_PUMP_1 4   
 #define RELAY_PUMP_2 5   
@@ -174,11 +180,12 @@ void printDebugData() {
   Serial.print("Reservoir Temperature (Suhu 2) : "); 
   if (suhu2 == DEVICE_DISCONNECTED_C) Serial.println("TERPUTUS (-127C)"); else { Serial.print(suhu2, 2); Serial.println(" C"); }
   
-  Serial.print("Main Water Level (Jarak 1)     : "); 
-  if (jarak1 == -1) Serial.println("ERROR / NO ECHO"); else { Serial.print(jarak1, 2); Serial.println(" cm"); }
+  // === PERUBAHAN BARU: Output Serial menampilkan Tinggi Air dan Jarak Sensor ===
+  Serial.print("Main Water Level (Tinggi Air 1): "); 
+  if (jarak1 == -1) Serial.println("ERROR / NO ECHO"); else { Serial.print(tinggiAir1, 2); Serial.print(" cm (Jarak Sensor: "); Serial.print(jarak1, 2); Serial.println(" cm)"); }
   
-  Serial.print("Reservoir Water Level (Jarak 2): "); 
-  if (jarak2 == -1) Serial.println("ERROR / NO ECHO"); else { Serial.print(jarak2, 2); Serial.println(" cm"); }
+  Serial.print("Reservoir Water Level (Tinggi 2): "); 
+  if (jarak2 == -1) Serial.println("ERROR / NO ECHO"); else { Serial.print(tinggiAir2, 2); Serial.print(" cm (Jarak Sensor: "); Serial.print(jarak2, 2); Serial.println(" cm)"); }
   
   Serial.print("Dummy pH Value (Range 5-8)     : "); Serial.println(dummyPH, 2);
   Serial.print("Status Relay / Tampilan P1     : "); Serial.println(dummyPompa1);
@@ -286,6 +293,27 @@ void setup() {
   Firebase.reconnectWiFi(true);
   Firebase.begin(&config, &auth);
 
+  // === PERUBAHAN BARU: Load Config Tinggi Sensor dari Firebase (Sebelum Loop) ===
+  lcd.clear();
+  lcd.setCursor(0, 0); lcd.print("Load Config...");
+  Serial.println("[CONFIG] Mengambil data tinggi sensor dari Firebase...");
+  
+  if (Firebase.RTDB.getFloat(&fbdo, "test/config/mainSensorHeight")) {
+    mainSensorHeight = fbdo.to<float>();
+    Serial.print("[CONFIG] mainSensorHeight: "); Serial.println(mainSensorHeight);
+  } else {
+    mainSensorHeight = 50.0; // Nilai default cadangan jika RTDB Firebase gagal membaca
+    Serial.print("[CONFIG] Gagal baca mainSensorHeight, gunakan default: "); Serial.println(mainSensorHeight);
+  }
+
+  if (Firebase.RTDB.getFloat(&fbdo, "test/config/reservoirSensorHeight")) {
+    reservoirSensorHeight = fbdo.to<float>();
+    Serial.print("[CONFIG] reservoirSensorHeight: "); Serial.println(reservoirSensorHeight);
+  } else {
+    reservoirSensorHeight = 50.0; // Nilai default cadangan
+    Serial.print("[CONFIG] Gagal baca reservoirSensorHeight, gunakan default: "); Serial.println(reservoirSensorHeight);
+  }
+
   lcd.clear();
   firebasePrevMillis = millis() - firebaseInterval; 
   
@@ -295,14 +323,14 @@ void setup() {
   server.on("/", []() {
     server.send(200, "text/plain", "ESP32 ini berjalan normal. Short PIN 19 ke GND untuk masuk Mode Update.");
   });
-  ElegantOTA.begin(&server);    // Memulai ElegantOTA
+  ElegantOTA.begin(&server);    
   server.begin();
   Serial.println("HTTP Server & OTA Siap.");
 }
 
 void loop() {
+  struct tm timeinfo; // Perbaikan scope error sebelumnya
 
-  struct tm timeinfo;
   // === TAMBAHAN OTA 5: Cek apakah Pin 19 di-short ke GND (LOW) ===
   if (digitalRead(OTA_TRIGGER_PIN) == LOW) {
     if (!modeOtaAktif) {
@@ -314,13 +342,11 @@ void loop() {
       Serial.println(WiFi.localIP());
     }
     
-    // Ketika di-short, ESP32 fokus melayani Web Server & OTA saja agar proses flash aman
     server.handleClient();
     ElegantOTA.loop();
     delay(1);
-    return; // <--- Melewati sisa instruksi loop (membekukan fungsi aquatron sementara)
+    return; 
   } else {
-    // Jika short dilepas, kembalikan status penanda layar
     if (modeOtaAktif) {
       modeOtaAktif = false;
       lcd.clear();
@@ -328,14 +354,33 @@ void loop() {
   }
 
   // ==========================================
-  // SISA KODE DI BAWAH INI SAMA PERSIS (TIDAK BERUBAH)
+  // 1. MEMBACA DATA SENSOR INTERNAL ESP32 & KALKULASI TINGGI AIR
   // ==========================================
   sensors.requestTemperatures();
   suhu1 = sensors.getTempCByIndex(0);
   suhu2 = sensors.getTempCByIndex(1);
+  
   jarak1 = bacaJarak(TRIG_PIN_1, ECHO_PIN_1);
   jarak2 = bacaJarak(TRIG_PIN_2, ECHO_PIN_2);
 
+  // === PERUBAHAN BARU: Rumus Tinggi Air = Tinggi Sensor - Jarak ===
+  if (jarak1 != -1) {
+    tinggiAir1 = mainSensorHeight - jarak1;
+    if (tinggiAir1 < 0) tinggiAir1 = 0; // Proteksi pembacaan jika nilai minus
+  } else {
+    tinggiAir1 = -1; // Menandakan sensor error
+  }
+
+  if (jarak2 != -1) {
+    tinggiAir2 = reservoirSensorHeight - jarak2;
+    if (tinggiAir2 < 0) tinggiAir2 = 0;
+  } else {
+    tinggiAir2 = -1; // Menandakan sensor error
+  }
+
+  // ==========================================
+  // 2. CHECK PERUBAHAN JAM UNTUK LIGHTING SYSTEM
+  // ==========================================
   if (getLocalTime(&timeinfo)) {
     if (timeinfo.tm_hour != lastCheckedHour) {
       lastCheckedHour = timeinfo.tm_hour; 
@@ -343,6 +388,9 @@ void loop() {
     }
   }
 
+  // ==========================================
+  // 3. LOGIKA PERGANTIAN HALAMAN LCD (2 DETIK)
+  // ==========================================
   bool perluUpdateLayar = false;
   if (millis() - changePagePrevMillis > pageInterval) {
     changePagePrevMillis = millis();
@@ -359,20 +407,27 @@ void loop() {
         lcd.setCursor(0, 1); lcd.print("M:"); lcd.print(suhu1, 1); lcd.print((char)223); lcd.print("C ");
         lcd.setCursor(9, 1); lcd.print("R:"); lcd.print(suhu2, 1); lcd.print((char)223); lcd.print("C");
         break;
+
       case 1:
-        lcd.setCursor(0, 0); lcd.print("W. LEVEL");
-        lcd.setCursor(0, 1); lcd.print("M:"); lcd.print(jarak1, 0); lcd.print("cm ");
-        lcd.setCursor(9, 1); lcd.print("R:"); lcd.print(jarak2, 0); lcd.print("cm");
+        // === PERUBAHAN BARU: Mengubah Tampilan Jarak Menjadi Tinggi Air ===
+        lcd.setCursor(0, 0); lcd.print("WATER LEVEL");
+        lcd.setCursor(0, 1); 
+        if (tinggiAir1 == -1) lcd.print("M:ERR "); else { lcd.print("M:"); lcd.print(tinggiAir1, 0); lcd.print("cm "); }
+        lcd.setCursor(9, 1); 
+        if (tinggiAir2 == -1) lcd.print("R:ERR"); else { lcd.print("R:"); lcd.print(tinggiAir2, 0); lcd.print("cm"); }
         break;
+
       case 2:
         lcd.setCursor(0, 0); lcd.print("PH METER");
         lcd.setCursor(0, 1); lcd.print("Nilai pH : "); lcd.print(dummyPH, 2);
         break;
+
       case 3:
         lcd.setCursor(0, 0); lcd.print("PUMP ST.");
         lcd.setCursor(0, 1); lcd.print("P1:"); lcd.print(dummyPompa1);
         lcd.setCursor(9, 1); lcd.print("P2:"); lcd.print(dummyPompa2);
         break;
+
       case 4: 
         lcd.setCursor(0, 0); lcd.print("LIGHTING SYSTEM");
         lcd.setCursor(0, 1); lcd.print("Current Lvl: "); lcd.print(currentLightingLevel);
@@ -382,6 +437,9 @@ void loop() {
     else if (iconStatus == 2) { lcd.setCursor(15, 0); lcd.write(1); }
   }
 
+  // ==========================================
+  // 4. LOGIKA AKTIVITAS FIREBASE (SINKRONISASI & RELAY)
+  // ==========================================
   if (!firebaseReadyToTrigger && (millis() - firebasePrevMillis >= firebaseInterval)) {
     firebaseReadyToTrigger = true; 
   }
@@ -393,6 +451,9 @@ void loop() {
     printDebugData();
 
     if (toggleTask) {
+      // -----------------------------------------------------------------
+      // TUGAS A: KIRIM DATA SENSOR + TIMESTAMP NTP
+      // -----------------------------------------------------------------
       iconStatus = 1;
       lcd.setCursor(15, 0); lcd.write(0); 
 
@@ -416,9 +477,12 @@ void loop() {
       String path = "test/sensorData/aquatron_001/latest";
       FirebaseJson json;
       if (suhu1 != DEVICE_DISCONNECTED_C) json.set("mainTemperature", suhu1);
-      if (jarak1 != -1) json.set("mainWaterLevel", jarak1);
+      
+      // === PERUBAHAN BARU: Kirim data yang sudah terkalibrasi menjadi Tinggi Air ke Firebase ===
+      if (tinggiAir1 != -1) json.set("mainWaterLevel", tinggiAir1);
       if (suhu2 != DEVICE_DISCONNECTED_C) json.set("reservoirTemperature", suhu2);
-      if (jarak2 != -1) json.set("reservoirWaterLevel", jarak2);
+      if (tinggiAir2 != -1) json.set("reservoirWaterLevel", tinggiAir2);
+      
       json.set("ph", dummyPH);
       json.set("lightingLevel", currentLightingLevel); 
       
@@ -431,6 +495,9 @@ void loop() {
         Serial.print("[KIRIM] Gagal: "); Serial.println(fbdo.errorReason());
       }
     } else {
+      // -----------------------------------------------------------------
+      // TUGAS B: BACA STATUS POMPA & KONTROL FISIK RELAY
+      // -----------------------------------------------------------------
       iconStatus = 2;
       lcd.setCursor(15, 0); lcd.write(1); 
       Serial.println("[BACA] Mengambil status pompa dari test/pumps...");
