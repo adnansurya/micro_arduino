@@ -44,6 +44,10 @@ float tinggiAir2 = 0.0;
 float mainMinWaterLevel = 20.0;
 float reservoirMinWaterLevel = 20.0;
 
+// Variabel Konfigurasi Waktu Feeding
+String feedingTime = "00:00"; 
+int hariTerakhirReset = -1; // Variabel lokal untuk melacak pergantian hari untuk reset Firebase
+
 // Status Tracking untuk Darurat pH dan Air
 bool statusDaruratPH = false; 
 bool statusDaruratAir = false; 
@@ -52,6 +56,7 @@ bool statusDaruratAir = false;
 #define RELAY_PUMP_1 4   
 #define RELAY_PUMP_2 5   
 #define RELAY_LIGHTING 18  
+#define RELAY_FEEDER 2     
 
 // 5. Inisialisasi LCD I2C
 LiquidCrystal_I2C lcd(0x27, 16, 2);
@@ -144,6 +149,20 @@ void sinkronisasiLighting() {
   }
 }
 
+void jalankanFeeder() {
+  Serial.println("[FEEDER] Mengaktifkan Feeder pakan ikan...");
+  
+  lcd.clear();
+  lcd.setCursor(0, 0); lcd.print(" TIME TO FEED! ");
+  lcd.setCursor(0, 1); lcd.print("  GIVE ME FOOD  ");
+  
+  digitalWrite(RELAY_FEEDER, LOW);  
+  delay(3000);                      
+  digitalWrite(RELAY_FEEDER, HIGH); 
+  
+  lcd.clear();
+}
+
 void printDebugData() {
   struct tm timeinfo;
   int jamSekarang = 0;
@@ -152,6 +171,7 @@ void printDebugData() {
   printLocalTime(); 
   Serial.print("Status Emergency Mode pH       : "); Serial.println(statusDaruratPH ? "AKTIF" : "STANDBY");
   Serial.print("Status Emergency Mode Air      : "); Serial.println(statusDaruratAir ? "DANGER (LOW WATER)" : "AMAN");
+  Serial.print("Jadwal Feeding Terpasang       : "); Serial.println(feedingTime);
   Serial.println("======================================");
 }
 
@@ -174,9 +194,12 @@ void setup() {
   pinMode(RELAY_PUMP_1, OUTPUT);
   pinMode(RELAY_PUMP_2, OUTPUT);
   pinMode(RELAY_LIGHTING, OUTPUT);
+  pinMode(RELAY_FEEDER, OUTPUT);    
+  
   digitalWrite(RELAY_PUMP_1, HIGH); 
   digitalWrite(RELAY_PUMP_2, HIGH);
   digitalWrite(RELAY_LIGHTING, HIGH); 
+  digitalWrite(RELAY_FEEDER, HIGH);  
 
   pinMode(TRIG_PIN_1, OUTPUT); pinMode(ECHO_PIN_1, INPUT);
   pinMode(TRIG_PIN_2, OUTPUT); pinMode(ECHO_PIN_2, INPUT);
@@ -260,11 +283,25 @@ void setup() {
 
     jsonResult.get(jsonData, "reservoirMinWaterLevel");
     if (jsonData.success) reservoirMinWaterLevel = jsonData.to<float>(); else reservoirMinWaterLevel = 10.0;
+
+    jsonResult.get(jsonData, "feedingTime");
+    if (jsonData.success) {
+      feedingTime = jsonData.to<String>();
+      Serial.print("[CONFIG] Dipisah -> feedingTime: "); Serial.println(feedingTime);
+    } else { 
+      feedingTime = "08:00"; 
+    }
   } 
   else {
     Serial.print("[CONFIG] Gagal mengambil JSON Config: "); Serial.println(fbdo.errorReason());
     mainSensorHeight = 50.0; reservoirSensorHeight = 50.0;
     mainMinWaterLevel = 10.0; reservoirMinWaterLevel = 10.0;
+    feedingTime = "08:00";
+  }
+
+  // Set nilai awal hari reset berdasarkan tanggal booting saat ini
+  if (getLocalTime(&timeinfo)) {
+    hariTerakhirReset = timeinfo.tm_mday;
   }
 
   lcd.clear();
@@ -302,12 +339,42 @@ void loop() {
   if (airMainLow || airReservoirLow) statusDaruratAir = true; else statusDaruratAir = false;
 
   // ==========================================
-  // 2. CHECK PERUBAHAN JAM UNTUK LIGHTING SYSTEM
+  // 2. CHECK PERUBAHAN JAM (LIGHTING & FEEDER)
   // ==========================================
   if (getLocalTime(&timeinfo)) {
+    // A. Sinkronisasi Jam untuk Lampu
     if (timeinfo.tm_hour != lastCheckedHour) {
       lastCheckedHour = timeinfo.tm_hour; 
       sinkronisasiLighting();            
+    }
+
+    // B. LOGIKA PENGECEKAN FEEDER VIA FIREBASE REAL-TIME
+    char jamSekarangStr[6];
+    sprintf(jamSekarangStr, "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
+    
+    // Reset status di Firebase jika hari berganti (Jam 00:00 ke atas)
+    if (timeinfo.tm_mday != hariTerakhirReset) {
+      Serial.println("[FEEDER] Hari berganti. Reset status feedingToday di Firebase ke 0...");
+      if (Firebase.RTDB.setInt(&fbdo, "test/feeder/feedingToday", 0)) {
+        hariTerakhirReset = timeinfo.tm_mday;
+      }
+    }
+
+    // Cek Firebase tepat ketika waktu feeding tiba
+    if (feedingTime.equalsIgnoreCase(jamSekarangStr)) {
+      // Ambil nilai feedingToday dari Firebase secara real-time
+      if (Firebase.RTDB.getInt(&fbdo, "test/feeder/feedingToday")) {
+        int statusFeeding = fbdo.to<int>();
+        
+        // Jika bernilai 0 (artinya belum diberi makan hari ini)
+        if (statusFeeding == 0) {
+          jalankanFeeder();
+          
+          // Tandai di Firebase menjadi 1 agar jika ESP32 restart tidak berulang
+          Serial.println("[FEEDER] Update status feedingToday ke Firebase -> 1");
+          Firebase.RTDB.setInt(&fbdo, "test/feeder/feedingToday", 1);
+        }
+      }
     }
   }
 
@@ -327,7 +394,6 @@ void loop() {
 
   if (perluUpdateLayar) {
     switch (currentPage) {
-      // === PERUBAHAN TULISAN: TEMP -> TEMPERATURE ===
       case 0:
         lcd.setCursor(0, 0); lcd.print("TEMPERATURE");
         lcd.setCursor(0, 1); lcd.print("M:"); lcd.print(suhu1, 1); lcd.print((char)223); lcd.print("C ");
@@ -345,7 +411,6 @@ void loop() {
         lcd.setCursor(0, 1); lcd.print("Nilai pH : "); lcd.print(dummyPH, 2);
         break;
 
-      // === PERUBAHAN TULISAN: PUMP ST. -> PUMP STATUS & P1/P2 -> M/R ===
       case 3:
         lcd.setCursor(0, 0); lcd.print("PUMP STATUS");
         lcd.setCursor(0, 1); lcd.print("M:"); lcd.print(dummyPompa1);
