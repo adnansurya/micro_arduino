@@ -34,6 +34,9 @@ DallasTemperature sensors(&oneWire);
 #define TRIG_PIN_2 27
 #define ECHO_PIN_2 26
 
+// 4. Konfigurasi Sensor pH Asli (GPIO 35)
+const int phPin = 35; 
+
 // Variabel Konfigurasi Tinggi Sensor & Ketinggian Air
 float mainSensorHeight = 0.0;       
 float reservoirSensorHeight = 0.0;  
@@ -46,20 +49,20 @@ float reservoirMinWaterLevel = 0.0;
 
 // Variabel Konfigurasi Waktu & Durasi Feeding
 String feedingTime = "00:00"; 
-int delayFeeder = 3000;      // === TAMBAHAN BARU: Menyimpan durasi aktif feeder (ms) ===
+int delayFeeder = 3000;      
 int hariTerakhirReset = -1; 
 
 // Status Tracking untuk Darurat pH dan Air
 bool statusDaruratPH = false; 
 bool statusDaruratAir = false; 
 
-// 4. Konfigurasi Pin Relay 
+// 5. Konfigurasi Pin Relay 
 #define RELAY_PUMP_1 4   
 #define RELAY_PUMP_2 5   
 #define RELAY_LIGHTING 18  
-#define SIGNAL_FEEDER 2     // === PERUBAHAN NAMA: Dari RELAY_FEEDER menjadi SIGNAL_FEEDER ===
+#define SIGNAL_FEEDER 2     
 
-// 5. Inisialisasi LCD I2C
+// 6. Inisialisasi LCD I2C
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 // Data Firebase
@@ -101,12 +104,23 @@ unsigned long iconTurnOffMillis = 0;
 byte panahAtas[8] = { B00100, B01110, B11111, B00100, B00100, B00100, B00100, B00100 };
 byte panahBawah[8] = { B00100, B00100, B00100, B00100, B00100, B11111, B01110, B00100 };
 
-// Variabel Sensor & Dummy
+// Variabel Sensor Fisik & Real
 float suhu1 = 0, suhu2 = 0;
 float jarak1 = 0, jarak2 = 0;
-float dummyPH = 7.00;              
+float nilaiPH = 7.00;              // Menampung hasil pembacaan pH real
 String dummyPompa1 = "OFF";         
 String dummyPompa2 = "OFF";         
+
+// === FUNGSI KALKULASI RUMUS PH REGRESI LINIER ===
+float hitungPH(int adcRaw) {
+  float phHasil = (adcRaw * -0.00706) + 20.412;
+  
+  // Batasi output agar tetap berada di rentang pH logis (0 - 14)
+  if (phHasil < 0.0) phHasil = 0.0;
+  if (phHasil > 14.0) phHasil = 14.0;
+  
+  return phHasil;
+}
 
 unsigned long getEpochTime() {
   time_t now;
@@ -153,24 +167,21 @@ void sinkronisasiLighting() {
 void jalankanFeeder() {
   Serial.println("[FEEDER] Mengaktifkan Feeder pakan ikan...");
   
-  // Tampilkan teks di LCD saat waktu feeding tiba
   lcd.clear();
   lcd.setCursor(0, 0); lcd.print(" TIME TO FEED! ");
   lcd.setCursor(0, 1); lcd.print("  GIVE ME FOOD  ");
   
-  digitalWrite(SIGNAL_FEEDER, LOW);  // Mengubah signal_feeder menjadi LOW
-  delay(delayFeeder);                // Durasi aktif dinamis berdasarkan variabel delayFeeder dari Firebase
-  digitalWrite(SIGNAL_FEEDER, HIGH); // Kembali menjadi HIGH setelah waktu habis
+  digitalWrite(SIGNAL_FEEDER, LOW);  
+  delay(delayFeeder);                
+  digitalWrite(SIGNAL_FEEDER, HIGH); 
   
   lcd.clear();
 }
 
 void printDebugData() {
-  struct tm timeinfo;
-  int jamSekarang = 0;
-  if (getLocalTime(&timeinfo)) jamSekarang = timeinfo.tm_hour;
   Serial.println("\n=== [DEBUG] DATA VARIABEL TERKINI ===");
   printLocalTime(); 
+  Serial.print("Nilai pH Real Sensor           : "); Serial.println(nilaiPH, 2);
   Serial.print("Status Emergency Mode pH       : "); Serial.println(statusDaruratPH ? "AKTIF" : "STANDBY");
   Serial.print("Status Emergency Mode Air      : "); Serial.println(statusDaruratAir ? "DANGER (LOW WATER)" : "AMAN");
   Serial.print("Jadwal Feeding Terpasang       : "); Serial.println(feedingTime);
@@ -190,22 +201,25 @@ float bacaJarak(int trigPin, int echoPin) {
 
 void setup() {
   Serial.begin(115200);
-  randomSeed(analogRead(34)); 
 
+  Serial.begin(115200);
+
+  // 1. Amankan Pin Relay & Input Utama Terlebih Dahulu
   pinMode(OTA_TRIGGER_PIN, INPUT_PULLUP);
-
   pinMode(RELAY_PUMP_1, OUTPUT);
   pinMode(RELAY_PUMP_2, OUTPUT);
   pinMode(RELAY_LIGHTING, OUTPUT);
-  pinMode(SIGNAL_FEEDER, OUTPUT);    // === UPDATE NAMA VARIABEL ===
+  pinMode(SIGNAL_FEEDER, OUTPUT);    
   
   digitalWrite(RELAY_PUMP_1, HIGH); 
   digitalWrite(RELAY_PUMP_2, HIGH);
   digitalWrite(RELAY_LIGHTING, HIGH); 
-  digitalWrite(SIGNAL_FEEDER, HIGH);  // === SET NILAI AWAL HIGH ===
+  digitalWrite(SIGNAL_FEEDER, HIGH);  
 
   pinMode(TRIG_PIN_1, OUTPUT); pinMode(ECHO_PIN_1, INPUT);
   pinMode(TRIG_PIN_2, OUTPUT); pinMode(ECHO_PIN_2, INPUT);
+
+  // ⚠️ JANGAN pasang pinMode(phPin, INPUT); di sini! Kita tunda dulu.
 
   sensors.begin();
   
@@ -220,19 +234,30 @@ void setup() {
   lcd.print("AQUATRON APP");
   delay(3000);                       
   
+  // 2. JALANKAN WIFIMANAGER TEPAT SETELAH WELCOME SCREEN
   lcd.clear();
   lcd.setCursor(0, 0); lcd.print("Memulai WiFi...");
 
   WiFiManager wm;
+  
+  // Tambahkan timeout agar jika tidak dikonfigurasi, ESP32 tidak hang selamanya
+  wm.setConfigPortalTimeout(180); // 3 Menit batas Hotspot muncul, lalu lanjut/restart
+  
   lcd.setCursor(0, 1); lcd.print("Cek AP: ESP32...");
   
   if (!wm.autoConnect("ESP32_Aquatron_AP")) {
-    Serial.println("Gagal konek WiFi, merestart...");
+    Serial.println("Gagal konek WiFi / Timeout portal, merestart...");
+    delay(3000);
     ESP.restart();
   }
 
   Serial.println("\nTersambung ke Wi-Fi!");
   lcd.clear(); lcd.print("WiFi Terhubung!");
+
+  // 3. BARU AKTIFKAN PIN PH SETELAH WIFI SELESAI INITIALIZE
+  // Ini mengisolasi gangguan pembacaan ADC dari interferensi start-up Wi-Fi
+  pinMode(phPin, INPUT); 
+  delay(500); // Beri jeda stabilisasi tegangan ADC
   
   // PENGECEKAN MODE OTA TEPAT SETELAH WIFI TERHUBUNG
   if (digitalRead(OTA_TRIGGER_PIN) == LOW) {
@@ -304,14 +329,11 @@ void setup() {
       feedingTime = "08:00"; 
     }
 
-    // === TAMBAHAN BARU: Mengambil durasi feeding (milidetik) dari Firebase JSON ===
     jsonResult.get(jsonData, "delayFeeder");
     if (jsonData.success) {
       delayFeeder = jsonData.to<int>();
-      Serial.print("[CONFIG] Dipisah -> delayFeeder: "); Serial.print(delayFeeder); Serial.println(" ms");
     } else {
-      delayFeeder = 3000; // Default jika data kosong di Firebase (3 detik)
-      Serial.println("[CONFIG] Key delayFeeder absent, set default 3000ms");
+      delayFeeder = 3000; 
     }
   } 
   else {
@@ -335,7 +357,7 @@ void loop() {
   struct tm timeinfo; 
 
   // ==========================================
-  // 1. MEMBACA DATA SENSOR INTERNAL ESP32 & KALKULASI TINGGI AIR
+  // 1. MEMBACA DATA SENSOR REAL & MULTISAMPLING PH
   // ==========================================
   sensors.requestTemperatures();
   suhu1 = sensors.getTempCByIndex(0);
@@ -354,10 +376,19 @@ void loop() {
     if (tinggiAir2 < 0) tinggiAir2 = 0;
   } else { tinggiAir2 = -1; }
 
+  // Multisampling Pembacaan Sensor pH Asli (10 sampel)
+  long phSum = 0;
+  int phSamples = 10;
+  for (int i = 0; i < phSamples; i++) {
+    phSum += analogRead(phPin);
+    delay(10);
+  }
+  int adcValueReal = phSum / phSamples;
+  nilaiPH = hitungPH(adcValueReal); // Update variabel global nilaiPH dari sensor real
+
   // Evaluasi Batas Air Minimum
   bool airMainLow = (tinggiAir1 != -1 && tinggiAir1 < mainMinWaterLevel);
   bool airReservoirLow = (tinggiAir2 != -1 && tinggiAir2 < reservoirMinWaterLevel);
-  
   if (airMainLow || airReservoirLow) statusDaruratAir = true; else statusDaruratAir = false;
 
   // ==========================================
@@ -374,7 +405,6 @@ void loop() {
     char jamSekarangStr[6];
     sprintf(jamSekarangStr, "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
     
-    // Reset status di Firebase jika hari berganti
     if (timeinfo.tm_mday != hariTerakhirReset) {
       Serial.println("[FEEDER] Hari berganti. Reset status feedingToday di Firebase ke 0...");
       if (Firebase.RTDB.setInt(&fbdo, "test/feeder/feedingToday", 0)) {
@@ -382,7 +412,6 @@ void loop() {
       }
     }
 
-    // Cek Firebase tepat ketika waktu feeding tiba
     if (feedingTime.equalsIgnoreCase(jamSekarangStr)) {
       if (Firebase.RTDB.getInt(&fbdo, "test/feeder/feedingToday")) {
         int statusFeeding = fbdo.to<int>();
@@ -425,7 +454,7 @@ void loop() {
 
       case 2:
         lcd.setCursor(0, 0); lcd.print("PH METER");
-        lcd.setCursor(0, 1); lcd.print("Nilai pH : "); lcd.print(dummyPH, 2);
+        lcd.setCursor(0, 1); lcd.print("Nilai pH : "); lcd.print(nilaiPH, 2);
         break;
 
       case 3:
@@ -467,13 +496,12 @@ void loop() {
   if (firebaseReadyToTrigger) {
     firebaseReadyToTrigger = false; 
     iconTurnOffMillis = millis() + 1000; 
-    dummyPH = random(500, 801) / 100.0; 
     printDebugData();
 
     if (toggleTask) {
       iconStatus = 1; lcd.setCursor(15, 0); lcd.write(0); 
       float selisihSuhu = abs(suhu1 - suhu2);
-      bool phAbnormal = (dummyPH < 6.0 || dummyPH > 7.5);
+      bool phAbnormal = (nilaiPH < 6.0 || nilaiPH > 7.5);
       bool suhuStabil = (suhu1 != DEVICE_DISCONNECTED_C && suhu2 != DEVICE_DISCONNECTED_C && selisihSuhu <= 0.5);
 
       if (!statusDaruratPH) {
@@ -501,7 +529,7 @@ void loop() {
       if (tinggiAir1 != -1) json.set("mainWaterLevel", tinggiAir1);
       if (suhu2 != DEVICE_DISCONNECTED_C) json.set("reservoirTemperature", suhu2);
       if (tinggiAir2 != -1) json.set("reservoirWaterLevel", tinggiAir2);
-      json.set("ph", dummyPH);
+      json.set("ph", nilaiPH);
       json.set("lightingLevel", currentLightingLevel); 
       
       unsigned long currentEpoch = getEpochTime();
@@ -539,5 +567,4 @@ void loop() {
   if (iconStatus != 0 && millis() > iconTurnOffMillis) {
     iconStatus = 0; lcd.setCursor(15, 0); lcd.print(" "); 
   }
-  delay(50); 
 }
