@@ -107,18 +107,15 @@ byte panahBawah[8] = { B00100, B00100, B00100, B00100, B00100, B11111, B01110, B
 // Variabel Sensor Fisik & Real
 float suhu1 = 0, suhu2 = 0;
 float jarak1 = 0, jarak2 = 0;
-float nilaiPH = 7.00;              // Menampung hasil pembacaan pH real
+float nilaiPH = 7.00;              
 String dummyPompa1 = "OFF";         
 String dummyPompa2 = "OFF";         
 
-// === FUNGSI KALKULASI RUMUS PH REGRESI LINIER ===
+// FUNGSI KALKULASI RUMUS PH REGRESI LINIER
 float hitungPH(int adcRaw) {
   float phHasil = (adcRaw * -0.00706) + 20.412;
-  
-  // Batasi output agar tetap berada di rentang pH logis (0 - 14)
   if (phHasil < 0.0) phHasil = 0.0;
   if (phHasil > 14.0) phHasil = 14.0;
-  
   return phHasil;
 }
 
@@ -202,9 +199,7 @@ float bacaJarak(int trigPin, int echoPin) {
 void setup() {
   Serial.begin(115200);
 
-  Serial.begin(115200);
-
-  // 1. Amankan Pin Relay & Input Utama Terlebih Dahulu
+  // 1. Amankan Pin Relay & Input Utama Terlebih Dahulu (Mencegah Hotspot Gagal)
   pinMode(OTA_TRIGGER_PIN, INPUT_PULLUP);
   pinMode(RELAY_PUMP_1, OUTPUT);
   pinMode(RELAY_PUMP_2, OUTPUT);
@@ -219,8 +214,6 @@ void setup() {
   pinMode(TRIG_PIN_1, OUTPUT); pinMode(ECHO_PIN_1, INPUT);
   pinMode(TRIG_PIN_2, OUTPUT); pinMode(ECHO_PIN_2, INPUT);
 
-  // ⚠️ JANGAN pasang pinMode(phPin, INPUT); di sini! Kita tunda dulu.
-
   sensors.begin();
   
   lcd.init(); 
@@ -234,31 +227,26 @@ void setup() {
   lcd.print("AQUATRON APP");
   delay(3000);                       
   
-  // 2. JALANKAN WIFIMANAGER TEPAT SETELAH WELCOME SCREEN
+  // 2. Jalankan WiFiManager Tepat Setelah Welcome Screen
   lcd.clear();
   lcd.setCursor(0, 0); lcd.print("Memulai WiFi...");
 
   WiFiManager wm;
-  
-  // Tambahkan timeout agar jika tidak dikonfigurasi, ESP32 tidak hang selamanya
-  wm.setConfigPortalTimeout(180); // 3 Menit batas Hotspot muncul, lalu lanjut/restart
-  
+  wm.setConfigPortalTimeout(180); // Batas portal aktif 3 menit agar tidak hang jika ditinggal
   lcd.setCursor(0, 1); lcd.print("Cek AP: ESP32...");
   
   if (!wm.autoConnect("ESP32_Aquatron_AP")) {
-    Serial.println("Gagal konek WiFi / Timeout portal, merestart...");
-    delay(3000);
+    Serial.println("Gagal konek WiFi, merestart...");
     ESP.restart();
   }
 
   Serial.println("\nTersambung ke Wi-Fi!");
   lcd.clear(); lcd.print("WiFi Terhubung!");
-
-  // 3. BARU AKTIFKAN PIN PH SETELAH WIFI SELESAI INITIALIZE
-  // Ini mengisolasi gangguan pembacaan ADC dari interferensi start-up Wi-Fi
-  pinMode(phPin, INPUT); 
-  delay(500); // Beri jeda stabilisasi tegangan ADC
   
+  // 3. Aktifkan Pin pH Setelah Wi-Fi Berhasil Terhubung (Solusi Isolasi AP)
+  pinMode(phPin, INPUT);
+  delay(500);
+
   // PENGECEKAN MODE OTA TEPAT SETELAH WIFI TERHUBUNG
   if (digitalRead(OTA_TRIGGER_PIN) == LOW) {
     lcd.clear();
@@ -348,6 +336,17 @@ void setup() {
     hariTerakhirReset = timeinfo.tm_mday;
   }
 
+  // === TAMBAHAN BARU: MENAMPILKAN WAKTU FEEDER SEBELUM MASUK LOOP ===
+  lcd.clear();
+  lcd.setCursor(0, 0); 
+  lcd.print("FEEDING TIME:");
+  lcd.setCursor(0, 1); 
+  lcd.print(feedingTime);
+  lcd.print(" ("); 
+  lcd.print(delayFeeder / 1000); // Mengubah ms ke detik untuk tampilan ringkas
+  lcd.print("s)");
+  delay(3000); // Ditampilkan selama 3 detik sebelum masuk loop halaman sensor
+  
   lcd.clear();
   firebasePrevMillis = millis() - firebaseInterval; 
   sinkronisasiLighting();
@@ -376,7 +375,6 @@ void loop() {
     if (tinggiAir2 < 0) tinggiAir2 = 0;
   } else { tinggiAir2 = -1; }
 
-  // Multisampling Pembacaan Sensor pH Asli (10 sampel)
   long phSum = 0;
   int phSamples = 10;
   for (int i = 0; i < phSamples; i++) {
@@ -384,9 +382,8 @@ void loop() {
     delay(10);
   }
   int adcValueReal = phSum / phSamples;
-  nilaiPH = hitungPH(adcValueReal); // Update variabel global nilaiPH dari sensor real
+  nilaiPH = hitungPH(adcValueReal); 
 
-  // Evaluasi Batas Air Minimum
   bool airMainLow = (tinggiAir1 != -1 && tinggiAir1 < mainMinWaterLevel);
   bool airReservoirLow = (tinggiAir2 != -1 && tinggiAir2 < reservoirMinWaterLevel);
   if (airMainLow || airReservoirLow) statusDaruratAir = true; else statusDaruratAir = false;
@@ -395,13 +392,11 @@ void loop() {
   // 2. CHECK PERUBAHAN JAM (LIGHTING & FEEDER)
   // ==========================================
   if (getLocalTime(&timeinfo)) {
-    // A. Sinkronisasi Jam untuk Lampu
     if (timeinfo.tm_hour != lastCheckedHour) {
       lastCheckedHour = timeinfo.tm_hour; 
       sinkronisasiLighting();            
     }
 
-    // B. LOGIKA PENGECEKAN FEEDER VIA FIREBASE REAL-TIME
     char jamSekarangStr[6];
     sprintf(jamSekarangStr, "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
     
