@@ -113,9 +113,13 @@ String dummyPompa2 = "OFF";
 
 // FUNGSI KALKULASI RUMUS PH REGRESI LINIER
 float hitungPH(int adcRaw) {
-  float phHasil = (adcRaw * -0.00706) + 20.412;
+  // Menggunakan koefisien hasil regresi: m = -0.0064, c = 20.21
+  float phHasil = (adcRaw * -0.0064) + 20.21;
+  
+  // Memastikan nilai pH berada dalam rentang valid (0.0 - 14.0)
   if (phHasil < 0.0) phHasil = 0.0;
   if (phHasil > 14.0) phHasil = 14.0;
+  
   return phHasil;
 }
 
@@ -496,7 +500,7 @@ void loop() {
     if (toggleTask) {
       iconStatus = 1; lcd.setCursor(15, 0); lcd.write(0); 
       float selisihSuhu = abs(suhu1 - suhu2);
-      bool phAbnormal = (nilaiPH < 6.0 || nilaiPH > 7.5);
+      bool phAbnormal = (nilaiPH < 6.0 || nilaiPH > 7.0);
       bool suhuStabil = (suhu1 != DEVICE_DISCONNECTED_C && suhu2 != DEVICE_DISCONNECTED_C && selisihSuhu <= 0.5);
 
       if (!statusDaruratPH) {
