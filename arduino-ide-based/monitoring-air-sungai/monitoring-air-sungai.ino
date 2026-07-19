@@ -57,17 +57,23 @@ BLYNK_CONNECTED() {
 
 BLYNK_WRITE(V2) {
   KEDALAMAN_SUNGAI = param.asInt();
-  Serial.print("Update Kedalaman Sungai: "); Serial.print(KEDALAMAN_SUNGAI); Serial.println(" cm");
+  Serial.print("Update Kedalaman Sungai: "); 
+  Serial.print(KEDALAMAN_SUNGAI); 
+  Serial.println(" cm");
 }
 
 BLYNK_WRITE(V3) {
   BATAS_WASPADA = param.asInt();
-  Serial.print("Update Batas Waspada: "); Serial.print(BATAS_WASPADA); Serial.println(" cm");
+  Serial.print("Update Batas Waspada: "); 
+  Serial.print(BATAS_WASPADA); 
+  Serial.println(" cm");
 }
 
 BLYNK_WRITE(V4) {
   BATAS_BAHAYA = param.asInt();
-  Serial.print("Update Batas Bahaya: "); Serial.print(BATAS_BAHAYA); Serial.println(" cm");
+  Serial.print("Update Batas Bahaya: "); 
+  Serial.print(BATAS_BAHAYA); 
+  Serial.println(" cm");
 }
 // ===========================================================
 
@@ -87,6 +93,7 @@ float ambilJarak() {
   }
   return jarak;
 }
+
 
 // Fungsi khusus untuk mengatur bunyi buzzer tanpa delay blocking
 void kontrolBuzzer() {
@@ -136,7 +143,8 @@ void sendSensorData() {
   }
 
   if (statusGlobal != statusSebelumnya) {
-    String pesanNotif = "Peringatan! Status air sungai berubah menjadi: " + statusGlobal + " (" + String(tinggiAir) + " cm)";
+    String pesanNotif = "Peringatan! Status air sungai berubah menjadi: " + 
+    statusGlobal + " (" + String(tinggiAir) + " cm)";
     Blynk.logEvent("Status_perubahan", pesanNotif);
     statusSebelumnya = statusGlobal;
   }
