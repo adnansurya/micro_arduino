@@ -7,11 +7,11 @@
 #include <Adafruit_SSD1306.h>
 #include "config.h"
 
-#define DHTPIN 5
+#define DHTPIN 39
 #define DHTTYPE DHT22
 DHT dht(DHTPIN, DHTTYPE);
 
-#define BUZZER_PIN 18
+#define BUZZER_PIN 40
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
