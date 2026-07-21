@@ -8,6 +8,7 @@
 #include <SPI.h>
 #include <SD.h>
 #include <time.h>
+#include <WiFiManager.h> // Tambahan Library WiFiManager
 #include "config.h"
 
 // ==========================================================
@@ -55,10 +56,9 @@ bool isOutOfRange = false;
 String getFormattedTimestamp() {
   struct tm timeinfo;
   if (!getLocalTime(&timeinfo)) {
-    return String(millis()); // Fallback ke millis jika NTP belum sinkron
+    return String(millis()); 
   }
   char buffer[30];
-  // Format: M/D/YYYY H:M:S (Contoh: 7/21/2026 17:35:18)
   strftime(buffer, sizeof(buffer), "%m/%d/%Y %H:%M:%S", &timeinfo);
   return String(buffer);
 }
@@ -146,7 +146,6 @@ void sinkronisasiBackupData() {
   File dataFile = SD.open("/backup.csv", FILE_READ);
   if (!dataFile) return;
 
-  // Baca baris per baris file CSV dan bungkus ke JSON Array
   JsonDocument doc;
   JsonArray array = doc.to<JsonArray>();
 
@@ -156,13 +155,11 @@ void sinkronisasiBackupData() {
     line.trim();
     if (line.length() == 0) continue;
 
-    // Lewati baris header jika ada
     if (!headerSkipped && line.startsWith("Timestamp")) {
       headerSkipped = true;
       continue;
     }
 
-    // Parsing baris CSV (Timestamp,Suhu,Kelembaban)
     int comma1 = line.indexOf(',');
     int comma2 = line.indexOf(',', comma1 + 1);
     if (comma1 != -1 && comma2 != -1) {
@@ -183,14 +180,13 @@ void sinkronisasiBackupData() {
     serializeJson(doc, jsonPayload);
 
     HTTPClient http;
-    // Kirim dengan parameter action=sync_batch
     http.begin(String(WEB_APP_URL) + "?action=sync_batch");
     http.addHeader("Content-Type", "application/json");
 
     int httpCode = http.POST(jsonPayload);
     if (httpCode > 0) {
       Serial.println("Sinkronisasi backup berhasil!");
-      SD.remove("/backup.csv"); // Hapus file jika sukses dikirim
+      SD.remove("/backup.csv"); 
     } else {
       Serial.println("Gagal sinkronisasi backup ke server.");
     }
@@ -228,17 +224,15 @@ void drawWarningIcon(bool outOfRange) {
 void kirimDataKeGoogle(float t, float h) {
   String timestampStr = getFormattedTimestamp();
 
-  // 1. Simpan rutin ke local.csv
   simpanKeSDCard(timestampStr, t, h);
 
-  // 2. Kirim data ke Cloud (Google Sheets)
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
     http.begin(WEB_APP_URL);
     http.addHeader("Content-Type", "application/json");
 
     JsonDocument doc;
-    doc["timestamp"] = timestampStr; // Kirim timestamp NTP ke Apps Script
+    doc["timestamp"] = timestampStr; 
     doc["suhu"] = t;
     doc["kelembaban"] = h;
 
@@ -282,12 +276,12 @@ void kirimDataKeGoogle(float t, float h) {
       kelembabanTerkirim = h;
     } else {
       statusKirimIcon = 3;
-      simpanKeBackupCard(timestampStr, t, h); // Gagal kirim -> Simpan ke backup
+      simpanKeBackupCard(timestampStr, t, h); 
     }
     http.end();
   } else {
     statusKirimIcon = 3;
-    simpanKeBackupCard(timestampStr, t, h); // Tidak ada WiFi -> Simpan ke backup
+    simpanKeBackupCard(timestampStr, t, h); 
   }
   waktuResetIkon = millis();
 }
@@ -318,10 +312,34 @@ void setup() {
   display.println("Connecting WiFi...");
   display.display();
 
-  WiFi.begin(SECRET_SSID, SECRET_PASS);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
+  // ==========================================================
+  // INISIALISASI WIFI MANAGER
+  // ==========================================================
+  WiFiManager wifiManager;
+
+  // Jika ingin mereset settingan wifi sebelumnya saat testing, uncomment baris bawah ini sekali:
+  // wifiManager.resetSettings();
+
+  // Menampilkan pesan ke OLED jika ESP32 masuk mode Setup AP (Access Point)
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.println("WiFi Setup Mode");
+  display.println("Connect to AP:");
+  display.println("ESP32-Sensor-Config");
+  display.display();
+
+  // Nama Access Point yang dipancarkan ESP32 jika gagal konek ke WiFi tersimpan
+  bool res = wifiManager.autoConnect("ESP32-Sensor-Config", "12345678"); // Password AP bebas (min 8 karakter)
+
+  if (!res) {
+    Serial.println("Gagal terhubung / Waktu habis konfigurasi");
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.println("WiFi Setup Failed");
+    display.display();
+    // Jika gagal, alat tetap lanjut berjalan (offline/menyimpan ke backup.csv)
+  } else {
+    Serial.println("Berhasil terhubung ke WiFi!");
   }
 
   // Sinkronisasi Waktu NTP Indonesia (WITA / UTC+8 atau sesuaikan zona waktu)
