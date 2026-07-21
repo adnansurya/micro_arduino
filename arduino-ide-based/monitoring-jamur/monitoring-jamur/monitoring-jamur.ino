@@ -9,7 +9,8 @@
 #include <SPI.h>
 #include <SD.h>
 #include <time.h>
-#include <WiFiManager.h> // Tambahan Library WiFiManager
+#include <WiFiManager.h>
+#include <ArduinoOTA.h> // Tambahan Library OTA
 #include "config.h"
 
 // ==========================================================
@@ -74,34 +75,38 @@ void fetchThresholds() {
     display.println("Fetching Config...");
     display.display();
 
+    WiFiClientSecure client;
+    client.setInsecure();
+
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     String urlWithParam = String(WEB_APP_URL) + "?action=get_config";
-    http.begin(urlWithParam);
-    int httpCode = http.GET();
+    
+    if (http.begin(client, urlWithParam)) {
+      int httpCode = http.GET();
+      if (httpCode > 0) {
+        String payload = http.getString();
+        JsonDocument doc;
+        DeserializationError error = deserializeJson(doc, payload);
 
-    if (httpCode > 0) {
-      String payload = http.getString();
-      JsonDocument doc;
-      DeserializationError error = deserializeJson(doc, payload);
+        if (!error) {
+          suhuMin = doc["suhu_min"];
+          suhuMax = doc["suhu_max"];
+          kelembabanMin = doc["kelembaban_min"];
+          kelembabanMax = doc["kelembaban_max"];
+          deltaSuhu = doc["delta_suhu"];
+          deltaKelembaban = doc["delta_kelembaban"];
+          intervalData = doc["interval_data"].as<long>() * 1000;
 
-      if (!error) {
-        suhuMin = doc["suhu_min"];
-        suhuMax = doc["suhu_max"];
-        kelembabanMin = doc["kelembaban_min"];
-        kelembabanMax = doc["kelembaban_max"];
-        deltaSuhu = doc["delta_suhu"];
-        deltaKelembaban = doc["delta_kelembaban"];
-        intervalData = doc["interval_data"].as<long>() * 1000;
-
-        Serial.println("--- CONFIG RENTANG BERHASIL DI-LOAD ---");
+          Serial.println("--- CONFIG RENTANG BERHASIL DI-LOAD ---");
+        }
       }
+      http.end();
     }
-    http.end();
     delay(1000);
   }
 }
 
-// Fungsi Simpan ke local.csv (Real-time normal)
+// Fungsi Simpan ke local.csv
 void simpanKeSDCard(String timestamp, float t, float h) {
   File dataFile = SD.open("/local.csv", FILE_APPEND);
   if (dataFile) {
@@ -117,7 +122,7 @@ void simpanKeSDCard(String timestamp, float t, float h) {
   }
 }
 
-// Fungsi Simpan ke backup.csv (Saat internet/kirim putus)
+// Fungsi Simpan ke backup.csv
 void simpanKeBackupCard(String timestamp, float t, float h) {
   File dataFile = SD.open("/backup.csv", FILE_APPEND);
   if (dataFile) {
@@ -180,18 +185,22 @@ void sinkronisasiBackupData() {
     String jsonPayload;
     serializeJson(doc, jsonPayload);
 
-    HTTPClient http;
-    http.begin(String(WEB_APP_URL) + "?action=sync_batch");
-    http.addHeader("Content-Type", "application/json");
+    WiFiClientSecure client;
+    client.setInsecure();
 
-    int httpCode = http.POST(jsonPayload);
-    if (httpCode > 0) {
-      Serial.println("Sinkronisasi backup berhasil!");
-      SD.remove("/backup.csv"); 
-    } else {
-      Serial.println("Gagal sinkronisasi backup ke server.");
+    HTTPClient http;
+    if (http.begin(client, String(WEB_APP_URL) + "?action=sync_batch")) {
+      http.addHeader("Content-Type", "application/json");
+
+      int httpCode = http.POST(jsonPayload);
+      if (httpCode > 0) {
+        Serial.println("Sinkronisasi backup berhasil!");
+        SD.remove("/backup.csv"); 
+      } else {
+        Serial.println("Gagal sinkronisasi backup ke server.");
+      }
+      http.end();
     }
-    http.end();
   }
 }
 
@@ -231,23 +240,19 @@ void kirimDataKeGoogle(float t, float h) {
   Serial.print("[INFO] Suhu: "); Serial.print(t, 1); Serial.println(" C");
   Serial.print("[INFO] Kelembaban: "); Serial.print(h, 1); Serial.println(" %");
 
-  // 1. Simpan rutin ke local.csv
   simpanKeSDCard(timestampStr, t, h);
 
-  // 2. Kirim data ke Cloud (Google Sheets)
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("[WIFI] Status: Terhubung ke jaringan.");
     
-    // Gunakan WiFiClientSecure untuk menangani HTTPS dan abaikan verifikasi sertifikat
     WiFiClientSecure client;
-    client.setInsecure(); // <-- Mengabaikan verifikasi SSL agar tidak hang/error 302
+    client.setInsecure(); 
 
     HTTPClient http;
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
 
     Serial.print("[HTTP] Menghubungkan ke URL: "); Serial.println(WEB_APP_URL);
     
-    // Mulai koneksi dengan client secure
     if (http.begin(client, WEB_APP_URL)) {
       http.addHeader("Content-Type", "application/json");
 
@@ -316,7 +321,7 @@ void kirimDataKeGoogle(float t, float h) {
       }
       http.end();
     } else {
-      Serial.println("[ERROR] Gagal menginisialisasi koneksi HTTPClient dengan client secure.");
+      Serial.println("[ERROR] Gagal menginisialisasi koneksi HTTPClient.");
       statusKirimIcon = 3;
       simpanKeBackupCard(timestampStr, t, h);
     }
@@ -330,6 +335,7 @@ void kirimDataKeGoogle(float t, float h) {
   Serial.println("----------------------------------------\n");
   waktuResetIkon = millis();
 }
+
 void setup() {
   Serial.begin(115200);
   dht.begin();
@@ -356,15 +362,9 @@ void setup() {
   display.println("Connecting WiFi...");
   display.display();
 
-  // ==========================================================
-  // INISIALISASI WIFI MANAGER
-  // ==========================================================
+  // Inisialisasi WiFi Manager
   WiFiManager wifiManager;
 
-  // Jika ingin mereset settingan wifi sebelumnya saat testing, uncomment baris bawah ini sekali:
-  // wifiManager.resetSettings();
-
-  // Menampilkan pesan ke OLED jika ESP32 masuk mode Setup AP (Access Point)
   display.clearDisplay();
   display.setCursor(0, 0);
   display.println("WiFi Setup Mode");
@@ -372,27 +372,58 @@ void setup() {
   display.println("ESP32-Sensor-Config");
   display.display();
 
-  // Nama Access Point yang dipancarkan ESP32 jika gagal konek ke WiFi tersimpan
-  bool res = wifiManager.autoConnect("ESP32-Sensor-Config", "12345678"); // Password AP bebas (min 8 karakter)
+  bool res = wifiManager.autoConnect("ESP32-Sensor-Config", "12345678");
 
   if (!res) {
     Serial.println("Gagal terhubung / Waktu habis konfigurasi");
-    display.clearDisplay();
-    display.setCursor(0, 0);
-    display.println("WiFi Setup Failed");
-    display.display();
-    // Jika gagal, alat tetap lanjut berjalan (offline/menyimpan ke backup.csv)
   } else {
     Serial.println("Berhasil terhubung ke WiFi!");
   }
 
-  // Sinkronisasi Waktu NTP Indonesia (WITA / UTC+8 atau sesuaikan zona waktu)
+  // ==========================================================
+  // KONFIGURASI ARDUINO OTA
+  // ==========================================================
+  ArduinoOTA.setHostname("ESP32-Jamur-Sensor"); // Nama hostname perangkat di jaringan lokal
+
+  // Opsional: Password untuk keamanan saat upload OTA (kosongkan jika tidak butuh password)
+  // ArduinoOTA.setPassword("admin123");
+
+  ArduinoOTA.onStart([]() {
+    String type;
+    if (ArduinoOTA.getCommand() == U_FLASH) {
+      type = "sketch";
+    } else { // U_SPIFFS
+      type = "filesystem";
+    }
+    Serial.println("Start updating " + type);
+  });
+  
+  ArduinoOTA.onEnd([]() {
+    Serial.println("\nEnd Update OTA Selesai");
+  });
+  
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    Serial.printf("Progress OTA: %u%%\r", (progress / (total / 100)));
+  });
+  
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("Error[%u]: ", error);
+    if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+    else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+    else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+    else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+    else if (error == OTA_END_ERROR) Serial.println("End Failed");
+  });
+
+  ArduinoOTA.begin();
+  Serial.println("OTA Ready");
+  // ==========================================================
+
+  // Sinkronisasi Waktu NTP
   configTime(8 * 3600, 0, "pool.ntp.org", "time.nist.gov");
 
-  // Load Config Batas Aman dari Google Sheets
+  // Load Config & Data Backup
   fetchThresholds();
-
-  // Cek & Sinkronkan Backup Data dari SD Card sebelum masuk loop
   sinkronisasiBackupData();
 
   suhuSesaat = dht.readTemperature();
@@ -406,6 +437,9 @@ void setup() {
 }
 
 void loop() {
+  // PENTING: Handle proses OTA di setiap perulangan loop
+  ArduinoOTA.handle();
+
   unsigned long waktuSekarang = millis();
 
   if (waktuSekarang - waktuTerakhirOLED >= 200) {  
