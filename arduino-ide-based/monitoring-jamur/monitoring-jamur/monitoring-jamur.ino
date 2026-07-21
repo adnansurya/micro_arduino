@@ -7,6 +7,7 @@
 #include <Adafruit_SSD1306.h>
 #include <SPI.h>
 #include <SD.h>
+#include <time.h>
 #include "config.h"
 
 // ==========================================================
@@ -17,17 +18,15 @@
 DHT dht(DHTPIN, DHTTYPE);
 
 #define BUZZER_PIN 40     // Buzzer di GPIO 40
-
-#define SD_CS_PIN 12       // Pin Chip Select (CS) Micro SD Card Reader
+#define SD_CS_PIN 12      // Pin Chip Select (CS) Micro SD Card Reader
 // ==========================================================
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 #define OLED_RESET -1
-// OLED menggunakan pin I2C default S2 Mini (SDA: 33, SCL: 34)
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-// Variabel Konfigurasi Range & Delta dari Google Sheets (dengan nilai default)
+// Variabel Konfigurasi Range & Delta dari Google Sheets
 float suhuMin = 22.0;
 float suhuMax = 28.0;
 float kelembabanMin = 70.0;
@@ -51,6 +50,18 @@ unsigned long waktuResetIkon = 0;
 // Variabel Status Indikator
 int statusKirimIcon = 0;
 bool isOutOfRange = false;  
+
+// Fungsi Mendapatkan Waktu Format: M/D/YYYY H:M:S via NTP
+String getFormattedTimestamp() {
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    return String(millis()); // Fallback ke millis jika NTP belum sinkron
+  }
+  char buffer[30];
+  // Format: M/D/YYYY H:M:S (Contoh: 7/21/2026 17:35:18)
+  strftime(buffer, sizeof(buffer), "%m/%d/%Y %H:%M:%S", &timeinfo);
+  return String(buffer);
+}
 
 void fetchThresholds() {
   if (WiFi.status() == WL_CONNECTED) {
@@ -85,35 +96,108 @@ void fetchThresholds() {
       }
     }
     http.end();
-    delay(2000);
+    delay(1000);
   }
 }
 
-// Fungsi untuk Menyimpan Data secara Lokal ke local.csv
-void simpanKeSDCard(float t, float h) {
+// Fungsi Simpan ke local.csv (Real-time normal)
+void simpanKeSDCard(String timestamp, float t, float h) {
   File dataFile = SD.open("/local.csv", FILE_APPEND);
-  
   if (dataFile) {
-    // Jika file baru/kosong, tulis header CSV terlebih dahulu
     if (dataFile.size() == 0) {
-      dataFile.println("Timestamp_Millis,Suhu,Kelembaban");
+      dataFile.println("Timestamp,Suhu,Kelembaban");
     }
-    
-    // Simpan millis saat ini sebagai penanda waktu relatif (atau bisa diganti NTP jika ada)
-    dataFile.print(millis());
+    dataFile.print(timestamp);
     dataFile.print(",");
     dataFile.print(t, 1);
     dataFile.print(",");
     dataFile.println(h, 1);
     dataFile.close();
-    
-    Serial.println("Data berhasil disimpan ke local.csv");
-  } else {
-    Serial.println("Gagal membuka local.csv untuk penulisan!");
   }
 }
 
-// Fungsi menggambar ikon pengiriman data (Ujung Kanan Bawah)
+// Fungsi Simpan ke backup.csv (Saat internet/kirim putus)
+void simpanKeBackupCard(String timestamp, float t, float h) {
+  File dataFile = SD.open("/backup.csv", FILE_APPEND);
+  if (dataFile) {
+    dataFile.print(timestamp);
+    dataFile.print(",");
+    dataFile.print(t, 1);
+    dataFile.print(",");
+    dataFile.println(h, 1);
+    dataFile.close();
+    Serial.println("Data gagal terkirim, disimpan ke backup.csv");
+  }
+}
+
+// Fungsi Sinkronisasi Data Backup saat Startup
+void sinkronisasiBackupData() {
+  if (!SD.exists("/backup.csv")) {
+    Serial.println("Tidak ada file backup.csv. Lanjut normal.");
+    return;
+  }
+
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setCursor(0, 0);
+  display.println("Syncing Backup Data...");
+  display.display();
+
+  File dataFile = SD.open("/backup.csv", FILE_READ);
+  if (!dataFile) return;
+
+  // Baca baris per baris file CSV dan bungkus ke JSON Array
+  JsonDocument doc;
+  JsonArray array = doc.to<JsonArray>();
+
+  bool headerSkipped = false;
+  while (dataFile.available()) {
+    String line = dataFile.readStringUntil('\n');
+    line.trim();
+    if (line.length() == 0) continue;
+
+    // Lewati baris header jika ada
+    if (!headerSkipped && line.startsWith("Timestamp")) {
+      headerSkipped = true;
+      continue;
+    }
+
+    // Parsing baris CSV (Timestamp,Suhu,Kelembaban)
+    int comma1 = line.indexOf(',');
+    int comma2 = line.indexOf(',', comma1 + 1);
+    if (comma1 != -1 && comma2 != -1) {
+      String ts = line.substring(0, comma1);
+      float t = line.substring(comma1 + 1, comma2).toFloat();
+      float h = line.substring(comma2 + 1).toFloat();
+
+      JsonObject obj = array.add<JsonObject>();
+      obj["timestamp"] = ts;
+      obj["suhu"] = t;
+      obj["kelembaban"] = h;
+    }
+  }
+  dataFile.close();
+
+  if (array.size() > 0 && WiFi.status() == WL_CONNECTED) {
+    String jsonPayload;
+    serializeJson(doc, jsonPayload);
+
+    HTTPClient http;
+    // Kirim dengan parameter action=sync_batch
+    http.begin(String(WEB_APP_URL) + "?action=sync_batch");
+    http.addHeader("Content-Type", "application/json");
+
+    int httpCode = http.POST(jsonPayload);
+    if (httpCode > 0) {
+      Serial.println("Sinkronisasi backup berhasil!");
+      SD.remove("/backup.csv"); // Hapus file jika sukses dikirim
+    } else {
+      Serial.println("Gagal sinkronisasi backup ke server.");
+    }
+    http.end();
+  }
+}
+
 void drawStatusIcon(int status) {
   display.setTextSize(1);
   int iconX = 118;
@@ -131,7 +215,6 @@ void drawStatusIcon(int status) {
   }
 }
 
-// Fungsi menggambar simbol Peringatan 'o'
 void drawWarningIcon(bool outOfRange) {
   if (outOfRange && digitalRead(BUZZER_PIN) == HIGH) {
     int warnX = 118;
@@ -143,8 +226,10 @@ void drawWarningIcon(bool outOfRange) {
 }
 
 void kirimDataKeGoogle(float t, float h) {
-  // 1. Simpan terlebih dahulu ke Micro SD sebelum dikirim
-  simpanKeSDCard(t, h);
+  String timestampStr = getFormattedTimestamp();
+
+  // 1. Simpan rutin ke local.csv
+  simpanKeSDCard(timestampStr, t, h);
 
   // 2. Kirim data ke Cloud (Google Sheets)
   if (WiFi.status() == WL_CONNECTED) {
@@ -153,6 +238,7 @@ void kirimDataKeGoogle(float t, float h) {
     http.addHeader("Content-Type", "application/json");
 
     JsonDocument doc;
+    doc["timestamp"] = timestampStr; // Kirim timestamp NTP ke Apps Script
     doc["suhu"] = t;
     doc["kelembaban"] = h;
 
@@ -186,7 +272,6 @@ void kirimDataKeGoogle(float t, float h) {
 
     drawStatusIcon(statusKirimIcon);
     drawWarningIcon(isOutOfRange);
-
     display.display();
 
     int httpResponseCode = http.POST(jsonPayload);
@@ -197,10 +282,12 @@ void kirimDataKeGoogle(float t, float h) {
       kelembabanTerkirim = h;
     } else {
       statusKirimIcon = 3;
+      simpanKeBackupCard(timestampStr, t, h); // Gagal kirim -> Simpan ke backup
     }
     http.end();
   } else {
     statusKirimIcon = 3;
+    simpanKeBackupCard(timestampStr, t, h); // Tidak ada WiFi -> Simpan ke backup
   }
   waktuResetIkon = millis();
 }
@@ -211,18 +298,15 @@ void setup() {
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, LOW);
 
-  // Inisialisasi I2C OLED (SDA: 33, SCL: 35)
   Wire.begin(33, 35);
 
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-    for (;;)
-      ;
+    for (;;);
   }
 
-  // Inisialisasi SPI & Micro SD Card
-  SPI.begin(7, 9, 11, SD_CS_PIN); // SCK=7, MISO=9, MOSI=11, CS=12
+  SPI.begin(7, 9, 11, SD_CS_PIN); 
   if (!SD.begin(SD_CS_PIN)) {
-    Serial.println("Inisialisasi Micro SD Gagal / Kartu tidak terdeteksi!");
+    Serial.println("Inisialisasi Micro SD Gagal!");
   } else {
     Serial.println("Micro SD Berhasil Diinisialisasi.");
   }
@@ -240,7 +324,14 @@ void setup() {
     Serial.print(".");
   }
 
+  // Sinkronisasi Waktu NTP Indonesia (WITA / UTC+8 atau sesuaikan zona waktu)
+  configTime(8 * 3600, 0, "pool.ntp.org", "time.nist.gov");
+
+  // Load Config Batas Aman dari Google Sheets
   fetchThresholds();
+
+  // Cek & Sinkronkan Backup Data dari SD Card sebelum masuk loop
+  sinkronisasiBackupData();
 
   suhuSesaat = dht.readTemperature();
   kelembabanSesaat = dht.readHumidity();
@@ -273,7 +364,6 @@ void loop() {
     }
 
     display.clearDisplay();
-
     display.setTextSize(1);
     display.setCursor(0, 0);
     display.println("MONITORING SENSOR");
@@ -298,7 +388,6 @@ void loop() {
 
     drawStatusIcon(statusKirimIcon);
     drawWarningIcon(isOutOfRange);
-
     display.display();
   }
 
