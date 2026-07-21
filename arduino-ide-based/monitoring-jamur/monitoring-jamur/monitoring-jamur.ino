@@ -5,17 +5,26 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <SPI.h>
+#include <SD.h>
 #include "config.h"
 
-#define DHTPIN 39
+// ==========================================================
+// PENYESUAIAN PIN ESP32-S2 (LOLIN S2 MINI)
+// ==========================================================
+#define DHTPIN 39         // Sensor DHT22 di GPIO 39
 #define DHTTYPE DHT22
 DHT dht(DHTPIN, DHTTYPE);
 
-#define BUZZER_PIN 40
+#define BUZZER_PIN 40     // Buzzer di GPIO 40
+
+#define SD_CS_PIN 12       // Pin Chip Select (CS) Micro SD Card Reader
+// ==========================================================
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 #define OLED_RESET -1
+// OLED menggunakan pin I2C default S2 Mini (SDA: 33, SCL: 34)
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 // Variabel Konfigurasi Range & Delta dari Google Sheets (dengan nilai default)
@@ -41,7 +50,7 @@ unsigned long waktuResetIkon = 0;
 
 // Variabel Status Indikator
 int statusKirimIcon = 0;
-bool isOutOfRange = false;  // Penanda jika data sensor keluar dari batas aman
+bool isOutOfRange = false;  
 
 void fetchThresholds() {
   if (WiFi.status() == WL_CONNECTED) {
@@ -72,26 +81,35 @@ void fetchThresholds() {
         deltaKelembaban = doc["delta_kelembaban"];
         intervalData = doc["interval_data"].as<long>() * 1000;
 
-        display.clearDisplay();
-        display.setCursor(0, 0);
-        display.println("RANGE CONFIG LOADED:");
-        display.println("---------------------");
-        display.printf("Suhu : %.1f - %.1f C\n", suhuMin, suhuMax);
-        display.printf("Humi : %.1f - %.1f %%\n", kelembabanMin, kelembabanMax);
-        display.printf("Delta T: %.1f | H: %.1f\n", deltaSuhu, deltaKelembaban);
-        display.printf("Interval: %ld s\n", intervalData / 1000);
-        display.display();
-
         Serial.println("--- CONFIG RENTANG BERHASIL DI-LOAD ---");
-      } else {
-        Serial.println("Gagal Parse JSON Config!");
       }
-    } else {
-      Serial.print("HTTP GET Config Gagal, Error: ");
-      Serial.println(http.errorToString(httpCode).c_str());
     }
     http.end();
-    delay(4000);
+    delay(2000);
+  }
+}
+
+// Fungsi untuk Menyimpan Data secara Lokal ke local.csv
+void simpanKeSDCard(float t, float h) {
+  File dataFile = SD.open("/local.csv", FILE_APPEND);
+  
+  if (dataFile) {
+    // Jika file baru/kosong, tulis header CSV terlebih dahulu
+    if (dataFile.size() == 0) {
+      dataFile.println("Timestamp_Millis,Suhu,Kelembaban");
+    }
+    
+    // Simpan millis saat ini sebagai penanda waktu relatif (atau bisa diganti NTP jika ada)
+    dataFile.print(millis());
+    dataFile.print(",");
+    dataFile.print(t, 1);
+    dataFile.print(",");
+    dataFile.println(h, 1);
+    dataFile.close();
+    
+    Serial.println("Data berhasil disimpan ke local.csv");
+  } else {
+    Serial.println("Gagal membuka local.csv untuk penulisan!");
   }
 }
 
@@ -99,7 +117,7 @@ void fetchThresholds() {
 void drawStatusIcon(int status) {
   display.setTextSize(1);
   int iconX = 118;
-  int iconY = 52;  // Koordinat bawah
+  int iconY = 52;  
 
   if (status == 1) {
     display.setCursor(iconX, iconY);
@@ -113,9 +131,8 @@ void drawStatusIcon(int status) {
   }
 }
 
-// Fungsi menggambar simbol Peringatan 'o' (Hanya muncul jika diluar range DAN buzzer sedang berbunyi)
+// Fungsi menggambar simbol Peringatan 'o'
 void drawWarningIcon(bool outOfRange) {
-  // digitalRead(BUZZER_PIN) memastikan 'o' hanya muncul saat buzzer aktif mengeluarkan suara
   if (outOfRange && digitalRead(BUZZER_PIN) == HIGH) {
     int warnX = 118;
     int warnY = 38;
@@ -126,6 +143,10 @@ void drawWarningIcon(bool outOfRange) {
 }
 
 void kirimDataKeGoogle(float t, float h) {
+  // 1. Simpan terlebih dahulu ke Micro SD sebelum dikirim
+  simpanKeSDCard(t, h);
+
+  // 2. Kirim data ke Cloud (Google Sheets)
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
     http.begin(WEB_APP_URL);
@@ -140,36 +161,29 @@ void kirimDataKeGoogle(float t, float h) {
 
     statusKirimIcon = 1;
 
-    // Tampilkan layar dengan ikon mengirim yang aktif saat proses berjalan
     display.clearDisplay();
-    // (Proses gambar ulang teks agar layar tidak berkedip kosong saat http post)
-    // Header teks (Ukuran 1)
     display.setTextSize(1);
     display.setCursor(0, 0);
     display.println("MONITORING SENSOR");
     display.println("---------------------");
 
-    // --- BARIS SUHU ---
     display.setTextSize(2);
     display.setCursor(0, 20);
-    display.print("T:");        // Menghilangkan spasi setelah titik dua
-    display.setCursor(30, 20);  // Mengunci posisi angka pas di koordinat X=22 (sangat dekat dengan ":")
+    display.print("T:");       
+    display.setCursor(30, 20);  
     display.print(suhuSesaat, 1);
 
-    // Simbol derajat Celcius digeser agar mengikuti angka
     display.setTextSize(1);
     display.print(" o");
     display.setTextSize(2);
     display.print("C");
 
-    // --- BARIS KELEMBABAN ---
     display.setCursor(0, 42);
-    display.print("H:");        // Menghilangkan spasi setelah titik dua
-    display.setCursor(30, 42);  // Mengunci posisi angka pas di koordinat X=22
+    display.print("H:");       
+    display.setCursor(30, 42);  
     display.print(kelembabanSesaat, 1);
     display.print(" %");
 
-    // Gambar Ikon Pengiriman dan Ikon Warning 'o' di sisi kanan yang sudah lowong
     drawStatusIcon(statusKirimIcon);
     drawWarningIcon(isOutOfRange);
 
@@ -197,9 +211,20 @@ void setup() {
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, LOW);
 
+  // Inisialisasi I2C OLED (SDA: 33, SCL: 35)
+  Wire.begin(33, 35);
+
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
     for (;;)
       ;
+  }
+
+  // Inisialisasi SPI & Micro SD Card
+  SPI.begin(7, 9, 11, SD_CS_PIN); // SCK=7, MISO=9, MOSI=11, CS=12
+  if (!SD.begin(SD_CS_PIN)) {
+    Serial.println("Inisialisasi Micro SD Gagal / Kartu tidak terdeteksi!");
+  } else {
+    Serial.println("Micro SD Berhasil Diinisialisasi.");
   }
 
   display.clearDisplay();
@@ -230,10 +255,7 @@ void setup() {
 void loop() {
   unsigned long waktuSekarang = millis();
 
-  // ==========================================
-  // TUGAS 1: PERBARUI TAMPILAN MONITORING UTAMA (DIPERCEPAT MENJADI SETIAP 200 MS)
-  // ==========================================
-  if (waktuSekarang - waktuTerakhirOLED >= 200) {  // <--- Ubah dari 1000 menjadi 200
+  if (waktuSekarang - waktuTerakhirOLED >= 200) {  
     waktuTerakhirOLED = waktuSekarang;
 
     float t = dht.readTemperature();
@@ -244,7 +266,6 @@ void loop() {
       kelembabanSesaat = h;
     }
 
-    // LOGIKA EVALUASI RANGE
     if (suhuSesaat < suhuMin || suhuSesaat > suhuMax || kelembabanSesaat < kelembabanMin || kelembabanSesaat > kelembabanMax) {
       isOutOfRange = true;
     } else {
@@ -253,49 +274,38 @@ void loop() {
 
     display.clearDisplay();
 
-    // Header teks (Ukuran 1)
     display.setTextSize(1);
     display.setCursor(0, 0);
     display.println("MONITORING SENSOR");
     display.println("---------------------");
 
-    // --- BARIS SUHU ---
     display.setTextSize(2);
     display.setCursor(0, 20);
-    display.print("T:");        // Menghilangkan spasi setelah titik dua
-    display.setCursor(30, 20);  // Mengunci posisi angka pas di koordinat X=22 (sangat dekat dengan ":")
+    display.print("T:");       
+    display.setCursor(30, 20);  
     display.print(suhuSesaat, 1);
 
-    // Simbol derajat Celcius digeser agar mengikuti angka
     display.setTextSize(1);
     display.print(" o");
     display.setTextSize(2);
     display.print("C");
 
-    // --- BARIS KELEMBABAN ---
     display.setCursor(0, 42);
-    display.print("H:");        // Menghilangkan spasi setelah titik dua
-    display.setCursor(30, 42);  // Mengunci posisi angka pas di koordinat X=22
+    display.print("H:");       
+    display.setCursor(30, 42);  
     display.print(kelembabanSesaat, 1);
     display.print(" %");
 
-    // Gambar Ikon Pengiriman dan Ikon Warning 'o' di sisi kanan yang sudah lowong
     drawStatusIcon(statusKirimIcon);
     drawWarningIcon(isOutOfRange);
 
     display.display();
   }
 
-  // ==========================================
-  // TUGAS 2: LOGIKA RESET TIMEOUT IKON STATUS
-  // ==========================================
   if (statusKirimIcon > 1 && (waktuSekarang - waktuResetIkon >= 5000)) {
     statusKirimIcon = 0;
   }
 
-  // ==========================================
-  // TUGAS 3: LOGIKA EVALUASI DELTA & INTERVAL PENGIRIMAN
-  // ==========================================
   float selisihSuhu = abs(suhuSesaat - suhuTerkirim);
   float selisihKelembaban = abs(kelembabanSesaat - kelembabanTerkirim);
 
@@ -307,9 +317,6 @@ void loop() {
     kirimDataKeGoogle(suhuSesaat, kelembabanSesaat);
   }
 
-  // ==========================================
-  // TUGAS 4: KONTROL ALARM BUZZER (BERDASARKAN STATUS RANGE)
-  // ==========================================
   if (isOutOfRange) {
     if (waktuSekarang - waktuTerakhirBuzzer >= 200) {
       waktuTerakhirBuzzer = waktuSekarang;
