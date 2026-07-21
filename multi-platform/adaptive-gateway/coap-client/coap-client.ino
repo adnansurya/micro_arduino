@@ -1,7 +1,5 @@
 #include <Arduino.h>
 #include <WiFiManager.h>
-#include <ElegantOTA.h>
-#include <WebServer.h>
 #include <WiFiUdp.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
@@ -10,7 +8,7 @@
 #include <coap-simple.h>
 
 // Konfigurasi Pin
-#define DHTPIN 1
+#define DHTPIN 1       // Menggunakan Pin D1
 #define DHTTYPE DHT22
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
@@ -18,25 +16,26 @@
 // Objek
 DHT dht(DHTPIN, DHTTYPE);
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
-WebServer server(80);
 WiFiUDP udp;
 Coap coap(udp);
 
 float suhu = 0, kelembaban = 0;
+unsigned long previousMillis = 0;
+const long interval = 2000;
+
+// Callback CoAP
+void callback_suhu(CoapPacket &packet, IPAddress ip, int port) {
+  String response = String(suhu) + "," + String(kelembaban);
+  coap.sendResponse(ip, port, packet.messageid, response.c_str(), response.length());
+}
 
 // Callback saat masuk mode AP
 void configModeCallback(WiFiManager *myWiFiManager) {
   display.clearDisplay();
   display.setCursor(0, 0);
   display.println("Mode Konfigurasi");
-  display.println("AP: ESP32-Monitoring");
+  display.print("AP: ESP32-Monitoring");
   display.display();
-}
-
-// Callback CoAP
-void callback_suhu(CoapPacket &packet, IPAddress ip, int port) {
-  String response = String(suhu) + "," + String(kelembaban);
-  coap.sendResponse(ip, port, packet.messageid, response.c_str(), response.length());
 }
 
 void setup() {
@@ -60,35 +59,33 @@ void setup() {
     ESP.restart();
   }
   
-  // OTA Setup
-  server.on("/", []() { server.send(200, "text/plain", "LOLIN S2 Ready"); });
-  ElegantOTA.begin(&server);
-  server.begin();
-
   // CoAP Setup
   coap.server(callback_suhu, "data");
   coap.start();
+  
+  Serial.println("System Ready!");
 }
 
 void loop() {
-  suhu = dht.readTemperature();
-  kelembaban = dht.readHumidity();
-  
-  display.clearDisplay();
-  display.setCursor(0, 0);
-  
-  // Tampilkan data sensor
-  display.print("Suhu: "); display.print(suhu); display.println(" C");
-  display.print("Hum: "); display.print(kelembaban); display.println(" %");
-  
-  // Tampilkan IP Address
-  display.println("----------------");
-  display.print("IP: ");
-  display.println(WiFi.localIP());
-  
-  display.display();
-
-  server.handleClient();
+  // CoAP loop harus selalu berjalan untuk merespon request
   coap.loop();
-  delay(2000);
+
+  // Non-blocking update data sensor dan display
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis >= interval) {
+    previousMillis = currentMillis;
+
+    suhu = dht.readTemperature();
+    kelembaban = dht.readHumidity();
+    
+    display.clearDisplay();
+    display.setCursor(0,0);
+    
+    display.print("WiFi: "); display.println(WiFi.SSID());
+    display.print("IP: "); display.println(WiFi.localIP());
+    display.println("----------------");
+    display.print("Suhu: "); display.print(suhu); display.println(" C");
+    display.print("Hum: "); display.print(kelembaban); display.println(" %");
+    display.display();
+  }
 }
