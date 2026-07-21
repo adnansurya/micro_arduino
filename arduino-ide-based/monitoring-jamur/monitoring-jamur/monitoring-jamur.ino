@@ -1,5 +1,6 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 #include <DHT.h>
 #include <ArduinoJson.h>
 #include <Wire.h>
@@ -224,68 +225,111 @@ void drawWarningIcon(bool outOfRange) {
 void kirimDataKeGoogle(float t, float h) {
   String timestampStr = getFormattedTimestamp();
 
+  Serial.println("\n----------------------------------------");
+  Serial.println("[PROSES] Memulai pengiriman data sensor...");
+  Serial.print("[INFO] Timestamp: "); Serial.println(timestampStr);
+  Serial.print("[INFO] Suhu: "); Serial.print(t, 1); Serial.println(" C");
+  Serial.print("[INFO] Kelembaban: "); Serial.print(h, 1); Serial.println(" %");
+
+  // 1. Simpan rutin ke local.csv
   simpanKeSDCard(timestampStr, t, h);
 
+  // 2. Kirim data ke Cloud (Google Sheets)
   if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("[WIFI] Status: Terhubung ke jaringan.");
+    
+    // Gunakan WiFiClientSecure untuk menangani HTTPS dan abaikan verifikasi sertifikat
+    WiFiClientSecure client;
+    client.setInsecure(); // <-- Mengabaikan verifikasi SSL agar tidak hang/error 302
+
     HTTPClient http;
-    http.begin(WEB_APP_URL);
-    http.addHeader("Content-Type", "application/json");
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
 
-    JsonDocument doc;
-    doc["timestamp"] = timestampStr; 
-    doc["suhu"] = t;
-    doc["kelembaban"] = h;
+    Serial.print("[HTTP] Menghubungkan ke URL: "); Serial.println(WEB_APP_URL);
+    
+    // Mulai koneksi dengan client secure
+    if (http.begin(client, WEB_APP_URL)) {
+      http.addHeader("Content-Type", "application/json");
 
-    String jsonPayload;
-    serializeJson(doc, jsonPayload);
+      JsonDocument doc;
+      doc["timestamp"] = timestampStr; 
+      doc["suhu"] = t;
+      doc["kelembaban"] = h;
 
-    statusKirimIcon = 1;
+      String jsonPayload;
+      serializeJson(doc, jsonPayload);
+      
+      Serial.print("[JSON] Payload yang dikirim: "); 
+      Serial.println(jsonPayload);
 
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setCursor(0, 0);
-    display.println("MONITORING SENSOR");
-    display.println("---------------------");
+      statusKirimIcon = 1;
 
-    display.setTextSize(2);
-    display.setCursor(0, 20);
-    display.print("T:");       
-    display.setCursor(30, 20);  
-    display.print(suhuSesaat, 1);
+      display.clearDisplay();
+      display.setTextSize(1);
+      display.setCursor(0, 0);
+      display.println("MONITORING SENSOR");
+      display.println("---------------------");
 
-    display.setTextSize(1);
-    display.print(" o");
-    display.setTextSize(2);
-    display.print("C");
+      display.setTextSize(2);
+      display.setCursor(0, 20);
+      display.print("T:");       
+      display.setCursor(30, 20);  
+      display.print(suhuSesaat, 1);
 
-    display.setCursor(0, 42);
-    display.print("H:");       
-    display.setCursor(30, 42);  
-    display.print(kelembabanSesaat, 1);
-    display.print(" %");
+      display.setTextSize(1);
+      display.print(" o");
+      display.setTextSize(2);
+      display.print("C");
 
-    drawStatusIcon(statusKirimIcon);
-    drawWarningIcon(isOutOfRange);
-    display.display();
+      display.setCursor(0, 42);
+      display.print("H:");       
+      display.setCursor(30, 42);  
+      display.print(kelembabanSesaat, 1);
+      display.print(" %");
 
-    int httpResponseCode = http.POST(jsonPayload);
+      drawStatusIcon(statusKirimIcon);
+      drawWarningIcon(isOutOfRange);
+      display.display();
 
-    if (httpResponseCode > 0) {
-      statusKirimIcon = 2;
-      suhuTerkirim = t;
-      kelembabanTerkirim = h;
+      Serial.println("[HTTP] Mengirim HTTP POST request...");
+      int httpResponseCode = http.POST(jsonPayload);
+
+      if (httpResponseCode > 0) {
+        Serial.print("[HTTP] Berhasil! Response Code: ");
+        Serial.println(httpResponseCode);
+        
+        String responsePayload = http.getString();
+        Serial.print("[HTTP] Response Body: ");
+        Serial.println(responsePayload);
+
+        statusKirimIcon = 2;
+        suhuTerkirim = t;
+        kelembabanTerkirim = h;
+      } else {
+        Serial.print("[ERROR] HTTP POST Gagal, Error Code: ");
+        Serial.println(httpResponseCode);
+        Serial.print("[ERROR] Keterangan: ");
+        Serial.println(http.errorToString(httpResponseCode).c_str());
+
+        statusKirimIcon = 3;
+        simpanKeBackupCard(timestampStr, t, h); 
+      }
+      http.end();
     } else {
+      Serial.println("[ERROR] Gagal menginisialisasi koneksi HTTPClient dengan client secure.");
       statusKirimIcon = 3;
-      simpanKeBackupCard(timestampStr, t, h); 
+      simpanKeBackupCard(timestampStr, t, h);
     }
-    http.end();
   } else {
+    Serial.println("[ERROR] WiFi Terputus! Tidak dapat mengirim data ke cloud.");
     statusKirimIcon = 3;
     simpanKeBackupCard(timestampStr, t, h); 
   }
+  
+  Serial.println("[PROSES] Pengiriman data selesai.");
+  Serial.println("----------------------------------------\n");
   waktuResetIkon = millis();
 }
-
 void setup() {
   Serial.begin(115200);
   dht.begin();
