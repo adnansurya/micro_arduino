@@ -14,14 +14,14 @@
 #include "config.h"
 
 // ==========================================================
-// PENYESUAIAN PIN ESP32-S2 (LOLIN S2 MINI)
+// PENYESUAIAN PIN ESP32 DEVKIT V1 (30 PIN)
 // ==========================================================
-#define DHTPIN 39         // Sensor DHT22 di GPIO 39
+#define DHTPIN 15          // Sensor DHT22 di GPIO 4
 #define DHTTYPE DHT22
 DHT dht(DHTPIN, DHTTYPE);
 
-#define BUZZER_PIN 40     // Buzzer di GPIO 40
-#define SD_CS_PIN 12      // Pin Chip Select (CS) Micro SD Card Reader
+#define BUZZER_PIN 25     // Buzzer di GPIO 25
+#define SD_CS_PIN 5       // Pin Chip Select (CS) Micro SD Card Reader (VSPI CS)
 // ==========================================================
 
 #define SCREEN_WIDTH 128
@@ -342,13 +342,15 @@ void setup() {
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, LOW);
 
-  Wire.begin(33, 35);
+  // Inisialisasi I2C OLED SSD1306 (SDA = GPIO 21, SCL = GPIO 22)
+  Wire.begin(21, 22);
 
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
     for (;;);
   }
 
-  SPI.begin(7, 9, 11, SD_CS_PIN); 
+  // Inisialisasi SPI Micro SD (SCK = 18, MISO = 19, MOSI = 23, CS = 5)
+  SPI.begin(18, 19, 23, SD_CS_PIN); 
   if (!SD.begin(SD_CS_PIN)) {
     Serial.println("Inisialisasi Micro SD Gagal!");
   } else {
@@ -372,7 +374,7 @@ void setup() {
   display.println("ESP32-Sensor-Config");
   display.display();
 
-  bool res = wifiManager.autoConnect("ESP32-Sensor-Config", "12345678");
+  bool res = wifiManager.autoConnect("ESP32-Sensor-Config");
 
   if (!res) {
     Serial.println("Gagal terhubung / Waktu habis konfigurasi");
@@ -385,8 +387,8 @@ void setup() {
   // ==========================================================
   ArduinoOTA.setHostname("ESP32-Jamur-Sensor"); // Nama hostname perangkat di jaringan lokal
 
-  // Opsional: Password untuk keamanan saat upload OTA (kosongkan jika tidak butuh password)
-  // ArduinoOTA.setPassword("admin123");
+  // Password untuk keamanan saat upload OTA
+  ArduinoOTA.setPassword("admin123");
 
   ArduinoOTA.onStart([]() {
     String type;
