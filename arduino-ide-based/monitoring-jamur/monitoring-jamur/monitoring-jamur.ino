@@ -88,7 +88,7 @@ void loadConfigFromSD() {
     int c2 = line.indexOf(',', c1 + 1);
     int c3 = line.indexOf(',', c2 + 1);
     int c4 = line.indexOf(',', c3 + 1);
-    int c5 = line.indexOf(',', c4 + 1);
+    int c5 = line.indexOf(',', c5 + 1);
     int c6 = line.indexOf(',', c5 + 1);
 
     if (c1 != -1 && c2 != -1 && c3 != -1 && c4 != -1 && c5 != -1 && c6 != -1) {
@@ -108,7 +108,6 @@ void loadConfigFromSD() {
 
 // Fungsi Menyimpan Konfigurasi ke Micro SD (config.csv)
 void saveConfigToSD(float sMin, float sMax, float hMin, float hMax, float dS, float dH, long intervalSec) {
-  // Hapus file config.csv lama agar data selalu diperbarui dengan yang terbaru
   if (SD.exists("/config.csv")) {
     SD.remove("/config.csv");
   }
@@ -173,6 +172,56 @@ void fetchThresholds() {
     }
     delay(1000);
   }
+}
+
+// Fungsi Tampil Nilai Config di OLED Selama 5 Detik
+void tampilkanConfigOLED() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+
+  display.setCursor(0, 0);
+  display.println("--- CONFIG AKTIF ---");
+
+  display.setCursor(0, 12);
+  display.print("Suhu :"); 
+  display.print(suhuMin, 1); 
+  display.print("-"); 
+  display.print(suhuMax, 1); 
+  display.println(" C");
+
+  display.setCursor(0, 22);
+  display.print("Hum  :"); 
+  display.print(kelembabanMin, 1); 
+  display.print("-"); 
+  display.print(kelembabanMax, 1); 
+  display.println(" %");
+
+  display.setCursor(0, 32);
+  display.print("dS/dH:"); 
+  display.print(deltaSuhu, 1); 
+  display.print("/"); 
+  display.print(deltaKelembaban, 1);
+
+  display.setCursor(0, 42);
+  display.print("Intvl:"); 
+  display.print(intervalData / 1000); 
+  display.println(" dtk");
+
+  display.setCursor(0, 54);
+  display.println("Memulai sistem...");
+
+  display.display();
+
+  // Print ke Serial Monitor juga untuk debugging
+  Serial.println("\n========== CONFIG AKTIF HALAMAN ==========");
+  Serial.print("Suhu Min/Max   : "); Serial.print(suhuMin); Serial.print(" / "); Serial.println(suhuMax);
+  Serial.print("Kelembaban     : "); Serial.print(kelembabanMin); Serial.print(" / "); Serial.println(kelembabanMax);
+  Serial.print("Delta Suhu/Hum : "); Serial.print(deltaSuhu); Serial.print(" / "); Serial.println(deltaKelembaban);
+  Serial.print("Interval Data  : "); Serial.print(intervalData / 1000); Serial.println(" detik");
+  Serial.println("=========================================\n");
+
+  delay(5000); // Tampilkan selama 5 detik
 }
 
 // Fungsi Simpan ke local.csv
@@ -426,7 +475,7 @@ void setup() {
     Serial.println("Micro SD Berhasil Diinisialisasi.");
   }
 
-  // LANGKAH 1: Load config awal dari Micro SD (sebelum konek WiFi / jika offline)
+  // 1. Baca config cadangan awal dari Micro SD
   loadConfigFromSD();
 
   display.clearDisplay();
@@ -436,7 +485,7 @@ void setup() {
   display.println("Menghubungkan WiFi..");
   display.display();
 
-  // Inisialisasi WiFi Manager (Tanpa Password AP)
+  // Inisialisasi WiFi Manager
   WiFiManager wifiManager;
 
   display.clearDisplay();
@@ -454,50 +503,39 @@ void setup() {
     Serial.println("Berhasil terhubung ke WiFi!");
   }
 
-  // ==========================================================
-  // KONFIGURASI ARDUINO OTA
-  // ==========================================================
+  // Konfigurasi Arduino OTA
   ArduinoOTA.setHostname("ESP32-Jamur-Sensor");
   ArduinoOTA.setPassword("admin123");
 
   ArduinoOTA.onStart([]() {
-    String type;
-    if (ArduinoOTA.getCommand() == U_FLASH) {
-      type = "sketch";
-    } else { 
-      type = "filesystem";
-    }
+    String type = (ArduinoOTA.getCommand() == U_FLASH) ? "sketch" : "filesystem";
     Serial.println("Start updating " + type);
   });
   
-  ArduinoOTA.onEnd([]() {
-    Serial.println("\nEnd Update OTA Selesai");
-  });
-  
+  ArduinoOTA.onEnd([]() { Serial.println("\nEnd Update OTA Selesai"); });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
     Serial.printf("Progress OTA: %u%%\r", (progress / (total / 100)));
   });
-  
   ArduinoOTA.onError([](ota_error_t error) {
     Serial.printf("Error[%u]: ", error);
-    if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
-    else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
-    else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
-    else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
-    else if (error == OTA_END_ERROR) Serial.println("End Failed");
   });
 
   ArduinoOTA.begin();
   Serial.println("OTA Ready");
-  // ==========================================================
 
   // Sinkronisasi Waktu NTP
   configTime(8 * 3600, 0, "pool.ntp.org", "time.nist.gov");
 
-  // LANGKAH 2: Ambil config terbaru dari Google Sheets (sekaligus memperbarui config.csv di SD Card)
+  // 2. Ambil config terbaru dari Google Sheets & simpan ke Micro SD
   fetchThresholds();
+
+  // 3. Sinkronisasi data backup offline jika ada
   sinkronisasiBackupData();
 
+  // 4. TAMPILKAN SELURUH NILAI CONFIG YANG DIGUNAKAN SELAMA 5 DETIK
+  tampilkanConfigOLED();
+
+  // Membaca sensor & kirim data pertama
   suhuSesaat = dht.readTemperature();
   kelembabanSesaat = dht.readHumidity();
 
