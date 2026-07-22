@@ -10,13 +10,13 @@
 #include <SD.h>
 #include <time.h>
 #include <WiFiManager.h>
-#include <ArduinoOTA.h> // Tambahan Library OTA
+#include <ArduinoOTA.h>
 #include "config.h"
 
 // ==========================================================
 // PENYESUAIAN PIN ESP32 DEVKIT V1 (30 PIN)
 // ==========================================================
-#define DHTPIN 15          // Sensor DHT22 di GPIO 4
+#define DHTPIN 4          // Sensor DHT22 di GPIO 4
 #define DHTTYPE DHT22
 DHT dht(DHTPIN, DHTTYPE);
 
@@ -72,7 +72,7 @@ void fetchThresholds() {
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
     display.setCursor(0, 0);
-    display.println("Fetching Config...");
+    display.println("Memuat Konfigurasi..."); // Diterjemahkan
     display.display();
 
     WiFiClientSecure client;
@@ -146,7 +146,7 @@ void sinkronisasiBackupData() {
   display.clearDisplay();
   display.setTextSize(1);
   display.setCursor(0, 0);
-  display.println("Syncing Backup Data...");
+  display.println("Sinkronisasi Cadangan.."); // Diterjemahkan
   display.display();
 
   File dataFile = SD.open("/backup.csv", FILE_READ);
@@ -272,7 +272,7 @@ void kirimDataKeGoogle(float t, float h) {
       display.clearDisplay();
       display.setTextSize(1);
       display.setCursor(0, 0);
-      display.println("MONITORING SENSOR");
+      display.println("MONITORING JAMUR"); // Diterjemahkan
       display.println("---------------------");
 
       display.setTextSize(2);
@@ -361,7 +361,7 @@ void setup() {
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
   display.setCursor(0, 0);
-  display.println("Connecting WiFi...");
+  display.println("Menghubungkan WiFi.."); // Diterjemahkan
   display.display();
 
   // Inisialisasi WiFi Manager
@@ -369,8 +369,8 @@ void setup() {
 
   display.clearDisplay();
   display.setCursor(0, 0);
-  display.println("WiFi Setup Mode");
-  display.println("Connect to AP:");
+  display.println("Mode Setup WiFi"); // Diterjemahkan
+  display.println("Hubungkan ke WiFi:"); // Diterjemahkan
   display.println("ESP32-Sensor-Config");
   display.display();
 
@@ -385,7 +385,7 @@ void setup() {
   // ==========================================================
   // KONFIGURASI ARDUINO OTA
   // ==========================================================
-  ArduinoOTA.setHostname("ESP32-Jamur-Sensor"); // Nama hostname perangkat di jaringan lokal
+  ArduinoOTA.setHostname("ESP32-Jamur-Sensor");
 
   // Password untuk keamanan saat upload OTA
   ArduinoOTA.setPassword("admin123");
@@ -394,7 +394,7 @@ void setup() {
     String type;
     if (ArduinoOTA.getCommand() == U_FLASH) {
       type = "sketch";
-    } else { // U_SPIFFS
+    } else { 
       type = "filesystem";
     }
     Serial.println("Start updating " + type);
@@ -464,7 +464,7 @@ void loop() {
     display.clearDisplay();
     display.setTextSize(1);
     display.setCursor(0, 0);
-    display.println("MONITORING SENSOR");
+    display.println("MONITORING JAMUR"); // Diterjemahkan
     display.println("---------------------");
 
     display.setTextSize(2);
