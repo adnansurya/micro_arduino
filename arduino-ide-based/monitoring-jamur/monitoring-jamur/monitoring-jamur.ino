@@ -29,7 +29,7 @@ DHT dht(DHTPIN, DHTTYPE);
 #define OLED_RESET -1
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-// Variabel Konfigurasi Range & Delta dari Google Sheets
+// Variabel Konfigurasi Range & Delta dari Google Sheets / SD Card
 float suhuMin = 22.0;
 float suhuMax = 28.0;
 float kelembabanMin = 70.0;
@@ -65,6 +65,71 @@ String getFormattedTimestamp() {
   return String(buffer);
 }
 
+// Fungsi Membaca Konfigurasi dari Micro SD (config.csv)
+void loadConfigFromSD() {
+  if (!SD.exists("/config.csv")) {
+    Serial.println("[SD] File config.csv tidak ditemukan. Menggunakan nilai default.");
+    return;
+  }
+
+  File configFile = SD.open("/config.csv", FILE_READ);
+  if (!configFile) {
+    Serial.println("[SD] Gagal membuka file config.csv!");
+    return;
+  }
+
+  // Format CSV: suhu_min,suhu_max,kelembaban_min,kelembaban_max,delta_suhu,delta_kelembaban,interval_data
+  while (configFile.available()) {
+    String line = configFile.readStringUntil('\n');
+    line.trim();
+    if (line.length() == 0 || line.startsWith("suhu_min")) continue; // Lewati baris kosong atau header
+
+    int c1 = line.indexOf(',');
+    int c2 = line.indexOf(',', c1 + 1);
+    int c3 = line.indexOf(',', c2 + 1);
+    int c4 = line.indexOf(',', c3 + 1);
+    int c5 = line.indexOf(',', c4 + 1);
+    int c6 = line.indexOf(',', c5 + 1);
+
+    if (c1 != -1 && c2 != -1 && c3 != -1 && c4 != -1 && c5 != -1 && c6 != -1) {
+      suhuMin = line.substring(0, c1).toFloat();
+      suhuMax = line.substring(c1 + 1, c2).toFloat();
+      kelembabanMin = line.substring(c2 + 1, c3).toFloat();
+      kelembabanMax = line.substring(c3 + 1, c4).toFloat();
+      deltaSuhu = line.substring(c4 + 1, c5).toFloat();
+      deltaKelembaban = line.substring(c5 + 1, c6).toFloat();
+      intervalData = line.substring(c6 + 1).toFloat() * 1000;
+
+      Serial.println("--- CONFIG BERHASIL DIBACA DARI MICRO SD ---");
+    }
+  }
+  configFile.close();
+}
+
+// Fungsi Menyimpan Konfigurasi ke Micro SD (config.csv)
+void saveConfigToSD(float sMin, float sMax, float hMin, float hMax, float dS, float dH, long intervalSec) {
+  // Hapus file config.csv lama agar data selalu diperbarui dengan yang terbaru
+  if (SD.exists("/config.csv")) {
+    SD.remove("/config.csv");
+  }
+
+  File configFile = SD.open("/config.csv", FILE_WRITE);
+  if (configFile) {
+    configFile.println("suhu_min,suhu_max,kelembaban_min,kelembaban_max,delta_suhu,delta_kelembaban,interval_data");
+    configFile.print(sMin); configFile.print(",");
+    configFile.print(sMax); configFile.print(",");
+    configFile.print(hMin); configFile.print(",");
+    configFile.print(hMax); configFile.print(",");
+    configFile.print(dS);   configFile.print(",");
+    configFile.print(dH);   configFile.print(",");
+    configFile.println(intervalSec);
+    configFile.close();
+    Serial.println("[SD] Konfigurasi baru berhasil disimpan ke config.csv");
+  } else {
+    Serial.println("[SD] Gagal menyimpan config.csv!");
+  }
+}
+
 void fetchThresholds() {
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
@@ -72,7 +137,7 @@ void fetchThresholds() {
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
     display.setCursor(0, 0);
-    display.println("Memuat Konfigurasi..."); // Diterjemahkan
+    display.println("Memuat Konfigurasi...");
     display.display();
 
     WiFiClientSecure client;
@@ -95,9 +160,13 @@ void fetchThresholds() {
           kelembabanMax = doc["kelembaban_max"];
           deltaSuhu = doc["delta_suhu"];
           deltaKelembaban = doc["delta_kelembaban"];
-          intervalData = doc["interval_data"].as<long>() * 1000;
+          long intervalSec = doc["interval_data"].as<long>();
+          intervalData = intervalSec * 1000;
 
-          Serial.println("--- CONFIG RENTANG BERHASIL DI-LOAD ---");
+          Serial.println("--- CONFIG RENTANG BERHASIL DI-LOAD DARI WEB ---");
+
+          // Simpan konfigurasi yang didapat dari web ke Micro SD
+          saveConfigToSD(suhuMin, suhuMax, kelembabanMin, kelembabanMax, deltaSuhu, deltaKelembaban, intervalSec);
         }
       }
       http.end();
@@ -146,7 +215,7 @@ void sinkronisasiBackupData() {
   display.clearDisplay();
   display.setTextSize(1);
   display.setCursor(0, 0);
-  display.println("Sinkronisasi Cadangan.."); // Diterjemahkan
+  display.println("Sinkronisasi Cadangan..");
   display.display();
 
   File dataFile = SD.open("/backup.csv", FILE_READ);
@@ -272,7 +341,7 @@ void kirimDataKeGoogle(float t, float h) {
       display.clearDisplay();
       display.setTextSize(1);
       display.setCursor(0, 0);
-      display.println("MONITORING JAMUR"); // Diterjemahkan
+      display.println("MONITORING JAMUR");
       display.println("---------------------");
 
       display.setTextSize(2);
@@ -357,20 +426,23 @@ void setup() {
     Serial.println("Micro SD Berhasil Diinisialisasi.");
   }
 
+  // LANGKAH 1: Load config awal dari Micro SD (sebelum konek WiFi / jika offline)
+  loadConfigFromSD();
+
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
   display.setCursor(0, 0);
-  display.println("Menghubungkan WiFi.."); // Diterjemahkan
+  display.println("Menghubungkan WiFi..");
   display.display();
 
-  // Inisialisasi WiFi Manager
+  // Inisialisasi WiFi Manager (Tanpa Password AP)
   WiFiManager wifiManager;
 
   display.clearDisplay();
   display.setCursor(0, 0);
-  display.println("Mode Setup WiFi"); // Diterjemahkan
-  display.println("Hubungkan ke WiFi:"); // Diterjemahkan
+  display.println("Mode Setup WiFi");
+  display.println("Hubungkan ke WiFi:");
   display.println("ESP32-Sensor-Config");
   display.display();
 
@@ -386,8 +458,6 @@ void setup() {
   // KONFIGURASI ARDUINO OTA
   // ==========================================================
   ArduinoOTA.setHostname("ESP32-Jamur-Sensor");
-
-  // Password untuk keamanan saat upload OTA
   ArduinoOTA.setPassword("admin123");
 
   ArduinoOTA.onStart([]() {
@@ -424,7 +494,7 @@ void setup() {
   // Sinkronisasi Waktu NTP
   configTime(8 * 3600, 0, "pool.ntp.org", "time.nist.gov");
 
-  // Load Config & Data Backup
+  // LANGKAH 2: Ambil config terbaru dari Google Sheets (sekaligus memperbarui config.csv di SD Card)
   fetchThresholds();
   sinkronisasiBackupData();
 
@@ -439,7 +509,6 @@ void setup() {
 }
 
 void loop() {
-  // PENTING: Handle proses OTA di setiap perulangan loop
   ArduinoOTA.handle();
 
   unsigned long waktuSekarang = millis();
@@ -464,7 +533,7 @@ void loop() {
     display.clearDisplay();
     display.setTextSize(1);
     display.setCursor(0, 0);
-    display.println("MONITORING JAMUR"); // Diterjemahkan
+    display.println("MONITORING JAMUR");
     display.println("---------------------");
 
     display.setTextSize(2);
