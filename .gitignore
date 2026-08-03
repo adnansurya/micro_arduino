@@ -3,3 +3,4 @@
 /arduino-ide-based/pemetik-cabai/ota-servo-driver/build
 arduino-ide-based/mqtt-smart-home/mqtt-smarthome-telegram/secret.h
 /development/aquatron/aquatron-ota/build
+arduino-ide-based/smart-door-lock-telegram/esp32cam-telegram-relay-pir/config.h
