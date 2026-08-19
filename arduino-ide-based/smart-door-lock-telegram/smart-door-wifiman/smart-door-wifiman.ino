@@ -355,7 +355,7 @@ void setup() {
   Serial.println("\nWiFi Connected!");
   blinkLED(2, 200);
 
-  configTime(0, 0, "id.pool.ntp.org");
+  configTime(0, 0, "pool.ntp.org");
   time_t now = time(nullptr);
   while (now < 24 * 3600) {
     delay(100);
