@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <ArduinoOTA.h>  // Library pendukung OTA
 #include "soc/soc.h"
 #include "soc/rtc_cntl_reg.h"
 #include "esp_camera.h"
@@ -49,8 +50,54 @@ unsigned long lastTimeBotRan;
 // Status PIR Sensor
 int lastPirState = LOW;
 
-// ID Pembaruan Telegram (Update ID) untuk melacak pesan yang sudah dibaca
+// ID Pembaruan Telegram (Update ID)
 long lastUpdateId = 0;
+
+// ================= HELPER LED BLINK =================
+void blinkLED(int count, int delayMs) {
+  for (int i = 0; i < count; i++) {
+    digitalWrite(FLASH_LED_PIN, HIGH);
+    delay(delayMs);
+    digitalWrite(FLASH_LED_PIN, LOW);
+    delay(delayMs);
+  }
+}
+
+// ================= INISIALISASI OTA =================
+void setupOTA() {
+  // Nama hostname yang akan muncul di port Arduino IDE
+  ArduinoOTA.setHostname("ESP32-CAM-Security");
+
+  // Kata sandi opsional saat proses flash OTA (kosongkan jika tidak perlu)
+  // ArduinoOTA.setPassword("admin123");
+
+  ArduinoOTA
+    .onStart([]() {
+      String type;
+      if (ArduinoOTA.getCommand() == U_FLASH)
+        type = "sketch";
+      else // U_SPIFFS
+        type = "filesystem";
+      Serial.println("Mulai update OTA: " + type);
+    })
+    .onEnd([]() {
+      Serial.println("\nUpdate OTA Selesai!");
+    })
+    .onProgress([](unsigned int progress, unsigned int total) {
+      Serial.printf("Progress OTA: %u%%\r", (progress / (total / 100)));
+    })
+    .onError([](ota_error_t error) {
+      Serial.printf("Error[%u]: ", error);
+      if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+      else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+      else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+      else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+      else if (error == OTA_END_ERROR) Serial.println("End Failed");
+    });
+
+  ArduinoOTA.begin();
+  Serial.println("OTA Service Siap!");
+}
 
 // ================= INISIALISASI KAMERA =================
 void configInitCamera() {
@@ -198,15 +245,12 @@ void processCommand(String chat_id, String text) {
     bot.sendMessage(SECRET_CHAT_ID, welcome, "");
   } 
   else if (text == "/unlock") {
-    // 1. Nyalakan Relay (Buka Kunci)
     digitalWrite(RELAY_PIN, RELAY_ON);
     bot.sendMessage(SECRET_CHAT_ID, "🔓 Pintu Dibuka! (Akan terkunci otomatis dalam 5 detik)", "");
     Serial.println("Relay ON: Solenoid Unlocked");
 
-    // 2. Tahan selama 5 detik (5000 ms)
     delay(5000);
 
-    // 3. Matikan Relay Kembali (Kunci Pintu)
     digitalWrite(RELAY_PIN, RELAY_OFF);
     bot.sendMessage(SECRET_CHAT_ID, "🔒 Pintu telah Terkunci Kembali otomatis.", "");
     Serial.println("Relay OFF: Solenoid Locked Automatically");
@@ -285,16 +329,6 @@ void checkTelegramMessagesManual() {
   }
 }
 
-// ================= HELPER LED BLINK =================
-void blinkLED(int count, int delayMs) {
-  for (int i = 0; i < count; i++) {
-    digitalWrite(FLASH_LED_PIN, HIGH);
-    delay(delayMs);
-    digitalWrite(FLASH_LED_PIN, LOW);
-    delay(delayMs);
-  }
-}
-
 // ================= SETUP =================
 void setup() {
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
@@ -303,8 +337,8 @@ void setup() {
   pinMode(FLASH_LED_PIN, OUTPUT);
   digitalWrite(FLASH_LED_PIN, LOW);
 
-  // 🔴 BLINK SAAT PERTAMA KALI NYALA (KEDIP 3 KALI NGEBAS/CEPAT)
-  blinkLED(3, 100); 
+  // 🔴 BLINK SAAT PERTAMA KALI NYALA (3 KALI CEPAAT)
+  blinkLED(3, 100);
 
   pinMode(RELAY_PIN, OUTPUT);
   digitalWrite(RELAY_PIN, RELAY_OFF);
@@ -324,8 +358,11 @@ void setup() {
   }
   Serial.println("\nWiFi Connected!");
 
-  // 🟢 BLINK LAGI 2 KALI SEBAGAI TANDA WI-FI SUDAH TERHUBUNG
+  // 🟢 BLINK 2 KALI SETELAH TERHUBUNG KE WIFI
   blinkLED(2, 200);
+
+  // Inisialisasi OTA
+  setupOTA();
 
   configTime(0, 0, "id.pool.ntp.org");
   time_t now = time(nullptr);
@@ -335,11 +372,14 @@ void setup() {
     now = time(nullptr);
   }
 
-  bot.sendMessage(SECRET_CHAT_ID, "🚨 Sistem Keamanan Aktif & Terhubung (Manual GetUpdates)!", "");
+  bot.sendMessage(SECRET_CHAT_ID, "🚨 Sistem Keamanan Aktif, Terhubung & OTA Ready!", "");
 }
 
 // ================= LOOP =================
 void loop() {
+  // ⚡ LAYANI PROSES OTA (SANGAT WAJIB DIPANGGIL DI LOOP)
+  ArduinoOTA.handle();
+
   // 1. Pengecekan Sensor PIR Motion
   int currentPirState = digitalRead(PIR_PIN);
   if (currentPirState == HIGH && lastPirState == LOW) {
