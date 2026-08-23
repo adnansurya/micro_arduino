@@ -23,9 +23,9 @@
 #define OTA_TRIGGER_PIN 19
 WebServer server(80); 
 
-// 2. Konfigurasi Sensor Suhu (DS18B20) - MENGGUNAKAN 2 PIN TERPISAH
+// 2. Konfigurasi Sensor Suhu (DS18B20) - MENGGUNAKAN PIN 13 DAN 25
 #define ONE_WIRE_BUS_1 13  // Pin Sensor Suhu Main Tank
-#define ONE_WIRE_BUS_2 15  // Pin Sensor Suhu Reservoir Tank
+#define ONE_WIRE_BUS_2 25  // Pin Sensor Suhu Reservoir Tank (Aman dari Wi-Fi & Booting)
 
 OneWire oneWire1(ONE_WIRE_BUS_1);
 DallasTemperature sensors1(&oneWire1);
@@ -53,7 +53,7 @@ float mainMinWaterLevel = 0.0;
 float reservoirMinWaterLevel = 0.0;
 
 // Variabel Konfigurasi Waktu & Durasi Feeding Dynamic
-String feedingTime = "00:00"; 
+String feedingTime = "07:20, 21:20"; 
 int delayFeeder = 0; // Durasi Murni tanpa Pembatasan Minimum     
 int hariTerakhirReset = -1; 
 
@@ -120,6 +120,16 @@ float nilaiPH = 7.00;
 String dummyPompa1 = "OFF";         
 String dummyPompa2 = "OFF";         
 
+// FUNGSI HELPER: Dapatkan Jumlah Sesi Feeding
+int hitungJumlahSesiFeeding(String str) {
+  if (str.length() == 0) return 0;
+  int count = 1;
+  for (int i = 0; i < str.length(); i++) {
+    if (str.charAt(i) == ',') count++;
+  }
+  return count;
+}
+
 // FUNGSI KALKULASI DURASI FEEDER DINAMIS (RUMUS BIOMASSA)
 float durasiAlat(int day, int totalIkan) {
   const float fr = 0.05;
@@ -138,15 +148,19 @@ float durasiAlat(int day, int totalIkan) {
     }
   }
 
+  int jumlahSesi = hitungJumlahSesiFeeding(feedingTime);
+  if (jumlahSesi < 1) jumlahSesi = 1;
+
   float biomassa = totalIkan * beratPerEkor;
   float pakanPerHari = biomassa * fr;
-  float porsi = pakanPerHari / 2.0;
-  float durasi = porsi / debitAlat; // Durasi dalam Detik
+  float porsiPerSesi = pakanPerHari / (float)jumlahSesi; 
+  float durasi = porsiPerSesi / debitAlat; // Durasi dalam Detik
 
   Serial.print("[CALC] Hari ke-"); Serial.println(day);
+  Serial.print("[CALC] Jumlah Sesi Makan: "); Serial.println(jumlahSesi);
   Serial.print("[CALC] Berat per Ekor: "); Serial.println(beratPerEkor, 6);
   Serial.print("[CALC] Biomassa: "); Serial.println(biomassa, 6);
-  Serial.print("[CALC] Durasi (Detik): "); Serial.println(durasi, 4);
+  Serial.print("[CALC] Durasi per Sesi (Detik): "); Serial.println(durasi, 4);
 
   return durasi;
 }
@@ -293,7 +307,7 @@ void setup() {
   pinMode(TRIG_PIN_1, OUTPUT); pinMode(ECHO_PIN_1, INPUT);
   pinMode(TRIG_PIN_2, OUTPUT); pinMode(ECHO_PIN_2, INPUT);
 
-  // Inisialisasi Dua Sensor Suhu Terpisah
+  // Inisialisasi Dua Sensor Suhu Terpisah (Pin 13 & 25)
   sensors1.begin();
   sensors2.begin();
   
@@ -387,7 +401,7 @@ void setup() {
     if (jsonData.success) reservoirMinWaterLevel = jsonData.to<float>(); else reservoirMinWaterLevel = 10.0;
 
     jsonResult.get(jsonData, "feedingTime");
-    if (jsonData.success) feedingTime = jsonData.to<String>(); else feedingTime = "08:00";
+    if (jsonData.success) feedingTime = jsonData.to<String>(); else feedingTime = "07:20, 21:20";
 
     jsonResult.get(jsonData, "startingDate");
     if (jsonData.success) startingDate = jsonData.to<String>(); else startingDate = "17/08/2026";
@@ -400,7 +414,7 @@ void setup() {
     Serial.print("[CONFIG] Gagal mengambil JSON Config: "); Serial.println(fbdo.errorReason());
     mainSensorHeight = 50.0; reservoirSensorHeight = 50.0;
     mainMinWaterLevel = 10.0; reservoirMinWaterLevel = 10.0;
-    feedingTime = "08:00";
+    feedingTime = "07:20, 21:20";
     startingDate = "17/08/2026";
     fishCount = 30;
   }
@@ -417,10 +431,8 @@ void setup() {
   lcd.setCursor(0, 0); 
   lcd.print("FEEDING TIME:");
   lcd.setCursor(0, 1); 
-  lcd.print(feedingTime);
-  lcd.print(" ("); 
-  lcd.print((float)delayFeeder / 1000.0, 2); 
-  lcd.print("s)");
+  lcd.print(feedingTime.substring(0, 10)); // Potong layar jika terlalu panjang
+  lcd.print("..");
   delay(3000); 
   
   lcd.clear();
@@ -438,7 +450,7 @@ void loop() {
   suhu1 = sensors1.getTempCByIndex(0); // Main Tank (GPIO 13)
 
   sensors2.requestTemperatures();
-  suhu2 = sensors2.getTempCByIndex(0); // Reservoir Tank (GPIO 15)
+  suhu2 = sensors2.getTempCByIndex(0); // Reservoir Tank (GPIO 25)
   
   jarak1 = bacaJarak(TRIG_PIN_1, ECHO_PIN_1);
   jarak2 = bacaJarak(TRIG_PIN_2, ECHO_PIN_2);
@@ -467,7 +479,7 @@ void loop() {
   if (airMainLow || airReservoirLow) statusDaruratAir = true; else statusDaruratAir = false;
 
   // ==========================================
-  // 2. CHECK PERUBAHAN JAM & BERGANTI HARI
+  // 2. CHECK PERUBAHAN JAM & BERGANTI HARI & MULTI FEEDING JADWAL
   // ==========================================
   if (getLocalTime(&timeinfo)) {
     if (timeinfo.tm_hour != lastCheckedHour) {
@@ -478,7 +490,7 @@ void loop() {
     char jamSekarangStr[6];
     sprintf(jamSekarangStr, "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
     
-    // Pergantian hari: hitung ulang biomassa pakan
+    // Pergantian hari: hitung ulang biomassa pakan & reset status makan harian ke 0
     if (timeinfo.tm_mday != hariTerakhirReset) {
       Serial.println("[FEEDER] Hari berganti. Perbarui delayFeeder & Reset feedingToday...");
       kalkulasiDelayFeederOtomatis(); 
@@ -488,15 +500,42 @@ void loop() {
       }
     }
 
-    if (feedingTime.equalsIgnoreCase(jamSekarangStr)) {
-      if (Firebase.RTDB.getInt(&fbdo, "test/feeder/feedingToday")) {
-        int statusFeeding = fbdo.to<int>();
-        if (statusFeeding == 0) {
-          jalankanFeeder();
-          Serial.println("[FEEDER] Update status feedingToday ke Firebase -> 1");
-          Firebase.RTDB.setInt(&fbdo, "test/feeder/feedingToday", 1);
+    // LOGIKA MULTI-JADWAL FEEDING
+    int indexSesi = 0;
+    int strLen = feedingTime.length();
+    int startIdx = 0;
+
+    while (startIdx < strLen) {
+      int commaIdx = feedingTime.indexOf(',', startIdx);
+      if (commaIdx == -1) commaIdx = strLen;
+
+      String subTime = feedingTime.substring(startIdx, commaIdx);
+      subTime.trim(); // Hilangkan spasi jika ada "7:20, 21:20"
+
+      // Format jam dengan 2 digit jika ada input "7:20" -> "07:20"
+      if (subTime.length() == 4 && subTime.charAt(1) == ':') {
+        subTime = "0" + subTime;
+      }
+
+      if (subTime.equalsIgnoreCase(jamSekarangStr)) {
+        if (Firebase.RTDB.getInt(&fbdo, "test/feeder/feedingToday")) {
+          int maskFeeding = fbdo.to<int>();
+          int bitCheck = (1 << indexSesi);
+
+          // Jika bit ke-indexSesi masih 0 (belum dimakan), jalankan feeder
+          if ((maskFeeding & bitCheck) == 0) {
+            jalankanFeeder();
+            maskFeeding |= bitCheck; // Tandai sesi ini sudah dijalankan
+            Serial.print("[FEEDER] Sesi ke-"); Serial.print(indexSesi + 1);
+            Serial.print(" Selesai! Update status feedingToday Mask ke -> "); Serial.println(maskFeeding);
+            
+            Firebase.RTDB.setInt(&fbdo, "test/feeder/feedingToday", maskFeeding);
+          }
         }
       }
+
+      indexSesi++;
+      startIdx = commaIdx + 1;
     }
   }
 
