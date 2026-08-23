@@ -47,10 +47,14 @@ float tinggiAir2 = 0.0;
 float mainMinWaterLevel = 0.0;
 float reservoirMinWaterLevel = 0.0;
 
-// Variabel Konfigurasi Waktu & Durasi Feeding
+// Variabel Konfigurasi Waktu & Durasi Feeding Dynamic
 String feedingTime = "00:00"; 
 int delayFeeder = 3000;      
 int hariTerakhirReset = -1; 
+
+// Parameter Baru Ikan dari Firebase Config
+String startingDate = "01/01/2026";
+int fishCount = 0;
 
 // Status Tracking untuk Darurat pH dan Air
 bool statusDaruratPH = false; 
@@ -93,11 +97,11 @@ bool toggleTask = true;
 bool firebaseReadyToTrigger = true;   
 
 unsigned long changePagePrevMillis = 0;
-const long pageInterval = 2000;       
+const long pageInterval = 2000;      
 
 // Variabel Kontrol Tampilan LCD
 int currentPage = 0; 
-int iconStatus = 0;                                    
+int iconStatus = 0;                                     
 unsigned long iconTurnOffMillis = 0;
 
 // Byte kustom untuk karakter panah
@@ -111,15 +115,82 @@ float nilaiPH = 7.00;
 String dummyPompa1 = "OFF";         
 String dummyPompa2 = "OFF";         
 
+// FUNGSI KALKULASI DURASI FEEDER DINAMIS (RUMUS BIOMASSA)
+float durasiAlat(int day, int totalIkan) {
+  const float fr = 0.05;
+  const float debitAlat = 0.06;
+
+  float beratPerEkor = 0.0;
+
+  if (day >= 5) {
+    beratPerEkor = 0.0003;
+    for (int i = 0; i < day - 4; i++) {
+      if (i == 0) {
+        continue;
+      } else {
+        beratPerEkor = beratPerEkor * 1.0409;
+      }
+    }
+  }
+
+  float biomassa = totalIkan * beratPerEkor;
+  float pakanPerHari = biomassa * fr;
+  float porsi = pakanPerHari / 2.0;
+  float durasi = porsi / debitAlat; // Durasi dalam Detik
+
+  Serial.print("[CALC] Hari ke-"); Serial.println(day);
+  Serial.print("[CALC] Berat per Ekor: "); Serial.println(beratPerEkor, 6);
+  Serial.print("[CALC] Biomassa: "); Serial.println(biomassa, 6);
+  Serial.print("[CALC] Durasi (Detik): "); Serial.println(durasi, 4);
+
+  return durasi;
+}
+
+// FUNGSI MENGHITUNG SELISIH HARI DARI TANGGAL START ("DD/MM/YYYY")
+int hitungHari(String dateStr) {
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) return 1; // Fallback jika gagal waktu
+
+  int dayStart = 0, monthStart = 0, yearStart = 0;
+  sscanf(dateStr.c_str(), "%d/%d/%d", &dayStart, &monthStart, &yearStart);
+
+  struct tm startTm = {0};
+  startTm.tm_mday = dayStart;
+  startTm.tm_mon = monthStart - 1; // Month 0-11
+  startTm.tm_year = yearStart - 1900;
+
+  time_t tStart = mktime(&startTm);
+  time_t tNow;
+  time(&tNow);
+
+  double diffSeconds = difftime(tNow, tStart);
+  int diffDays = (int)(diffSeconds / (60 * 60 * 24));
+
+  if (diffDays < 1) diffDays = 1; // Minimal hari ke-1
+  return diffDays;
+}
+
+// FUNGSI UPDATE FEEDER DELAY OTOMATIS
+void kalkulasiDelayFeederOtomatis() {
+  int totalHari = hitungHari(startingDate);
+  float durasiDetik = durasiAlat(totalHari, fishCount);
+  
+  // Konversi detik ke milidetik (ms)
+  delayFeeder = (int)(durasiDetik * 1000.0);
+  
+  // Safety Guard: minimal durasi semprot/putar 1000ms jika hari < 5 / nilai sangat kecil
+  if (delayFeeder < 1000) delayFeeder = 1000;
+  
+  Serial.print("[FEEDER] Delay Feeder Diperbarui: ");
+  Serial.print(delayFeeder);
+  Serial.println(" ms");
+}
+
 // FUNGSI KALKULASI RUMUS PH REGRESI LINIER
 float hitungPH(int adcRaw) {
-  // Menggunakan koefisien hasil regresi: m = -0.0064, c = 20.21
   float phHasil = (adcRaw * -0.0064) + 20.21;
-  
-  // Memastikan nilai pH berada dalam rentang valid (0.0 - 14.0)
   if (phHasil < 0.0) phHasil = 0.0;
   if (phHasil > 14.0) phHasil = 14.0;
-  
   return phHasil;
 }
 
@@ -185,8 +256,9 @@ void printDebugData() {
   Serial.print("Nilai pH Real Sensor           : "); Serial.println(nilaiPH, 2);
   Serial.print("Status Emergency Mode pH       : "); Serial.println(statusDaruratPH ? "AKTIF" : "STANDBY");
   Serial.print("Status Emergency Mode Air      : "); Serial.println(statusDaruratAir ? "DANGER (LOW WATER)" : "AMAN");
+  Serial.print("Tanggal Mulai & Jumlah Ikan    : "); Serial.print(startingDate); Serial.print(" | "); Serial.print(fishCount); Serial.println(" ekor");
   Serial.print("Jadwal Feeding Terpasang       : "); Serial.println(feedingTime);
-  Serial.print("Durasi Delay Feeder            : "); Serial.print(delayFeeder); Serial.println(" ms");
+  Serial.print("Durasi Delay Feeder Hasil Calc : "); Serial.print(delayFeeder); Serial.println(" ms");
   Serial.println("======================================");
 }
 
@@ -203,7 +275,7 @@ float bacaJarak(int trigPin, int echoPin) {
 void setup() {
   Serial.begin(115200);
 
-  // 1. Amankan Pin Relay & Input Utama Terlebih Dahulu (Mencegah Hotspot Gagal)
+  // 1. Amankan Pin Relay & Input Utama Terlebih Dahulu
   pinMode(OTA_TRIGGER_PIN, INPUT_PULLUP);
   pinMode(RELAY_PUMP_1, OUTPUT);
   pinMode(RELAY_PUMP_2, OUTPUT);
@@ -225,18 +297,18 @@ void setup() {
   lcd.createChar(0, panahAtas); 
   lcd.createChar(1, panahBawah); 
   
-  // WELCOME SCREEN AQUATRON APP
+  // WELCOME SCREEN
   lcd.clear();
   lcd.setCursor(2, 0);               
   lcd.print("AQUATRON APP");
-  delay(3000);                       
+  delay(3000);                      
   
-  // 2. Jalankan WiFiManager Tepat Setelah Welcome Screen
+  // 2. Jalankan WiFiManager
   lcd.clear();
   lcd.setCursor(0, 0); lcd.print("Memulai WiFi...");
 
   WiFiManager wm;
-  wm.setConfigPortalTimeout(180); // Batas portal aktif 3 menit agar tidak hang jika ditinggal
+  wm.setConfigPortalTimeout(180); 
   lcd.setCursor(0, 1); lcd.print("Cek AP: ESP32...");
   
   if (!wm.autoConnect("ESP32_Aquatron_AP")) {
@@ -247,17 +319,15 @@ void setup() {
   Serial.println("\nTersambung ke Wi-Fi!");
   lcd.clear(); lcd.print("WiFi Terhubung!");
   
-  // 3. Aktifkan Pin pH Setelah Wi-Fi Berhasil Terhubung (Solusi Isolasi AP)
+  // 3. Aktifkan Pin pH
   pinMode(phPin, INPUT);
   delay(500);
 
-  // PENGECEKAN MODE OTA TEPAT SETELAH WIFI TERHUBUNG
+  // PENGECEKAN MODE OTA
   if (digitalRead(OTA_TRIGGER_PIN) == LOW) {
     lcd.clear();
     lcd.setCursor(0, 0); lcd.print("   MODE OTA   ");
     lcd.setCursor(0, 1); lcd.print(WiFi.localIP().toString());
-    Serial.print("\n[OTA] Masuk Mode OTA Statis! Buka: http://");
-    Serial.println(WiFi.localIP());
 
     server.on("/", []() {
       server.send(200, "text/plain", "ESP32 Mode OTA Aktif setelah Booting Wi-Fi.");
@@ -271,9 +341,6 @@ void setup() {
       delay(1);
     }
     
-    Serial.println("[OTA] Pin dilepas, merestart ESP32 ke mode normal...");
-    lcd.clear(); lcd.print("Restarting...");
-    delay(1000);
     ESP.restart();
   }
 
@@ -294,7 +361,7 @@ void setup() {
   Firebase.reconnectWiFi(true);
   Firebase.begin(&config, &auth);
 
-  // LOAD ALL CONFIG DALAM SATU JSON BESAR (SINGLE FETCH)
+  // LOAD ALL CONFIG DALAM SATU JSON BESAR
   lcd.clear(); lcd.print("Load Config...");
   Serial.println("\n[CONFIG] Mengunduh seluruh node /test/config dalam 1 JSON...");
 
@@ -315,41 +382,42 @@ void setup() {
     if (jsonData.success) reservoirMinWaterLevel = jsonData.to<float>(); else reservoirMinWaterLevel = 10.0;
 
     jsonResult.get(jsonData, "feedingTime");
-    if (jsonData.success) {
-      feedingTime = jsonData.to<String>();
-    } else { 
-      feedingTime = "08:00"; 
-    }
+    if (jsonData.success) feedingTime = jsonData.to<String>(); else feedingTime = "08:00";
 
-    jsonResult.get(jsonData, "delayFeeder");
-    if (jsonData.success) {
-      delayFeeder = jsonData.to<int>();
-    } else {
-      delayFeeder = 3000; 
-    }
+    // TAMBAHAN: Fetch startingDate & fishCount
+    jsonResult.get(jsonData, "startingDate");
+    if (jsonData.success) startingDate = jsonData.to<String>(); else startingDate = "17/08/2026";
+
+    jsonResult.get(jsonData, "fishCount");
+    if (jsonData.success) fishCount = jsonData.to<int>(); else fishCount = 30;
+
   } 
   else {
     Serial.print("[CONFIG] Gagal mengambil JSON Config: "); Serial.println(fbdo.errorReason());
     mainSensorHeight = 50.0; reservoirSensorHeight = 50.0;
     mainMinWaterLevel = 10.0; reservoirMinWaterLevel = 10.0;
     feedingTime = "08:00";
-    delayFeeder = 3000;
+    startingDate = "17/08/2026";
+    fishCount = 30;
   }
+
+  // Hitung delayFeeder otomatis pertama kali
+  kalkulasiDelayFeederOtomatis();
 
   if (getLocalTime(&timeinfo)) {
     hariTerakhirReset = timeinfo.tm_mday;
   }
 
-  // === TAMBAHAN BARU: MENAMPILKAN WAKTU FEEDER SEBELUM MASUK LOOP ===
+  // MENAMPILKAN WAKTU FEEDER & DURASI HASIL KALKULASI SEBELUM LOOP
   lcd.clear();
   lcd.setCursor(0, 0); 
   lcd.print("FEEDING TIME:");
   lcd.setCursor(0, 1); 
   lcd.print(feedingTime);
   lcd.print(" ("); 
-  lcd.print(delayFeeder / 1000); // Mengubah ms ke detik untuk tampilan ringkas
+  lcd.print((float)delayFeeder / 1000.0, 1); // Tampil detik misal "2.5s"
   lcd.print("s)");
-  delay(3000); // Ditampilkan selama 3 detik sebelum masuk loop halaman sensor
+  delay(3000); 
   
   lcd.clear();
   firebasePrevMillis = millis() - firebaseInterval; 
@@ -393,7 +461,7 @@ void loop() {
   if (airMainLow || airReservoirLow) statusDaruratAir = true; else statusDaruratAir = false;
 
   // ==========================================
-  // 2. CHECK PERUBAHAN JAM (LIGHTING & FEEDER)
+  // 2. CHECK PERUBAHAN JAM & BERGANTI HARI
   // ==========================================
   if (getLocalTime(&timeinfo)) {
     if (timeinfo.tm_hour != lastCheckedHour) {
@@ -404,8 +472,11 @@ void loop() {
     char jamSekarangStr[6];
     sprintf(jamSekarangStr, "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
     
+    // Perantian hari: hitung ulang biomassa pakan
     if (timeinfo.tm_mday != hariTerakhirReset) {
-      Serial.println("[FEEDER] Hari berganti. Reset status feedingToday di Firebase ke 0...");
+      Serial.println("[FEEDER] Hari berganti. Perbarui delayFeeder & Reset feedingToday...");
+      kalkulasiDelayFeederOtomatis(); // Hitung ulang durasi sesuai pertambahan usia hari
+      
       if (Firebase.RTDB.setInt(&fbdo, "test/feeder/feedingToday", 0)) {
         hariTerakhirReset = timeinfo.tm_mday;
       }
@@ -424,7 +495,7 @@ void loop() {
   }
 
   // ==========================================
-  // 3. LOGIKA PERGANTIAN HALAMAN LCD (2 DETIK)
+  // 3. LOGIKA PERGANTIAN HALAMAN LCD
   // ==========================================
   bool perluUpdateLayar = false;
   if (millis() - changePagePrevMillis > pageInterval) {
