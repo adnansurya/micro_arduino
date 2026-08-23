@@ -23,10 +23,15 @@
 #define OTA_TRIGGER_PIN 19
 WebServer server(80); 
 
-// 2. Konfigurasi Sensor Suhu (DS18B20)
-#define ONE_WIRE_BUS 13
-OneWire oneWire(ONE_WIRE_BUS);
-DallasTemperature sensors(&oneWire);
+// 2. Konfigurasi Sensor Suhu (DS18B20) - MENGGUNAKAN 2 PIN TERPISAH
+#define ONE_WIRE_BUS_1 13  // Pin Sensor Suhu Main Tank
+#define ONE_WIRE_BUS_2 15  // Pin Sensor Suhu Reservoir Tank
+
+OneWire oneWire1(ONE_WIRE_BUS_1);
+DallasTemperature sensors1(&oneWire1);
+
+OneWire oneWire2(ONE_WIRE_BUS_2);
+DallasTemperature sensors2(&oneWire2);
 
 // 3. Konfigurasi Sensor Jarak (HC-SR04)
 #define TRIG_PIN_1 12
@@ -49,7 +54,7 @@ float reservoirMinWaterLevel = 0.0;
 
 // Variabel Konfigurasi Waktu & Durasi Feeding Dynamic
 String feedingTime = "00:00"; 
-int delayFeeder = 3000;      
+int delayFeeder = 0; // Durasi Murni tanpa Pembatasan Minimum     
 int hariTerakhirReset = -1; 
 
 // Parameter Baru Ikan dari Firebase Config
@@ -149,14 +154,14 @@ float durasiAlat(int day, int totalIkan) {
 // FUNGSI MENGHITUNG SELISIH HARI DARI TANGGAL START ("DD/MM/YYYY")
 int hitungHari(String dateStr) {
   struct tm timeinfo;
-  if (!getLocalTime(&timeinfo)) return 1; // Fallback jika gagal waktu
+  if (!getLocalTime(&timeinfo)) return 1; 
 
   int dayStart = 0, monthStart = 0, yearStart = 0;
   sscanf(dateStr.c_str(), "%d/%d/%d", &dayStart, &monthStart, &yearStart);
 
   struct tm startTm = {0};
   startTm.tm_mday = dayStart;
-  startTm.tm_mon = monthStart - 1; // Month 0-11
+  startTm.tm_mon = monthStart - 1; 
   startTm.tm_year = yearStart - 1900;
 
   time_t tStart = mktime(&startTm);
@@ -166,22 +171,19 @@ int hitungHari(String dateStr) {
   double diffSeconds = difftime(tNow, tStart);
   int diffDays = (int)(diffSeconds / (60 * 60 * 24));
 
-  if (diffDays < 1) diffDays = 1; // Minimal hari ke-1
+  if (diffDays < 1) diffDays = 1; 
   return diffDays;
 }
 
-// FUNGSI UPDATE FEEDER DELAY OTOMATIS
+// FUNGSI UPDATE FEEDER DELAY OTOMATIS (TANPA PEMBATASAN MINIMUM)
 void kalkulasiDelayFeederOtomatis() {
   int totalHari = hitungHari(startingDate);
   float durasiDetik = durasiAlat(totalHari, fishCount);
   
-  // Konversi detik ke milidetik (ms)
+  // Konversi murni detik ke milidetik (ms) tanpa batasan minimal
   delayFeeder = (int)(durasiDetik * 1000.0);
   
-  // Safety Guard: minimal durasi semprot/putar 1000ms jika hari < 5 / nilai sangat kecil
-  if (delayFeeder < 1000) delayFeeder = 1000;
-  
-  Serial.print("[FEEDER] Delay Feeder Diperbarui: ");
+  Serial.print("[FEEDER] Delay Feeder Murni Diperbarui: ");
   Serial.print(delayFeeder);
   Serial.println(" ms");
 }
@@ -253,6 +255,7 @@ void jalankanFeeder() {
 void printDebugData() {
   Serial.println("\n=== [DEBUG] DATA VARIABEL TERKINI ===");
   printLocalTime(); 
+  Serial.print("Nilai Suhu Main & Reservoir   : "); Serial.print(suhu1, 1); Serial.print(" C | "); Serial.print(suhu2, 1); Serial.println(" C");
   Serial.print("Nilai pH Real Sensor           : "); Serial.println(nilaiPH, 2);
   Serial.print("Status Emergency Mode pH       : "); Serial.println(statusDaruratPH ? "AKTIF" : "STANDBY");
   Serial.print("Status Emergency Mode Air      : "); Serial.println(statusDaruratAir ? "DANGER (LOW WATER)" : "AMAN");
@@ -290,7 +293,9 @@ void setup() {
   pinMode(TRIG_PIN_1, OUTPUT); pinMode(ECHO_PIN_1, INPUT);
   pinMode(TRIG_PIN_2, OUTPUT); pinMode(ECHO_PIN_2, INPUT);
 
-  sensors.begin();
+  // Inisialisasi Dua Sensor Suhu Terpisah
+  sensors1.begin();
+  sensors2.begin();
   
   lcd.init(); 
   lcd.backlight();
@@ -384,7 +389,6 @@ void setup() {
     jsonResult.get(jsonData, "feedingTime");
     if (jsonData.success) feedingTime = jsonData.to<String>(); else feedingTime = "08:00";
 
-    // TAMBAHAN: Fetch startingDate & fishCount
     jsonResult.get(jsonData, "startingDate");
     if (jsonData.success) startingDate = jsonData.to<String>(); else startingDate = "17/08/2026";
 
@@ -401,7 +405,7 @@ void setup() {
     fishCount = 30;
   }
 
-  // Hitung delayFeeder otomatis pertama kali
+  // Hitung delayFeeder otomatis murni tanpa batas bawah
   kalkulasiDelayFeederOtomatis();
 
   if (getLocalTime(&timeinfo)) {
@@ -415,7 +419,7 @@ void setup() {
   lcd.setCursor(0, 1); 
   lcd.print(feedingTime);
   lcd.print(" ("); 
-  lcd.print((float)delayFeeder / 1000.0, 1); // Tampil detik misal "2.5s"
+  lcd.print((float)delayFeeder / 1000.0, 2); 
   lcd.print("s)");
   delay(3000); 
   
@@ -428,11 +432,13 @@ void loop() {
   struct tm timeinfo; 
 
   // ==========================================
-  // 1. MEMBACA DATA SENSOR REAL & MULTISAMPLING PH
+  // 1. MEMBACA DATA SENSOR REAL DARI 2 PIN SUHU
   // ==========================================
-  sensors.requestTemperatures();
-  suhu1 = sensors.getTempCByIndex(0);
-  suhu2 = sensors.getTempCByIndex(1);
+  sensors1.requestTemperatures();
+  suhu1 = sensors1.getTempCByIndex(0); // Main Tank (GPIO 13)
+
+  sensors2.requestTemperatures();
+  suhu2 = sensors2.getTempCByIndex(0); // Reservoir Tank (GPIO 15)
   
   jarak1 = bacaJarak(TRIG_PIN_1, ECHO_PIN_1);
   jarak2 = bacaJarak(TRIG_PIN_2, ECHO_PIN_2);
@@ -472,10 +478,10 @@ void loop() {
     char jamSekarangStr[6];
     sprintf(jamSekarangStr, "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
     
-    // Perantian hari: hitung ulang biomassa pakan
+    // Pergantian hari: hitung ulang biomassa pakan
     if (timeinfo.tm_mday != hariTerakhirReset) {
       Serial.println("[FEEDER] Hari berganti. Perbarui delayFeeder & Reset feedingToday...");
-      kalkulasiDelayFeederOtomatis(); // Hitung ulang durasi sesuai pertambahan usia hari
+      kalkulasiDelayFeederOtomatis(); 
       
       if (Firebase.RTDB.setInt(&fbdo, "test/feeder/feedingToday", 0)) {
         hariTerakhirReset = timeinfo.tm_mday;
