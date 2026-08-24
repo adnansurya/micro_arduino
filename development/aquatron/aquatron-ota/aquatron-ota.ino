@@ -54,16 +54,21 @@ float reservoirMinWaterLevel = 0.0;
 
 // Variabel Konfigurasi Waktu & Durasi Feeding Dynamic
 String feedingTime = "07:20, 21:20";
-float delayFeeder = 0.0; // Durasi Murni dalam milisekon (ms)
+float delayFeeder = 0.0;  // Durasi Murni dalam milisekon (ms)
 int hariTerakhirReset = -1;
 
 // Parameter Baru Ikan dari Firebase Config
 String startingDate = "01/01/2026";
 int fishCount = 0;
 
+int menitTerakhirFeeding = -1;  // Mencegah feeder memicu berulang kali dalam 1 menit yang sama
+
 // Status Tracking untuk Darurat pH dan Air
 bool statusDaruratPH = false;
 bool statusDaruratAir = false;
+
+// Variabel Tracking Status Feeder untuk LCD
+String feederStatusStr = "OFF";
 
 // 5. Konfigurasi Pin Relay
 #define RELAY_PUMP_1 4
@@ -198,10 +203,10 @@ int hitungHari(String dateStr) {
 void kalkulasiDelayFeederOtomatis() {
   int totalHari = hitungHari(startingDate);
   float durasiDetik = durasiAlat(totalHari, fishCount);
-  
+
   // Konversi murni detik ke milidetik (ms) dengan presisi float
   delayFeeder = durasiDetik * 1000.0;
-  
+
   Serial.print("[FEEDER] Delay Feeder Murni Diperbarui: ");
   Serial.print(delayFeeder, 4);
   Serial.println(" ms");
@@ -264,23 +269,25 @@ void sinkronisasiLighting() {
 }
 
 void jalankanFeeder() {
+  feederStatusStr = "ON ";  // Tandai feeder sedang aktif
   Serial.print("[FEEDER] Mengaktifkan Feeder. Durasi: ");
   Serial.print(delayFeeder, 4);
   Serial.println(" ms");
-  
+
   lcd.clear();
-  lcd.setCursor(0, 0); 
+  lcd.setCursor(0, 0);
   lcd.print("FEEDING TIME!");
-  
-  // Baris kedua: Tampilkan nilai ms dengan 4 desimal
-  lcd.setCursor(0, 1); 
-  lcd.print(delayFeeder, 4); 
+
+  lcd.setCursor(0, 1);
+  lcd.print(delayFeeder, 4);
   lcd.print("ms");
-  
-  digitalWrite(SIGNAL_FEEDER, LOW);   
-  delay((unsigned long)delayFeeder); // Konversi ke unsigned long untuk delay()                 
-  digitalWrite(SIGNAL_FEEDER, HIGH); 
-  
+
+  digitalWrite(SIGNAL_FEEDER, LOW);
+  delay((unsigned long)delayFeeder);
+  digitalWrite(SIGNAL_FEEDER, HIGH);
+
+  feederStatusStr = "OFF";  // Kembalikan status feeder ke OFF setelah selesai
+  delay(2000);
   lcd.clear();
 }
 
@@ -487,26 +494,26 @@ void setup() {
 
   // Layar 1: Info Hari Ke-X & Jumlah Ikan
   lcd.clear();
-  lcd.setCursor(0, 0); 
-  lcd.print("DAY:"); 
+  lcd.setCursor(0, 0);
+  lcd.print("DAY:");
   lcd.print(totalHari);
-  lcd.print(" FISH:"); 
+  lcd.print(" FISH:");
   lcd.print(fishCount);
-  lcd.setCursor(0, 1); 
+  lcd.setCursor(0, 1);
   lcd.print(feedingTime.substring(0, 15));
-  delay(5000); 
+  delay(5000);
 
   // Layar 2: Info Feeder Delay 4 Desimal (ms)
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("FEEDER DELAY:");
   lcd.setCursor(0, 1);
-  lcd.print(delayFeeder, 4); // Menampilkan 4 angka di belakang koma
+  lcd.print(delayFeeder, 4);  // Menampilkan 4 angka di belakang koma
   lcd.print("ms");
   delay(5000);
-  
+
   lcd.clear();
-  firebasePrevMillis = millis() - firebaseInterval; 
+  firebasePrevMillis = millis() - firebaseInterval;
   sinkronisasiLighting();
 
   lcd.clear();
@@ -581,46 +588,55 @@ void loop() {
 
     // LOGIKA MULTI-JADWAL FEEDING
     int indexSesi = 0;
-    int strLen = feedingTime.length();
-    int startIdx = 0;
+    // ==========================================
+    // LOGIKA PELEPASAN PAKAN OTOMATIS (EXACT MATCH JADWAL)
+    // ==========================================
 
-    while (startIdx < strLen) {
-      int commaIdx = feedingTime.indexOf(',', startIdx);
-      if (commaIdx == -1) commaIdx = strLen;
 
-      String subTime = feedingTime.substring(startIdx, commaIdx);
-      subTime.trim();  // Hilangkan spasi jika ada "7:20, 21:20"
+    // Hanya jalankan jika belum pernah feeding di menit yang sama
+    if (timeinfo.tm_min != menitTerakhirFeeding) {
+      int startIdx = 0;
+      int strLen = feedingTime.length();
 
-      // Format jam dengan 2 digit jika ada input "7:20" -> "07:20"
-      if (subTime.length() == 4 && subTime.charAt(1) == ':') {
-        subTime = "0" + subTime;
-      }
+      while (startIdx < strLen) {
+        int commaIdx = feedingTime.indexOf(',', startIdx);
+        if (commaIdx == -1) commaIdx = strLen;
 
-      if (subTime.equalsIgnoreCase(jamSekarangStr)) {
-        if (Firebase.RTDB.getInt(&fbdo, "test/feeder/feedingToday")) {
-          int maskFeeding = fbdo.to<int>();
-          int bitCheck = (1 << indexSesi);
+        String subTime = feedingTime.substring(startIdx, commaIdx);
+        subTime.trim();  // Bersihkan spasi jika ada format "07:20, 21:20"
 
-          // Jika bit ke-indexSesi masih 0 (belum dimakan), jalankan feeder
-          if ((maskFeeding & bitCheck) == 0) {
+        // Format standar 2 digit jam (contoh "7:20" -> "07:20")
+        if (subTime.length() == 4 && subTime.charAt(1) == ':') {
+          subTime = "0" + subTime;
+        }
 
-            // Hitung ulang nilai delayFeeder presisi sebelum menyalakan motor
-            kalkulasiDelayFeederOtomatis();
+        // JIKA WAKTU SAAT INI COCOK DENGAN DASHBOARD / JADWAL
+        if (subTime.equalsIgnoreCase(jamSekarangStr)) {
+          Serial.print("[FEEDER] Waktu cocok dengan jadwal: ");
+          Serial.println(subTime);
 
-            jalankanFeeder();
-            maskFeeding |= bitCheck;  // Tandai sesi ini sudah dijalankan
-            Serial.print("[FEEDER] Sesi ke-");
-            Serial.print(indexSesi + 1);
-            Serial.print(" Selesai! Update status feedingToday Mask ke -> ");
-            Serial.println(maskFeeding);
+          // 1. Catat menit agar tidak memicu berulang kali dalam 60 detik ini
+          menitTerakhirFeeding = timeinfo.tm_min;
 
+          // 2. Kalkulasi ulang durasi feeder sesuai pertumbuhan biomassa ikan terbaru
+          kalkulasiDelayFeederOtomatis();
+
+          // 3. Eksekusi menyalakan feeder & update layar LCD
+          jalankanFeeder();
+
+          // 4. Update status bitmasking di Firebase (opsional/tetap dipertahankan)
+          if (Firebase.RTDB.getInt(&fbdo, "test/feeder/feedingToday")) {
+            int maskFeeding = fbdo.to<int>();
+            int bitCheck = (1 << indexSesi);
+            maskFeeding |= bitCheck;
             Firebase.RTDB.setInt(&fbdo, "test/feeder/feedingToday", maskFeeding);
           }
-        }
-      }
 
-      indexSesi++;
-      startIdx = commaIdx + 1;
+          break;  // Keluar dari loop pencarian jadwal setelah feeder dijalankan
+        }
+
+        startIdx = commaIdx + 1;
+      }
     }
   }
 
@@ -632,8 +648,9 @@ void loop() {
     changePagePrevMillis = millis();
     currentPage++;
 
-    if (currentPage > 5) currentPage = 0;
-    if (currentPage == 5 && !statusDaruratPH && !statusDaruratAir) currentPage = 0;
+    // Perbarui batas maksimum halaman menjadi 6
+    if (currentPage > 6) currentPage = 0;
+    if (currentPage == 6 && !statusDaruratPH && !statusDaruratAir) currentPage = 0;
 
     lcd.clear();
     perluUpdateLayar = true;
@@ -702,7 +719,36 @@ void loop() {
         lcd.print(currentLightingLevel);
         break;
 
+      // === HALAMAN BARU: FEEDER STATUS ===
       case 5:
+        {
+          // Tampilkan Jam:Menit Terkini dan Status Feeder (ON/OFF)
+          lcd.setCursor(0, 0);
+          if (getLocalTime(&timeinfo)) {
+            char timeBuf[6];
+            sprintf(timeBuf, "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
+            lcd.print(">");
+            lcd.print(timeBuf);
+          } else {
+            lcd.print("--:--");
+          }
+
+          // Atur posisi status "ON " atau "OFF" di pojok kanan atas
+          lcd.print(" Feed:");
+          lcd.print(feederStatusStr);
+
+          // Tampilkan Jadwal Feeding di Baris Keduas
+          lcd.setCursor(0, 1);
+          if (feedingTime.length() > 16) {
+            lcd.print(feedingTime.substring(0, 16));  // Potong jika lebih dari 16 karakter
+          } else {
+            lcd.print(feedingTime);
+          }
+        }
+        break;
+
+      // Halaman Warning digeser ke case 6
+      case 6:
         lcd.setCursor(0, 0);
         lcd.print("!! WARNING !!");
         lcd.setCursor(0, 1);
@@ -743,11 +789,15 @@ void loop() {
       lcd.setCursor(15, 0);
       lcd.write(0);
       float selisihSuhu = abs(suhu1 - suhu2);
-      bool phAbnormal = (nilaiPH < 6.0 || nilaiPH > 7.0);
+      bool phAbnormal = (nilaiPH < 6.7 || nilaiPH > 7.3);
       bool suhuStabil = (suhu1 != DEVICE_DISCONNECTED_C && suhu2 != DEVICE_DISCONNECTED_C && selisihSuhu <= 0.5);
 
+      // Syarat Ketinggian air kedua tangki harus > 10 cm
+      bool airCukupUntukPompa = (tinggiAir1 > 10.0 && tinggiAir2 > 10.0);
+
       if (!statusDaruratPH) {
-        if (phAbnormal && suhuStabil) {
+        // Mode darurat AKTIF jika: pH abnormal + Suhu stabil + Air kedua tangki > 10 cm
+        if (phAbnormal && suhuStabil && airCukupUntukPompa) {
           statusDaruratPH = true;
           FirebaseJson jsonPumps;
           jsonPumps.set("mainPump", 1);
@@ -759,7 +809,8 @@ void loop() {
           dummyPompa2 = "ON";
         }
       } else {
-        if (!phAbnormal) {
+        // Mode darurat MATI jika: pH sudah normal OR air <= 10 cm OR suhu TIDAK stabil
+        if (!phAbnormal || !airCukupUntukPompa || !suhuStabil) {
           statusDaruratPH = false;
           FirebaseJson jsonPumps;
           jsonPumps.set("mainPump", 0);
