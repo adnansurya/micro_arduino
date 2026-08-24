@@ -54,7 +54,7 @@ float reservoirMinWaterLevel = 0.0;
 
 // Variabel Konfigurasi Waktu & Durasi Feeding Dynamic
 String feedingTime = "07:20, 21:20";
-int delayFeeder = 0;  // Durasi Murni tanpa Pembatasan Minimum
+float delayFeeder = 0.0; // Durasi Murni dalam milisekon (ms)
 int hariTerakhirReset = -1;
 
 // Parameter Baru Ikan dari Firebase Config
@@ -194,16 +194,16 @@ int hitungHari(String dateStr) {
   return diffDays;
 }
 
-// FUNGSI UPDATE FEEDER DELAY OTOMATIS (TANPA PEMBATASAN MINIMUM)
+// FUNGSI UPDATE FEEDER DELAY OTOMATIS (PRESISI FLOAT 4 DESIMAL)
 void kalkulasiDelayFeederOtomatis() {
   int totalHari = hitungHari(startingDate);
   float durasiDetik = durasiAlat(totalHari, fishCount);
-
-  // Konversi murni detik ke milidetik (ms) tanpa batasan minimal
-  delayFeeder = (int)(durasiDetik * 1000.0);
-
+  
+  // Konversi murni detik ke milidetik (ms) dengan presisi float
+  delayFeeder = durasiDetik * 1000.0;
+  
   Serial.print("[FEEDER] Delay Feeder Murni Diperbarui: ");
-  Serial.print(delayFeeder);
+  Serial.print(delayFeeder, 4);
   Serial.println(" ms");
 }
 
@@ -264,19 +264,21 @@ void sinkronisasiLighting() {
 }
 
 void jalankanFeeder() {
-  Serial.print("[FEEDER] Mengaktifkan Feeder pakan ikan dengan durasi: ");
-  Serial.print(delayFeeder);
+  Serial.print("[FEEDER] Mengaktifkan Feeder. Durasi: ");
+  Serial.print(delayFeeder, 4);
   Serial.println(" ms");
   
   lcd.clear();
-  lcd.setCursor(0, 0); lcd.print(" TIME TO FEED! ");
+  lcd.setCursor(0, 0); 
+  lcd.print("FEEDING TIME!");
+  
+  // Baris kedua: Tampilkan nilai ms dengan 4 desimal
   lcd.setCursor(0, 1); 
-  lcd.print("Delay: "); 
-  lcd.print(delayFeeder); 
+  lcd.print(delayFeeder, 4); 
   lcd.print("ms");
   
   digitalWrite(SIGNAL_FEEDER, LOW);   
-  delay(delayFeeder);                 
+  delay((unsigned long)delayFeeder); // Konversi ke unsigned long untuk delay()                 
   digitalWrite(SIGNAL_FEEDER, HIGH); 
   
   lcd.clear();
@@ -478,22 +480,34 @@ void setup() {
     hariTerakhirReset = timeinfo.tm_mday;
   }
 
-  // MENAMPILKAN WAKTU FEEDER & DURASI HASIL KALKULASI SEBELUM LOOP
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("FEEDING TIME:");
-  lcd.setCursor(0, 1);
-  lcd.print(feedingTime.substring(0, 15));  // Potong layar jika terlalu panjang
-  delay(3000);
+  // ==========================================
+  // MENAMPILKAN INFO FEEDER & DELAY DENGAN 4 DESIMAL
+  // ==========================================
+  int totalHari = hitungHari(startingDate);
 
-  // === TAMBAHAN: Menampilkan delayFeeder (ms) setelah Load Config ===
+  // Layar 1: Info Hari Ke-X & Jumlah Ikan
+  lcd.clear();
+  lcd.setCursor(0, 0); 
+  lcd.print("DAY:"); 
+  lcd.print(totalHari);
+  lcd.print(" FISH:"); 
+  lcd.print(fishCount);
+  lcd.setCursor(0, 1); 
+  lcd.print(feedingTime.substring(0, 15));
+  delay(5000); 
+
+  // Layar 2: Info Feeder Delay 4 Desimal (ms)
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("FEEDER DELAY:");
   lcd.setCursor(0, 1);
-  lcd.print(delayFeeder);
-  lcd.print(" ms");
-  delay(3000);
+  lcd.print(delayFeeder, 4); // Menampilkan 4 angka di belakang koma
+  lcd.print("ms");
+  delay(5000);
+  
+  lcd.clear();
+  firebasePrevMillis = millis() - firebaseInterval; 
+  sinkronisasiLighting();
 
   lcd.clear();
   firebasePrevMillis = millis() - firebaseInterval;
@@ -589,6 +603,10 @@ void loop() {
 
           // Jika bit ke-indexSesi masih 0 (belum dimakan), jalankan feeder
           if ((maskFeeding & bitCheck) == 0) {
+
+            // Hitung ulang nilai delayFeeder presisi sebelum menyalakan motor
+            kalkulasiDelayFeederOtomatis();
+
             jalankanFeeder();
             maskFeeding |= bitCheck;  // Tandai sesi ini sudah dijalankan
             Serial.print("[FEEDER] Sesi ke-");
