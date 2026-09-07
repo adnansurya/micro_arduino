@@ -9,32 +9,58 @@ const int ledMerah  = 2;
 const int ledKuning = 3;
 const int ledHijau  = 4;
 
-// Deklarasi Pin Buzzer Aktif (Harus Pin PWM: 3, 5, 6, 9, 10, atau 11)
+// Deklarasi Pin Buzzer Aktif (Pin PWM)
 const int pinBuzzer = 9; 
 
-// ATUR VOLUME BUZZER AKTIF DI SINI (Nilai PWM: 0 hingga 255)
-// 255 = Volume Maksimal (100%)
-// 50  = Volume Sedang/Pelan (~20%)
-// 10  = Volume Sangat Pelan (~4%)
+// Volume Buzzer (0 - 255)
 int volumeBuzzer = 40; 
 
+// Total pola dalam urutan
+const int TOTAL_POLA = 18;
+int indeksPola = 0; // Menunjuk ke pola yang sedang aktif
+
+/* 
+  Matriks Pola LED {Merah, Kuning, Hijau}
+  HIGH (1) = Nyala | LOW (0) = Mati
+*/
+const int polaLED[TOTAL_POLA][3] = {
+  {LOW,  LOW,  LOW }, // 1. Semua LED mati
+  {HIGH, LOW,  LOW }, // 2. Merah only
+  {LOW,  HIGH, LOW }, // 3. Kuning only
+  {LOW,  LOW,  HIGH}, // 4. Hijau only
+  {LOW,  LOW,  LOW }, // 5. Semua LED mati
+  {LOW,  LOW,  HIGH}, // 6. Hijau only
+  {LOW,  HIGH, LOW }, // 7. Kuning only
+  {HIGH, LOW,  LOW }, // 8. Merah only
+  {LOW,  LOW,  LOW }, // 9. Semua LED mati
+  {HIGH, LOW,  LOW }, // 10. Merah only
+  {HIGH, HIGH, LOW }, // 11. Merah kuning
+  {HIGH, HIGH, HIGH}, // 12. Semua LED nyala
+  {HIGH, HIGH, LOW }, // 13. Merah kuning
+  {HIGH, LOW,  LOW }, // 14. Merah only
+  {LOW,  LOW,  LOW }, // 15. Semua LED mati
+  {LOW,  LOW,  HIGH}, // 16. Hijau only
+  {LOW,  HIGH, HIGH}, // 17. Kuning hijau
+  {HIGH, HIGH, HIGH}  // 18. Semua LED nyala
+};
+
 // Variabel Kontrol Goncangan
-int modeLampu = 0;              
-float ambangGoncangan = 15.0;   
+float ambangGoncangan = 13.5;   
 unsigned long waktuSBL = 0;     
 const int jedaGoncangan = 300;  
 
-void aturLampu(int mode) {
-  digitalWrite(ledMerah,  mode == 0 ? HIGH : LOW);
-  digitalWrite(ledKuning, mode == 1 ? HIGH : LOW);
-  digitalWrite(ledHijau,  mode == 2 ? HIGH : LOW);
+// Fungsi untuk menerapkan pola LED berdasarkan indeks
+void aturPolaLampu(int indeks) {
+  digitalWrite(ledMerah,  polaLED[indeks][0]);
+  digitalWrite(ledKuning, polaLED[indeks][1]);
+  digitalWrite(ledHijau,  polaLED[indeks][2]);
 }
 
 // Fungsi beep dengan kontrol volume via PWM
 void nadaBeep(int volume) {
-  analogWrite(pinBuzzer, volume); // Mengirim sinyal PWM untuk mengatur volume
-  delay(50);                      // Durasi beep
-  analogWrite(pinBuzzer, 0);      // Matikan buzzer (PWM = 0)
+  analogWrite(pinBuzzer, volume); 
+  delay(50);                      
+  analogWrite(pinBuzzer, 0);      
 }
 
 void setup() {
@@ -52,10 +78,10 @@ void setup() {
 
   accel.setRange(ADXL345_RANGE_4_G);
 
-  // Lampu awal & beep pembuka
-  aturLampu(modeLampu);
+  // Set pola pertama saat startup & beep pembuka
+  aturPolaLampu(indeksPola);
   nadaBeep(volumeBuzzer);
-  Serial.println("Sistem Siap! Goncangkan sensor untuk berganti lampu.");
+  Serial.println("Sistem Siap! Goncangkan sensor untuk berganti pola LED.");
 }
 
 void loop() {
@@ -69,18 +95,16 @@ void loop() {
   if (totalAkselerasi > ambangGoncangan && (millis() - waktuSBL > jedaGoncangan)) {
     waktuSBL = millis();
     
-    // Berganti mode lampu
-    modeLampu = (modeLampu + 1) % 3;
-    aturLampu(modeLampu);
+    // Pindah ke pola berikutnya (otomatis kembali ke 0 jika sudah mencapai 18)
+    indeksPola = (indeksPola + 1) % TOTAL_POLA;
+    aturPolaLampu(indeksPola);
 
-    // Beep singkat dengan volume yang ditentukan
+    // Beep singkat setiap kali pola berganti
     nadaBeep(volumeBuzzer);
 
     Serial.print("Goncangan terdeteksi! Nilai: ");
     Serial.print(totalAkselerasi);
-    Serial.print(" m/s^2 | Lampu: ");
-    if (modeLampu == 0) Serial.println("MERAH");
-    else if (modeLampu == 1) Serial.println("KUNING");
-    else Serial.println("HIJAU");
+    Serial.print(" m/s^2 | Pola Ke-");
+    Serial.println(indeksPola + 1); // Menampilkan angka 1 sampai 18 di Serial Monitor
   }
 }
