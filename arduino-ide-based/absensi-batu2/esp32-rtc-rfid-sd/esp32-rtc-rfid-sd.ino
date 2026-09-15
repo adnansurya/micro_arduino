@@ -9,6 +9,7 @@
 #include "RTClib.h"
 #include <ArduinoJson.h>
 #include <WiFiManager.h>
+#include <time.h> // Library bawaan ESP32 untuk NTP
 
 // Pin definitions
 #define SS_PIN 4
@@ -20,14 +21,17 @@
 #define LED_KUNING 12
 #define LED_HIJAU 14
 
-// WiFi credentials
+// WiFi credentials (dipakai jika WiFiManager di-bypass)
 const char* ssid = "MIKRO";
 const char* password = "1DEAlist";
 
+// Konfigurasi NTP Server (WITA / UTC+8)
+const char* ntpServer = "pool.ntp.org";
+const long gmtOffset_sec = 8 * 3600; // UTC+8 (8 Jam = 28800 Detik)
+const int daylightOffset_sec = 0;     // Tidak ada daylight saving di Indonesia
+
 // Google Apps Script URL
 const char* scriptURL = "https://script.google.com/macros/s/AKfycbxn7MRT1RSf3AVQ_iqIbfcYe7tNFEL1T5sFIbskY-TS8QcuAuMFW9gxy9P0GFCVuwzA/exec";
-// API untuk mendapatkan waktu dari internet
-const String TIME_API_URL = "http://worldtimeapi.org/api/timezone/Asia/Makassar";
 
 // Components
 MFRC522 mfrc522(SS_PIN, RST_PIN);
@@ -44,6 +48,32 @@ unsigned long lastTimeSync = 0;
 const unsigned long TIME_SYNC_INTERVAL = 24 * 60 * 60 * 1000;  // Sync setiap 24 jam
 
 WiFiManager wm;
+
+// Declarations
+void startupLEDSequence();
+void initializeRTC();
+void setupWifiManager();
+void initializeRFID();
+void initializeSD();
+bool syncTimeFromNTP();
+void processBackupData();
+void setStandbyMode();
+void readRFID();
+void setLEDWarning();
+void setLEDError();
+void blinkLED(int ledPin, int count, int duration);
+String getDateTimeString(DateTime dt);
+String formatDate(DateTime dt);
+String formatTime(DateTime dt);
+String generateFotoID();
+void processAttendance();
+bool saveToLocalCSV(String date, String time, String uid, String fotoID);
+bool saveToBackupCSV(String date, String time, String uid);
+void sendToGoogleAppsScript(String date, String time, String uid, String fotoID);
+bool sendBackupToGoogleAppsScript(String date, String time, String uid);
+void sendDebug(String label, String error);
+void triggerESPCam(String fotoID);
+void createFileIfNotExists(const char* path);
 
 void setup() {
   Serial.begin(115200);
@@ -63,14 +93,23 @@ void setup() {
   initializeRFID();
   initializeSD();
 
-
-  if (rtcAvailable) {
-    syncTimeFromAPI();
+  // Sinkronisasi waktu menggunakan NTP jika WiFi terhubung
+  if (rtcAvailable && WiFi.status() == WL_CONNECTED) {
+    syncTimeFromNTP();
   }
 
   // Process backup data on startup
   blinkLED(LED_KUNING, 3, 300);
   processBackupData();
+
+  // Tampilkan waktu terkini dari RTC sesaat sebelum masuk ke program utama
+  if (rtcAvailable) {
+    DateTime now = rtc.now();
+    Serial.println("==========================================");
+    Serial.print("🕒 WAKTU TERKINI SISTEM: ");
+    Serial.println(getDateTimeString(now));
+    Serial.println("==========================================");
+  }
 
   Serial.println("Sistem Absensi IoT Ready");
   blinkLED(LED_HIJAU, 1, 300);
@@ -86,11 +125,11 @@ void loop() {
     delay(1000);
   }
 
-  // Sync waktu periodic setiap 24 jam (hanya jika online)
-  if (rtcAvailable && !timeSynced) {
+  // Sync waktu periodic setiap 24 jam
+  if (rtcAvailable && WiFi.status() == WL_CONNECTED) {
     unsigned long currentMillis = millis();
-    if (currentMillis - lastTimeSync > TIME_SYNC_INTERVAL) {
-      syncTimeFromAPI();
+    if (!timeSynced || (currentMillis - lastTimeSync > TIME_SYNC_INTERVAL)) {
+      syncTimeFromNTP();
     }
   }
 
@@ -105,6 +144,47 @@ void loop() {
   }
 }
 
+// Fungsi Sinkronisasi Waktu Utama Menggunakan NTP
+bool syncTimeFromNTP() {
+  if (!rtcAvailable) {
+    Serial.println("❌ RTC tidak tersedia untuk sync waktu");
+    return false;
+  }
+
+  Serial.println("🕒 Mensinkronisasi waktu dari NTP Server (pool.ntp.org)...");
+
+  // Inisialisasi konfigurasi NTP di ESP32
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+
+  struct tm timeinfo;
+  // Tunggu hingga waktu berhasil diambil dari NTP (timeout 10 detik)
+  if (!getLocalTime(&timeinfo, 10000)) {
+    Serial.println("❌ Gagal mendapatkan waktu dari NTP Server");
+    sendDebug("syncTimeFromNTP", "Gagal mendapatkan waktu dari NTP");
+    return false;
+  }
+
+  // Konversi struct tm dari NTP ke object DateTime
+  DateTime ntpTime(
+    timeinfo.tm_year + 1900,
+    timeinfo.tm_mon + 1,
+    timeinfo.tm_mday,
+    timeinfo.tm_hour,
+    timeinfo.tm_min,
+    timeinfo.tm_sec
+  );
+
+  // Set RTC dengan waktu dari NTP
+  rtc.adjust(ntpTime);
+
+  timeSynced = true;
+  lastTimeSync = millis();
+
+  Serial.print("✅ RTC Berhasil Disinkronisasi via NTP: ");
+  Serial.println(getDateTimeString(ntpTime));
+  return true;
+}
+
 void initializeSD() {
   if (!SD.begin(SD_CS_PIN)) {
     Serial.println("SD Card Mount Failed");
@@ -112,11 +192,8 @@ void initializeSD() {
     while(1){
       blinkLED(LED_MERAH, 1, 1500);
     }
-       
   }
   Serial.println("SD Card Mounted");
-
-  // Create files if they don't exist
   createFileIfNotExists("/absensi.csv");
   createFileIfNotExists("/backup.csv");
 }
@@ -126,17 +203,13 @@ void initializeRTC() {
     rtcAvailable = true;
     Serial.println("✅ RTC DS3231 terhubung");
 
-    // Cek jika RTC kehilangan power
     if (rtc.lostPower()) {
-      Serial.println("⚠️ RTC kehilangan power, perlu sync waktu dari internet");
-      sendDebug("initializeRTC", "RTC kehilangan power, perlu sync waktu dari internet");
+      Serial.println("⚠️ RTC kehilangan power, perlu sync waktu dari NTP");
+      sendDebug("initializeRTC", "RTC kehilangan power, perlu sync waktu");
     } else {
-      Serial.println("✅ RTC waktu tersimpan");
-      // Tampilkan waktu RTC saat ini
       DateTime now = rtc.now();
       Serial.print("🕒 Waktu RTC saat ini: ");
       Serial.println(getDateTimeString(now));
-      sendDebug("initializeRTC", getDateTimeString(now));
     }
   } else {
     Serial.println("❌ Gagal terhubung ke RTC DS3231");
@@ -147,26 +220,6 @@ void initializeRTC() {
 void initializeRFID() {
   mfrc522.PCD_Init();
   Serial.println("RFID Reader Ready");
-}
-
-void connectWiFi() {
-  WiFi.begin(ssid, password);
-  Serial.print("Connecting to WiFi");
-
-  int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-    delay(1000);
-    Serial.print(".");
-    attempts++;
-  }
-
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nConnected to WiFi");
-    Serial.print("IP Address: ");
-    Serial.println(WiFi.localIP());
-  } else {
-    Serial.println("\nFailed to connect to WiFi");
-  }
 }
 
 void createFileIfNotExists(const char* path) {
@@ -193,14 +246,9 @@ void readRFID() {
   currentUID.toUpperCase();
 
   Serial.println("Card detected: " + currentUID);
-
-  // Card detected - green LED blink once
   blinkLED(LED_HIJAU, 2, 300);
 
-  // Generate unique Foto ID
   currentFotoID = generateFotoID();
-
-  // Save to SD card and send to server
   processAttendance();
 }
 
@@ -221,10 +269,8 @@ void processAttendance() {
   String date = formatDate(now);
   String time = formatTime(now);
 
-  // Save to local CSV
   bool sdSuccess = saveToLocalCSV(date, time, currentUID, currentFotoID);
 
-  // Send to Google Apps Script
   if (sdSuccess) {
     sendToGoogleAppsScript(date, time, currentUID, currentFotoID);
   }
@@ -245,12 +291,9 @@ String formatTime(DateTime dt) {
 bool saveToLocalCSV(String date, String time, String uid, String fotoID) {
   dataFile = SD.open("/absensi.csv", FILE_APPEND);
   if (dataFile) {
-    dataFile.print(date);
-    dataFile.print(",");
-    dataFile.print(time);
-    dataFile.print(",");
-    dataFile.print(uid);
-    dataFile.print(",");
+    dataFile.print(date); dataFile.print(",");
+    dataFile.print(time); dataFile.print(",");
+    dataFile.print(uid);  dataFile.print(",");
     dataFile.println(fotoID);
     dataFile.close();
     Serial.println("Data saved to absensi.csv");
@@ -258,7 +301,6 @@ bool saveToLocalCSV(String date, String time, String uid, String fotoID) {
   } else {
     Serial.println("Error opening absensi.csv");
     sendDebug("saveToLocalCSV", "Error opening absensi.csv");
-    // Failed to save to backup - red LED on
     setLEDError();
     return false;
   }
@@ -267,30 +309,24 @@ bool saveToLocalCSV(String date, String time, String uid, String fotoID) {
 bool saveToBackupCSV(String date, String time, String uid) {
   dataFile = SD.open("/backup.csv", FILE_APPEND);
   if (dataFile) {
-    dataFile.print(date);
-    dataFile.print(",");
-    dataFile.print(time);
-    dataFile.print(",");
+    dataFile.print(date); dataFile.print(",");
+    dataFile.print(time); dataFile.print(",");
     dataFile.println(uid);
     dataFile.close();
     Serial.println("Data saved to backup.csv");
-    // Success saving to backup - yellow LED blink 3 times
     blinkLED(LED_KUNING, 3, 300);
     return true;
   } else {
     Serial.println("Error opening backup.csv");
     sendDebug("saveToBackupCSV", "Error opening backup.csv");
-    // Failed to save to backup - red LED on
     setLEDError();
     return false;
   }
 }
 
-
 void sendToGoogleAppsScript(String date, String time, String uid, String fotoID) {
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
-
     http.begin(scriptURL);
     http.addHeader("Content-Type", "application/json");
 
@@ -303,34 +339,25 @@ void sendToGoogleAppsScript(String date, String time, String uid, String fotoID)
     String payload;
     serializeJson(doc, payload);
 
-    Serial.println("Payload size: " + String(payload.length()));
-
     int httpResponseCode = http.POST(payload);
-
     Serial.print("HTTP Response code: ");
     Serial.println(httpResponseCode);
 
     if (httpResponseCode > -1 && httpResponseCode < 400) {
-      // Success - trigger ESP32-CAM to take photo and green LED blink 3 times
       blinkLED(LED_HIJAU, 3, 300);
       triggerESPCam(fotoID);
     } else {
-      // Failed - yellow LED on
       setLEDWarning();
       saveToBackupCSV(date, time, uid);
     }
-
     http.end();
   } else {
     Serial.println("WiFi not connected - saving to backup");
     DateTime now = rtc.now();
-    String date = formatDate(now);
-    String time = formatTime(now);
     setLEDWarning();
-    saveToBackupCSV(date, time, currentUID);
+    saveToBackupCSV(formatDate(now), formatTime(now), currentUID);
   }
 
-  // Return to standby mode
   delay(1000);
   setStandbyMode();
 }
@@ -338,7 +365,6 @@ void sendToGoogleAppsScript(String date, String time, String uid, String fotoID)
 void sendDebug(String label, String error) {
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
-
     http.begin(scriptURL);
     http.addHeader("Content-Type", "application/json");
 
@@ -349,78 +375,34 @@ void sendDebug(String label, String error) {
 
     String payload;
     serializeJson(doc, payload);
-
-    Serial.println("Payload size: " + String(payload.length()));
-
-    int httpResponseCode = http.POST(payload);
-
-    Serial.print("HTTP Response code: ");
-    Serial.println(httpResponseCode);
-
-    if (httpResponseCode > -1 && httpResponseCode < 400) {
-      // Success - trigger ESP32-CAM to take photo and green LED blink 3 times
-      Serial.println("DEBUG SENT");
-    } else {
-      // Failed - yellow LED on
-      Serial.println("DEBUG SENDING FAILED");
-    }
-
+    http.POST(payload);
     http.end();
-  } else {
-    Serial.println("WiFi not connected");
   }
 }
 
 void triggerESPCam(String fotoID) {
   HTTPClient http;
   String url = "http://esp32cam.local/capture?foto_id=" + fotoID;
-
   http.begin(url);
-  int httpResponseCode = http.GET();
-
-  Serial.print("ESP32-CAM trigger response: ");
-  Serial.println(httpResponseCode);
-
+  http.GET();
   http.end();
 }
 
-// Backup Data Processing Functions
 void processBackupData() {
-  Serial.println("Checking for backup data...");
-
-  if (!SD.exists("/backup.csv")) {
-    Serial.println("No backup file found");
-    sendDebug("processBackupData", "No backup file found");
-    return;
-  }
+  if (!SD.exists("/backup.csv")) return;
 
   File backupFile = SD.open("/backup.csv", FILE_READ);
-  if (!backupFile) {
-    Serial.println("Failed to open backup.csv");
-    sendDebug("processBackupData", "Failed to open backup.csv");
-    return;
-  }
- 
+  if (!backupFile) return;
 
   int backupCount = 0;
   int successCount = 0;
 
-  // Read backup data line by line
   while (backupFile.available()) {
     String line = backupFile.readStringUntil('\n');
-    Serial.print("BACKUP LINE ");
-    Serial.print(backupCount);
-    Serial.println(" : " + line);
     line.trim();
 
-    if (line.length() > 0) {
-      if(line.indexOf("Tanggal,Waktu,UID") > -1 ){
-        continue;
-      }
+    if (line.length() > 0 && line.indexOf("Tanggal,Waktu,UID") == -1) {
       backupCount++;
-      Serial.println("Processing backup: " + line);
-
-      // Parse CSV line
       int firstComma = line.indexOf(',');
       int secondComma = line.indexOf(',', firstComma + 1);
 
@@ -431,48 +413,26 @@ void processBackupData() {
 
         if (sendBackupToGoogleAppsScript(date, time, uid)) {
           successCount++;
-          // Green LED blink for each successful backup upload
           blinkLED(LED_HIJAU, 1, 200);
         } else {
-          // Yellow LED blink for failed backup upload
           blinkLED(LED_KUNING, 1, 200);
         }
       }
     }
   }
-
   backupFile.close();
 
-  Serial.println("Backup processing completed: " + String(successCount) + "/" + String(backupCount) + " successful");
-  sendDebug("processBackupData", "Backup processing completed: " + String(successCount) + "/" + String(backupCount) + " successful");
-
-  // If all backups were successfully sent, delete the backup file
   if (successCount == backupCount && backupCount > 0) {
-    if (SD.remove("/backup.csv")) {
-      Serial.println("Backup file deleted successfully");
-      // Green LED blink 3 times for successful cleanup
-      blinkLED(LED_HIJAU, 3, 300);
-    } else {
-      Serial.println("Failed to delete backup file");
-      sendDebug("processBackupData", "Failed to delete backup file");
-
-      // Red LED blink for deletion error
-      blinkLED(LED_MERAH, 2, 300);
-    }
+    SD.remove("/backup.csv");
+    blinkLED(LED_HIJAU, 3, 300);
   } else if (backupCount > 0) {
-    Serial.println("Some backups failed to send, keeping backup file");
-    sendDebug("processBackupData", "Some backups failed to send, keeping backup file");
-    // Yellow LED on for partial success
     setLEDWarning();
     delay(2000);
   }
 }
 
 bool sendBackupToGoogleAppsScript(String date, String time, String uid) {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi not connected for backup upload");
-    return false;
-  }
+  if (WiFi.status() != WL_CONNECTED) return false;
 
   HTTPClient http;
   http.begin(scriptURL);
@@ -482,39 +442,27 @@ bool sendBackupToGoogleAppsScript(String date, String time, String uid) {
   doc["date"] = date;
   doc["time"] = time;
   doc["uid"] = uid;
-  doc["foto_id"] = "BACKUP_" + generateFotoID();  // Special foto_id for backups
+  doc["foto_id"] = "BACKUP_" + generateFotoID();
 
   String payload;
   serializeJson(doc, payload);
 
-  Serial.println("Sending backup data: " + payload);
-
   int httpResponseCode = http.POST(payload);
-  Serial.print("Backup HTTP Response code: ");
-  Serial.println(httpResponseCode);
-
   http.end();
 
   return (httpResponseCode > -1 && httpResponseCode < 400);
 }
 
-// LED Control Functions
 void startupLEDSequence() {
-  // All LEDs blink twice
   for (int i = 0; i < 2; i++) {
-    digitalWrite(LED_MERAH, HIGH);
-    digitalWrite(LED_KUNING, HIGH);
-    digitalWrite(LED_HIJAU, HIGH);
+    digitalWrite(LED_MERAH, HIGH); digitalWrite(LED_KUNING, HIGH); digitalWrite(LED_HIJAU, HIGH);
     delay(300);
-    digitalWrite(LED_MERAH, LOW);
-    digitalWrite(LED_KUNING, LOW);
-    digitalWrite(LED_HIJAU, LOW);
+    digitalWrite(LED_MERAH, LOW); digitalWrite(LED_KUNING, LOW); digitalWrite(LED_HIJAU, LOW);
     delay(300);
   }
 }
 
 void setStandbyMode() {
-  // Turn off all LEDs except green
   digitalWrite(LED_MERAH, LOW);
   digitalWrite(LED_KUNING, LOW);
   digitalWrite(LED_HIJAU, HIGH);
@@ -530,185 +478,20 @@ void blinkLED(int ledPin, int count, int duration) {
 }
 
 void setLEDWarning() {
-  // Yellow LED on, others off
   digitalWrite(LED_MERAH, LOW);
   digitalWrite(LED_KUNING, HIGH);
   digitalWrite(LED_HIJAU, LOW);
 }
 
 void setLEDError() {
-  // Red LED on, others off
   digitalWrite(LED_MERAH, HIGH);
   digitalWrite(LED_KUNING, LOW);
   digitalWrite(LED_HIJAU, LOW);
 }
 
-void generalError() {
-  // Red LED blink 3 times for general errors
-  blinkLED(LED_MERAH, 3, 300);
-}
-
 void setupWifiManager() {
-
-  bool res;
-  // res = wm.autoConnect(); // auto generated AP name from chipid
-  // res = wm.autoConnect("AutoConnectAP"); // anonymous ap
   wm.setConfigPortalTimeout(60);
-  res = wm.autoConnect("ESP32 Absensi", "password123");  // password protected ap
-
-  if (!res) {
-    Serial.println("Failed to connect");
-    // ESP.restart();
-  } else {
-    //if you get here you have connected to the WiFi
-    Serial.println("connected...yeey :)");
-  }
-}
-
-bool syncTimeFromAPI() {
-  if (!rtcAvailable) {
-    Serial.println("❌ RTC tidak tersedia untuk sync waktu");
-    sendDebug("syncTimeFromAPI", "RTC tidak tersedia untuk sync waktu");
-    return false;
-  }
-
-  Serial.println("🕒 Mensinkronisasi waktu dari internet...");
-
-  HTTPClient http;
-  WiFiClient client;
-
-  // Gunakan HTTP (bukan HTTPS) untuk kemudahan
-  if (!http.begin(client, TIME_API_URL)) {
-    Serial.println("❌ Gagal terhubung ke time API");
-    sendDebug("syncTimeFromAPI", "Gagal terhubung ke time API");
-    return false;
-  }
-
-  int httpCode = http.GET();
-
-  if (httpCode == HTTP_CODE_OK) {
-    String payload = http.getString();
-    Serial.println("✅ Berhasil mendapatkan waktu dari API");
-
-    // Parse JSON response
-    DynamicJsonDocument doc(1024);
-    DeserializationError error = deserializeJson(doc, payload);
-
-    if (error) {
-      Serial.print("❌ Error parsing JSON: ");
-      Serial.println(error.c_str());
-      http.end();
-      sendDebug("syncTimeFromAPI", "Error parsing JSON");
-      return false;
-    }
-
-    // Extract waktu dari JSON response
-    // Format dari worldtimeapi.org: "2024-01-15T14:30:25.123456+07:00"
-    String datetimeStr = doc["datetime"].as<String>();
-    unsigned long unixtime = doc["unixtime"].as<unsigned long>();
-
-    Serial.print("📅 Waktu dari API: ");
-    Serial.println(datetimeStr);
-    Serial.print("⏱️ Unix time: ");
-    Serial.println(unixtime);
-
-    // Konversi unixtime ke DateTime
-    time_t rawtime = unixtime + 28800;
-    struct tm* timeinfo = localtime(&rawtime);
-
-    // Buat DateTime object
-    DateTime apiTime(
-      timeinfo->tm_year + 1900,  // tahun sejak 1900
-      timeinfo->tm_mon + 1,      // bulan 0-11 → 1-12
-      timeinfo->tm_mday,         // hari
-      timeinfo->tm_hour,         // jam
-      timeinfo->tm_min,          // menit
-      timeinfo->tm_sec           // detik
-    );
-
-    // Set RTC dengan waktu dari API
-    rtc.adjust(apiTime);
-
-    timeSynced = true;
-    lastTimeSync = millis();
-
-    Serial.print("✅ Waktu RTC disinkronisasi: ");
-    Serial.println(getDateTimeString(apiTime));
-
-    http.end();
-    return true;
-
-  } else {
-    Serial.printf("❌ Gagal mendapatkan waktu, HTTP code: %d\n", httpCode);
-    // Coba API alternatif
-    return syncTimeFromBackupAPI();
-  }
-
-  http.end();
-  return false;
-}
-
-bool syncTimeFromBackupAPI() {
-  Serial.println("🔄 Mencoba API waktu alternatif...");
-
-  const String backupAPI = "http://worldtimeapi.org/api/ip";  // API alternatif
-
-  HTTPClient http;
-  WiFiClient client;
-
-  if (!http.begin(client, backupAPI)) {
-    Serial.println("❌ Gagal terhubung ke backup time API");
-    sendDebug("syncTimeFromBackupAPI", "Gagal terhubung ke backup time API");
-    return false;
-  }
-
-  int httpCode = http.GET();
-
-  if (httpCode == HTTP_CODE_OK) {
-    String payload = http.getString();
-
-    DynamicJsonDocument doc(1024);
-    DeserializationError error = deserializeJson(doc, payload);
-
-    if (error) {
-      Serial.print("❌ Error parsing JSON backup API: ");
-      Serial.println(error.c_str());
-      http.end();
-      sendDebug("syncTimeFromBackupAPI", "Error parsing JSON");
-      return false;
-    }
-
-    String datetimeStr = doc["datetime"].as<String>();
-    unsigned long unixtime = doc["unixtime"].as<unsigned long>();
-
-    Serial.print("📅 Waktu dari backup API: ");
-    Serial.println(datetimeStr);
-
-    time_t rawtime = unixtime + 28800;
-    struct tm* timeinfo = localtime(&rawtime);
-
-    DateTime apiTime(
-      timeinfo->tm_year + 1900,
-      timeinfo->tm_mon + 1,
-      timeinfo->tm_mday,
-      timeinfo->tm_hour,
-      timeinfo->tm_min,
-      timeinfo->tm_sec);
-
-    rtc.adjust(apiTime);
-
-    timeSynced = true;
-    lastTimeSync = millis();
-
-    Serial.print("✅ Waktu RTC disinkronisasi dari backup API: ");
-    Serial.println(getDateTimeString(apiTime));
-
-    http.end();
-    return true;
-  }
-
-  http.end();
-  return false;
+  wm.autoConnect("ESP32 Absensi");
 }
 
 String getDateTimeString(DateTime dt) {
