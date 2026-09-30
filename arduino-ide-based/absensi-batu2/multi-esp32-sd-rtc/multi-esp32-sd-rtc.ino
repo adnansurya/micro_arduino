@@ -400,15 +400,28 @@ void processBackupData() {
   File backupFile = SD.open("/backup.csv", FILE_READ);
   if (!backupFile) return;
 
-  int backupCount = 0;
+  // Buat file temporary untuk menampung baris data yang GAGAL terkirim
+  File tempFile = SD.open("/temp_backup.csv", FILE_WRITE);
+  if (!tempFile) {
+    Serial.println("❌ Gagal membuat file temporary backup");
+    backupFile.close();
+    return;
+  }
+
+  // Tulis header CSV pada file temporary
+  tempFile.println("Tanggal,Waktu,UID");
+
+  int totalBackup = 0;
   int successCount = 0;
+  int failCount = 0;
 
   while (backupFile.available()) {
     String line = backupFile.readStringUntil('\n');
     line.trim();
 
+    // Abaikan baris kosong dan baris header
     if (line.length() > 0 && line.indexOf("Tanggal,Waktu,UID") == -1) {
-      backupCount++;
+      totalBackup++;
       int firstComma = line.indexOf(',');
       int secondComma = line.indexOf(',', firstComma + 1);
 
@@ -417,23 +430,49 @@ void processBackupData() {
         String time = line.substring(firstComma + 1, secondComma);
         String uid = line.substring(secondComma + 1);
 
+        // Coba kirim data ke Google Apps Script
         if (sendBackupToGoogleAppsScript(date, time, uid)) {
           successCount++;
-          blinkLED(LED_HIJAU, 1, 200);
+          blinkLED(LED_HIJAU, 1, 150);
+          Serial.println("  [OK] Data terkirim: " + uid);
+          // Data yang SUKSES TIDAK ditulis ke tempFile
         } else {
-          blinkLED(LED_KUNING, 1, 200);
+          failCount++;
+          blinkLED(LED_KUNING, 1, 150);
+          Serial.println("  [FAIL] Gagal terkirim, menyimpan ulang: " + uid);
+          
+          // Data yang GAGAL ditulis ulang ke tempFile
+          tempFile.print(date); tempFile.print(",");
+          tempFile.print(time); tempFile.print(",");
+          tempFile.println(uid);
         }
       }
     }
   }
-  backupFile.close();
 
-  if (successCount == backupCount && backupCount > 0) {
+  backupFile.close();
+  tempFile.close();
+
+  // Penanganan File setelah proses selesai
+  if (totalBackup > 0) {
+    // Hapus file backup lama
     SD.remove("/backup.csv");
-    blinkLED(LED_HIJAU, 3, 300);
-  } else if (backupCount > 0) {
-    setLEDWarning();
-    delay(2000);
+
+    if (failCount == 0) {
+      // Kasus 1: Semua data sukses 100% -> Hapus file temporary
+      SD.remove("/temp_backup.csv");
+      Serial.println("✅ Semua data backup berhasil di-upload!");
+      blinkLED(LED_HIJAU, 3, 300);
+    } else {
+      // Kasus 2: Ada data yang gagal -> Ganti nama temp_backup.csv menjadi backup.csv
+      SD.rename("/temp_backup.csv", "/backup.csv");
+      Serial.printf("⚠️ Sinkronisasi selesai: %d sukses, %d tersisa di backup\n", successCount, failCount);
+      setLEDWarning();
+      delay(2000);
+    }
+  } else {
+    // Jika file backup ternyata kosong / hanya berisi header
+    SD.remove("/temp_backup.csv");
   }
 }
 
